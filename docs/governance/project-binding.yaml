@@ -25,17 +25,29 @@ authority:
     url: https://github.com/leinasi2014/soloips
     visibility: public
     baselineCommit: 3f30ebaf3788f9a1a4c7bda63ad54135deadec31
-    note: 远程仓库已建立并推送（2026-09-16 用户授权）；分支保护与审查人清单尚未配置
+    integrationPolicy:
+      requirePullRequest: true
+      requiredStatusChecks: [verify]
+      requireUpToDateBranch: true
+      enforceAdmins: true
+      allowForcePushes: false
+      allowDeletions: false
+      requiredApprovingReviewCount: 0
+      reviewEvidence: independent-review-before-merge
+    note: 上述为 DEV-15 的集成约束；实际保护设置及执行证据从 GitHub 读取。审批数为 0 不取消独立复核要求，也不声称 GitHub 已强制独立账号批准；baselineCommit 只标识初始治理基线
   workSource:
     kind: github-issues
     url: https://github.com/leinasi2014/soloips/issues
     templates: .github/ISSUE_TEMPLATE/{bug,feature,task}.md
-    note: 对外工作入口；Issue 承载意图与证据，执行权威仍在原生任务系统（见 dynamicStatus）
+    workflowAuthority: docs/governance/code-development-standard.md#dev-15
+    note: Issue 承载工作意图、验收条件与交付结论；队长可登记用户已授权的需求，具体执行关联实际 Task 和 PR
   dynamicStatus:
-    kind: external-provider
-    capability: NOT_CONFIGURED
+    kind: execution-provider
+    selection: explicit-per-work-item
+    issueTaskMapping: manual
+    automaticIssueSync: NOT_CONFIGURED
     committedMarkdownAuthority: false
-    note: GitHub Issue 不自动成为动态进度权威；哪个状态面为准仍待裁定
+    note: DSH 承接时由其原生 Task 维护领取、attempt 与执行状态；会话直接执行时在 Issue/PR 记录实际执行者及证据，标明未使用 DSH Task。规则见 DEV-15，不据此声称自动同步或 DSH 运行验证已完成
 
 deliveryTarget:
   runtime: DSH
