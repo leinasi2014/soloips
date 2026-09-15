@@ -18,19 +18,24 @@ method:
 
 authority:
   repository:
-    kind: git-local
+    kind: github
+    alias: origin
     role: development-and-integration-authority
     branch: main
-    remote: NOT_CONFIGURED
+    url: https://github.com/leinasi2014/soloips
+    visibility: public
     baselineCommit: 3f30ebaf3788f9a1a4c7bda63ad54135deadec31
-    note: 本地 Git 仓库已建立（2026-09-15 用户授权）；尚无远程仓库，推送与镜像未配置
+    note: 远程仓库已建立并推送（2026-09-16 用户授权）；分支保护与审查人清单尚未配置
   workSource:
-    kind: external-provider
-    capability: NOT_CONFIGURED
+    kind: github-issues
+    url: https://github.com/leinasi2014/soloips/issues
+    templates: .github/ISSUE_TEMPLATE/{bug,feature,task}.md
+    note: 对外工作入口；Issue 承载意图与证据，执行权威仍在原生任务系统（见 dynamicStatus）
   dynamicStatus:
     kind: external-provider
     capability: NOT_CONFIGURED
     committedMarkdownAuthority: false
+    note: GitHub Issue 不自动成为动态进度权威；哪个状态面为准仍待裁定
 
 deliveryTarget:
   runtime: DSH

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 项目工作入口
+    url: https://github.com/leinasi2014/soloips/blob/main/AGENTS.md
+    about: 开工前先读 AGENTS.md 的任务路由表，确认权威与写入范围

@@ -22,6 +22,7 @@
 | DSH 插件开发、调试或升级 | [官方文档导航 Skill](.agents/skills/dsh-plugin-development/SKILL.md)，按 DSH-DOC-01 先读取目标版本对应官方正文 | 适用版本、公开接口与装配契约的依据；查询方式按 DSH-DOC-02 维护 |
 | 复用旧重构成果、参考重写 | [源码参考](docs/reference/rewrite-source-reference.md)及其分块正文；产品架构的来源入口及该条需求的原文 | 来源基线、已确认范围、候选缺口与复用条件；可复用规则、行为契约与不得继承的缺陷 |
 | 定位源码/需求来源、运行验证或交付 | [环境定位与运维交接](docs/operations/environment-handoff.md)、项目绑定、技术架构相关 SOLO-ACC 场景、代码规范 DEV-11/13 | 符号对应的本机位置、获准目标、精确安装组合、测试数据根与可观察结果 |
+| 提交 Issue 或 PR | 项目绑定的 workSource；`.github/ISSUE_TEMPLATE/`（bug / feature / task）与 `.github/pull_request_template.md` | 意图与证据按对应模板填写；PR 关联 Issue 并按 DEV-13 分层记录证据 |
 
 用户决定产品目标与最终验收；受委托技术决定只在委托范围内生效。来源冲突时核对最新用户指令与该条权威，保留尚未确认的状态；智能体一致意见不能把〔建议〕改成〔需求〕。
 
