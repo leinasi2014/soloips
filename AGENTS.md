@@ -22,7 +22,7 @@
 | DSH 插件开发、调试或升级 | [官方文档导航 Skill](.agents/skills/dsh-plugin-development/SKILL.md)，按 DSH-DOC-01 先读取目标版本对应官方正文 | 适用版本、公开接口与装配契约的依据；查询方式按 DSH-DOC-02 维护 |
 | 复用旧重构成果、参考重写 | [源码参考](docs/reference/rewrite-source-reference.md)及其分块正文；产品架构的来源入口及该条需求的原文 | 来源基线、已确认范围、候选缺口与复用条件；可复用规则、行为契约与不得继承的缺陷 |
 | 定位源码/需求来源、运行验证或交付 | [环境定位与运维交接](docs/operations/environment-handoff.md)、项目绑定、技术架构相关 SOLO-ACC 场景、代码规范 DEV-11/13 | 符号对应的本机位置、获准目标、精确安装组合、测试数据根与可观察结果 |
-| 提交 Issue 或 PR | 项目绑定的 workSource；`.github/ISSUE_TEMPLATE/`（bug / feature / task）与 `.github/pull_request_template.md` | 意图与证据按对应模板填写；PR 关联 Issue 并按 DEV-13 分层记录证据 |
+| 提交 Issue 或 PR | [代码规范 DEV-15](docs/governance/code-development-standard.md#dev-15)、项目绑定的 workSource；`.github/ISSUE_TEMPLATE/`（bug / feature / task）与 `.github/pull_request_template.md` | 明确 Issue、实际执行任务与 PR 的关联；合并前独立复核，按 DEV-13 记录证据，满足全部验收后关闭 Issue |
 
 用户决定产品目标与最终验收；受委托技术决定只在委托范围内生效。来源冲突时核对最新用户指令与该条权威，保留尚未确认的状态；智能体一致意见不能把〔建议〕改成〔需求〕。
 
@@ -69,11 +69,12 @@
 
 ## 5. 协作、工作区与 Git
 
-依据 DEV-12/13：
+依据 DEV-12/13/15：
 
 - 需要并行时，派发具体结果、工作目录、独占写范围、接口、产物位置与验收；同一可写面只安排一个写者。复核者独立检查实际内容与证据。
 - 有写冲突风险才建隔离工作区；遵守既有布局，无约定时使用项目根 `.worktrees/<task>/`，新分支默认 `codex/<task>`。不覆盖已有目录、用户改动或其他任务成果。
 - 共用工作树的暂存与集成由一个集成者串行执行；提交前核对完整 diff 与暂存区，按已授权范围提交。推送、发布与服务切换遵守各自授权和交付目标。
+- 队长可把用户已授权需求整理成 Issue；按 DEV-15 关联实际执行任务与 PR。当前会话直接执行时如实记录，不虚构 DSH Task 或自动同步；集成通过受保护分支的 PR，独立复核先于合并。
 - 任务结束、失败或取消时处理本任务进程和临时输出；可清理才清理。仍有未交付内容或消费者时，在交接中注明保留路径、负责人、原因与释放条件。
 
 ## 6. 验证与交接
