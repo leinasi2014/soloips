@@ -4,10 +4,11 @@
 node_modules/
 .pnpm-store/
 
-# 构建输出
+# 构建输出（编译产物不入版本控制；DEV-13：交付位置须可区分候选与生成物）
 dist/
 build/
 out/
+lib/
 *.tsbuildinfo
 
 # 临时执行产物与隔离工作区
@@ -36,3 +37,6 @@ Thumbs.db
 # 智能体临时探针（不应提交）
 .probe-*.cjs
 .validate.cjs
+
+# 本机环境交接与只读核验记录（规程在 docs/operations/）
+.artifacts/operations/

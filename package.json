@@ -1,0 +1,29 @@
+{
+  "name": "soloips",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SoloIPs Studio — AI 原创 IP 孵化、生产与发行平台（DSH 插件组合交付）",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "oxlint --type-aware",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -b"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "oxlint": "^1.0.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

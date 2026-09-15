@@ -1,0 +1,92 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off"
+  },
+  "options": {
+    "reportUnusedDisableDirectives": "warn",
+    "typeAware": true
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "**/lib/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.config.ts",
+    "docs/**",
+    ".artifacts/**"
+  ],
+  "overrides": [
+    {
+      "files": ["packages/*/src/**/*.{ts,tsx}", "packages/*/tests/**/*.{ts,tsx}"],
+      "rules": {
+        "no-var": "error",
+        "prefer-const": "error",
+        "prefer-rest-params": "error",
+        "prefer-spread": "error",
+        "no-array-constructor": "error",
+        "no-unused-expressions": "error",
+        "no-useless-constructor": "error",
+        "no-unused-vars": [
+          "error",
+          {
+            "argsIgnorePattern": "^_",
+            "varsIgnorePattern": "^_",
+            "caughtErrorsIgnorePattern": "^_"
+          }
+        ],
+        "typescript/await-thenable": "error",
+        "typescript/ban-ts-comment": ["error", { "minimumDescriptionLength": 10 }],
+        "typescript/no-base-to-string": "error",
+        "typescript/no-confusing-void-expression": "error",
+        "typescript/no-deprecated": "error",
+        "typescript/no-duplicate-type-constituents": "error",
+        "typescript/no-explicit-any": "error",
+        "typescript/no-extra-non-null-assertion": "error",
+        "typescript/no-floating-promises": "error",
+        "typescript/no-for-in-array": "error",
+        "typescript/no-implied-eval": "error",
+        "typescript/no-misused-new": "error",
+        "typescript/no-misused-promises": "error",
+        "typescript/no-misused-spread": "error",
+        "typescript/no-non-null-asserted-optional-chain": "error",
+        "typescript/no-unsafe-argument": "error",
+        "typescript/no-unsafe-assignment": "error",
+        "typescript/no-unsafe-call": "error",
+        "typescript/no-unsafe-member-access": "error",
+        "typescript/no-unsafe-return": "error",
+        "typescript/only-throw-error": "error",
+        "typescript/prefer-promise-reject-errors": "error",
+        "typescript/require-await": "error",
+        "typescript/restrict-plus-operands": "error",
+        "typescript/use-unknown-in-catch-callback-variable": "error"
+      }
+    },
+    {
+      "files": ["packages/*/src/**/*.{ts,tsx}"],
+      "excludeFiles": ["packages/adapter-dsh/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@deepseek-ai/*"],
+                "message": "官方 DSH 依赖必须经 soloips-adapter-dsh 暴露的接口使用（DEV-04），不得在本包直接 import"
+              },
+              {
+                "group": ["**/packages/core/**", "soloips-core", "soloips-core/*"],
+                "message": "跨包只能经公开 exports 与服务契约（DEV-04）"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

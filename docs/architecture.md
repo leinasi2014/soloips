@@ -1,18 +1,19 @@
-# SoloIPs Studio：架构关系与首版交付
+# SoloIPs Studio：产品范围与架构入口
 
-| 项目 | 内容 |
+| 阅读契约 | 内容 |
 | --- | --- |
-| 文档身份 | SOLO-ARCH；产品架构与首版范围的讨论入口 |
-| 日期 | 2026-09-15 |
-| 状态 | 用户确认项与技术建议分别标注；不是实施完成记录或完整 PRD |
-| 目的 | 用 DSH 承担智能体执行，把已有协作插件重构为 SoloIPs 的生产能力，尽快交付真实 IP 创作闭环 |
-| 负责人 | 用户决定产品目标与最终验收；统筹维护边界、切片和依赖；实施者提交可运行候选 |
-| 依据 | [产品想法 V0.4](SoloIPs_Studio_Idea_Document_V0.4.md)、本次用户确认、下文来源与重构要求映射 |
-| 当前证据 | 目标目录原有一份想法文档，尚无应用代码或 Git 仓库；现有插件与公司重构候选分处不同基线 |
+| 身份 | SOLO-ARCH；产品目标、首版范围与需求来源的维护正文，同时提供技术架构阅读入口；登记角色不改变各条决策/证据标签 |
+| 目的 | 保留用户确认的 IP 创作闭环与首版边界，指向唯一技术架构正文 |
+| 范围 | 产品分层、业务对象、首版成果、切片与需求来源；技术包划分/装配/数据根/恢复/验收设计见 [技术架构](technical-architecture.md) |
+| 决策状态 | 〔需求〕沿用各节用户来源；ARCH-D01–07 是用户 2026-09-16 委托“你来给我决定”后的技术裁定，正文只在技术架构维护 |
+| 证据范围 | 本文含需求与历史源码观察，不提供产品运行验收；证据基线见 §9 与技术架构附录 B |
+| 交付状态 | 产品交付仍为〔提案〕；正式技术设计不自动授权实现或变更服务 |
+| 依据 | [产品想法 V0.4](SoloIPs_Studio_Idea_Document_V0.4.md)、[项目绑定](governance/project-binding.yaml)、[注册表](governance/document-registry.yaml)、[技术架构](technical-architecture.md)及各节需求来源 |
+| 变更权 | 用户决定产品目标与最终验收；技术决定按明确委托范围维护，文档身份与负责人复用注册表 |
 
 ## 1. 先确定真正交付什么
 
-**〔已确认，SOLO-01〕** SoloIPs 以 DSH 为底层框架，项目位于 `D:/Source/workspace/soloips`。第一版让用户把目标交给 AI 公司，由员工协作产出，最后由用户验收。
+**〔已确认，SOLO-01〕** SoloIPs 以 DSH 为底层框架，独立产品仓库用 `SOLOIPS_ROOT` 表示，实际位置按[环境交接](operations/environment-handoff.md)解析。第一版让用户把目标交给 AI 公司，由员工协作产出，最后由用户验收。
 
 **〔已确认，SOLO-02〕** 第一版先复用 DSH Web 界面，完成可用闭环，再逐步替换为 SoloIPs 产品界面。复用外壳仍需呈现业务目标、当前负责人、待回答事项和真实交付物。
 
@@ -27,9 +28,9 @@
 
 不能仅因为研发队能写代码，就认为 AI 公司产品已可用；也不能把“员工很多、任务很多”当作创作目标的达成。
 
-## 2. 推荐的架构关系
+## 2. 架构关系与技术正文
 
-**〔技术建议，SOLO-A01〕** SoloIPs 使用独立产品仓库，以 DSH 插件及 Profile 组合交付。先保留清楚的模块边界和一个可部署组合；后续确有独立发布或运行需求时再拆包、拆服务。
+**〔约束，SOLO-A01〕** SoloIPs 使用独立产品仓库，以 DSH 插件及 profile 组合交付；具体包边界与分期组合按 [技术架构](technical-architecture.md) ARCH-D02/SOLO-C01。来源：用户既有底座与交付形态要求，以及 2026-09-16 委托的技术裁定。下图保留产品职责分层，不表示每层须独立成包或服务。
 
 ```mermaid
 flowchart TB
@@ -95,7 +96,7 @@ DSH 官方说明其采用 Everything-is-a-plugin 架构，且仍处于开发预�
 | 旧团队记录与候选备份 | 保留在已归档的工作记录中 | 用于追溯和接手；新产品用新身份，不恢复旧团队执行 |
 | 55120 | 上轮交接记录为 PTC 默认、RLM 已启用的空团队服务；实际模型调用仍待验证 | 作为用户指定的后续交付目标；本次架构整理不改变服务 |
 
-本次只读源码核实了两个直接影响迁移的缺口：`company-core/src/domain/organization-assets.ts` 的 `getEmployeeOnboardingGaps` 仅检查资料引用和头像字段是否存在，未形成 ORG-03 完整准入；其组织准入还保留 `ORG_ALLOW_LEGACY_UNBOUND`。这些路径与最新要求冲突，必须在正式业务入口启用前修正。`repair-release/src/runtime/execution-roots.ts` 的 `captureWorktreeDiff` 只捕获 Git 工作树差异，不能用来宣称视频等创作素材已被长期保存。
+公司准入候选的源码基线与缺口统一见[技术架构](technical-architecture.md) §7.9：完整入职与禁止未绑定旁路的要求必须在正式业务入口启用前满足，不因复用旧候选而放宽。另有历史源码观察：`REPAIR_RELEASE_CHECKOUT/src/runtime/execution-roots.ts` 的 `captureWorktreeDiff` 只捕获 Git 工作树差异，不能用来宣称视频等创作素材已被长期保存。
 
 ### 当前重构要求映射
 
@@ -163,9 +164,9 @@ DSH 官方说明其采用 Everything-is-a-plugin 架构，且仍处于开发预�
 
 S0/S1 优先处理恢复、准入、API 停线、待回答入口、成果保存及接续这些直接阻塞交付的问题。其他已承诺 bug 保留在后续任务，不因迁移丢失，也不要求先修完所有无关问题才能获得第一份成果。
 
-实施可从一个插件包开始，内部按 `company`、`collaboration`、`ip`、`artifacts`、`dsh-adapter` 与 `client` 分模块。目录名是建议；正式边界以实际调用和状态归属为准。Profile 只负责组合依赖与部署设置，业务模块不读取个人绝对路径或凭据。
+〔约束〕实现组织方案按 [技术架构](technical-architecture.md) ARCH-D02 及第 5 章；原“可从一个插件包开始”的备选由该裁定取代，产品职责分层保留。S0 交付实际需要的模块与组合，PV 工具适配随 S1 出现。Profile 只负责装配与部署设置，业务模块不读取个人绝对路径或凭据。
 
-开发工作区与运行数据分开；密钥、旧会话备份及临时执行产物不进入源码。S0 输出可复现的依赖锁定和单一安装包后，后续切片沿用同一运行路径，避免验证了一个分支却发布另一个。
+开发工作区与运行数据分开；密钥、旧会话备份及临时执行产物不进入源码。S0 输出可复现的依赖锁定和统一交付组合后，后续切片沿用同一运行路径，避免验证了一个分支却发布另一个。
 
 先用具体失败场景判定能否复用，再交付修复。前期规模不需要新建微服务集群、第二套调度器或向量库；需要它们时应有业务量或功能证据。多用户商业部署的租户隔离另行验收，单人同信任范围的通过不能当作多人安全证明。
 
@@ -195,15 +196,15 @@ S0/S1 优先处理恢复、准入、API 停线、待回答入口、成果保存�
 
 ## 9. 来源与剩余决定
 
-本机来源用于本轮核实，不作为未来部署时的绝对路径依赖：
+以下符号的本机位置按[环境交接](operations/environment-handoff.md)解析；源码与历史观察的基线统一见[技术架构附录 B](technical-architecture.md)，不能由历史位置推断当前部署：
 
 - 产品目标：[SoloIPs V0.4](SoloIPs_Studio_Idea_Document_V0.4.md)。2026-09-15 本轮已确认 AI 公司协作、用户验收、先用 DSH Web。
-- DSH 本地源码：`D:/Source/DSH/deepseek-harness`，HEAD `c291e7961a515f6d7af9304e7fd1d257929aef26`，根包 `0.1.5-rc.2`；工作树的 `vendor/cordis/src/fiber.ts` 有已有修改，不能把本地树当成完全干净的官方发布包。此处记录源码基线，安装包依赖及与该修改的关系仍须 S0 核对。
+- DSH 源码：`DSH_CHECKOUT`；基线与工作树限制见技术架构附录 B 第 3 项，安装工件及已有修改与目标的关系仍须 S0 核对。
 - DSH 实验团队适用范围：上述源码 `packages/experimental/agent-team/README.md` 的 “When to choose it”；仅作为复用比较，未启用第二套团队实现。
-- 当前重构入口：`C:/Users/windo/Documents/Codex/2026-09-13/dsh-group-chat-acceptance/incident-recovery-20260914/restore-control/docs/refactoring/README.md`；01、02、03、04 是相关要求正文。
-- 同根目录 `.worktree/repair-release` 与 `.worktree/company-core` 为不同候选来源；前者有未提交集成内容，不能仅凭 HEAD 标识整包。
-- 同根目录 `.personnel/mixed-model-acceptance-20260915/freeze-20260915-reteam/RETEAM-HANDOFF.md` 是历史冻结交接证据；本次未重新做运行验收，不将其当实时状态台账。
+- 重构入口：`REFACTORING_DOCS_ROOT/README.md`；01、02、03、04 是相关要求正文。
+- `REPAIR_RELEASE_CHECKOUT` 与 `COMPANY_CORE_CHECKOUT` 为不同候选来源；前者历史观察中有未提交集成内容，不能仅凭 HEAD 标识整包。
+- `LAUNCH_ROOT/freeze-20260915-reteam/RETEAM-HANDOFF.md` 是历史冻结交接证据；本次未重新做运行验收，不将其当实时状态台账。
 
 仍需按业务推进收敛：PV 的具体创意、时长与视听要求、已有制作工具的真实接口、第一轮发行渠道及反馈指标、何时从单人使用进入多人商业服务。PV 要求与工具决定 S1 的制作任务；发行与多人服务不阻塞 S0。旧重构中未确定的人格/私人资产权利仍保持未定，不从技术迁移推导为获准。
 
-本文件记录架构关系、确认项与建议。任务执行状态留在之后选定的原生任务系统；本轮尚未迁移产品代码、创建新队伍或改变 55120 部署。
+本文件保留产品范围与需求来源；技术裁定和后续执行边界统一见 [技术架构](technical-architecture.md) §1.4。任务执行状态留在绑定声明的原生系统，不能从任务登记规则推断该能力已经配置。

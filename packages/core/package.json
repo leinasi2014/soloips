@@ -1,0 +1,17 @@
+{
+  "name": "soloips-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "唯一状态包：持有全部业务写权威与 domain opener",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ]
+}

@@ -1,19 +1,19 @@
-# SoloIPs 架构草稿：交付形态、装配与边界
+# SoloIPs 技术架构：交付、装配、状态与验收
 
 ## 1. 阅读契约
 
 | 阅读契约 | 内容 |
 | --- | --- |
-| 身份 | SOLO-ARCH-DRAFT（提案 ID；是否登记为独立文档或并回 SOLO-ARCH 见 DRAFT-D01） |
-| 文档状态 | 〔提案〕评审修订稿；文档复核不构成用户确认、产品验收或实施许可。不替换 [架构关系与首版交付](architecture.md)（SOLO-ARCH），也不替换重构文档正文 |
+| 身份 | SOLO-TECH-ARCH；由原 SOLO-ARCH-DRAFT 延续，旧需求/机制/验收 ID 保留；角色与路径见文档注册表 |
+| 文档状态 | 正式技术设计基线。§1.4 受委托裁定标〔约束〕；未采纳细节仍标〔建议〕/〔待决〕。产品目标与首版范围由 [架构入口](architecture.md) 及其需求来源承载 |
 | 读者 | 智能体优先（documentation.primaryReader: agent）；人类可读靠结构而非叙事 |
 | 目的 | 收敛「DSH 为基础设施，SoloIPs = 一组插件包 + 一个 profile」这一交付形态：包清单与边界、装配与 patch 机制、事实归属、失败与恢复、验收合同、待决项 |
 | 范围 | 交付形态与包边界；装配、profile 与 patch 组合契约；分层/回归/回滚；客户端组合与业务事实分离；失败与恢复；验收场景与反例；待决项。**不含**产品 PRD、PV 创意与制作参数、包内领域建模正文、实现进度、运行版本台账 |
-| 决策状态 | 标〔需求〕者必须有用户来源（见 4.1、4.2）。各章技术结论为〔建议〕；**智能体之间达成一致不构成确认** |
+| 决策状态 | 用户 2026-09-16 以“你来给我决定”委托本轮文档落点及技术取舍，§1.4 记录受委托技术约束；不得将其伪写成用户逐项确认的业务需求 |
 | 证据范围 | 仓库文档、DSH 源码、历史团队转录分别标注；沿用而未复核的观察不升格。packages/...、apps/...、vendor/... 默认相对 DSH_CHECKOUT；dsh-agent-swarm/src/... 相对 DSH_CHECKOUT/packages/.external；company-core/... 相对 COMPANY_CORE_CHECKOUT；重构文档相对 REFACTORING_DOCS_ROOT，解析见附录 B。DSH 与项目同名 docs/architecture.md 须区分 |
-| 交付状态 | 整篇〔提案〕。本文不提供产品〔已实现〕〔已验证〕〔已集成〕结论；第 11 章为验收设计，不是运行结果 |
+| 交付状态 | 技术决策已经明确；产品交付仍为〔提案〕。本文不提供产品〔已实现〕〔已验证〕〔已集成〕结论，第 11 章仍为未执行的验收设计 |
 | 依据 | 格式：SOLOIP-DOC-001 [SoloIPs 文档格式规范](governance/agent-readable-documentation.md)。权威与边界：[项目绑定](governance/project-binding.yaml)、[文档注册表](governance/document-registry.yaml)、[项目指令](../AGENTS.md)、[架构关系与首版交付](architecture.md)、重构文档入口（用户裁决 2026-09-15：当前开发、修复和验收一切以重构文档为准） |
-| 变更权 | 产品负责人（用户）。本文按「唯一文件写者」组装（documentation.sharedAuthorityWriterCount: 1）；审查通过前不得作为实施依据 |
+| 变更权 | 用户保留产品目标与最终验收权；获委托者可维护委托范围内技术决定，单一写者，重大需求变更须回到用户。正式设计不自动授权产品实现、建队、启服务或生产变更 |
 
 ### 1.1 标注读法
 
@@ -45,14 +45,30 @@
 
 ### 1.3 本文的反面声明（只保留与本文相关的区分）
 
-- 装配、安装、启用 ≠ 实际被调用（activation-is-invocation）。
+- 装配、安装、启用 ≠ 实际被调用（activation-is-not-invocation）。
 - 构建成功 ≠ 产品验收（build-success-is-not-product-acceptance）。
 - 文件写入成功 ≠ 停止重启后能读回；文件存在 ≠ 内容有效；「未报错」≠「配置正确」。
 - --dump-config 通过 ≠ 功能可用；patchReload: live 下的运行态 ≠ 重启后仍然如此。
-- 一个环境（55120）通过 ≠ 普遍兼容；另一个 home 的真实实例不蕴含 55120 同样如此。
+- 一个环境（55120）通过 ≠ 普遍兼容；另一个 home 的历史观察不能替代 55120 的实际证据。
 - 客户端能渲染一条业务行 ≠ 该业务事实由客户端拥有；持有 ≠ 可访问。
 - 成员邮件结论一致 ≠ 用户确认；队长综合结论 ≠ 用户确认。
 - 本文记录了某条规则 ≠ 该规则已实现、已验证或已集成。
+
+### 1.4 受委托技术裁定（ARCH-D01–07）
+
+**来源与标注**：用户 2026-09-16 在本项目会话中要求“你来给我决定”，所指清单包括文档落点、包数量、数据根、patchReload、下一步验证及任务限制。下表为据此作出的〔约束〕，不声称用户亲自选择了每个技术细节；既有业务需求及产品验收权不变。
+
+| ID | 决定 | 理由、作用范围与执行边界 |
+| --- | --- | --- |
+| ARCH-D01 | 将原草稿迁移为独立技术架构正文，登记 stable-authority；architecture.md 保留产品范围与阅读入口 | 技术机制、数据根和验收统一在本文维护，产品目标不抄入第二份 PRD；原草稿身份由本身份接续，不保留并行正文 |
+| ARCH-D02 | 首版采用 5 个包的边界：bundle、core、adapter-dsh、web、tools-pv；同仓、统一版本锁与交付组合 | core 持有业务写权威，adapter 收敛 DSH 依赖，web 负责界面，bundle 负责装配，tools-pv 接制作工具。包边界不代表五套服务/发布流水线。S0 只实际交付所需前四包；tools-pv 随 S1 接入真实工具时加入，不建空包占位 |
+| ARCH-D03 | 生产、验证、恢复各用独立 DSH_HOME；完整交付使用同一个 soloips profile 定义 | 实际 backend、Session、资产及 overlay 路由也须隔离（SOLO-DATA-01–04）。同 home 双 profile 只用于明确的共享状态测试或已证明兼容的顺序切换，不作为默认灰度/数据恢复方案；独立 home 不能替代 fence 与一致恢复点 |
+| ARCH-D04 | 新 SoloIPs 正式与验收 profile 名为 soloips，显式设置 patchReload: startup | 首片优先可复现冷启动与恢复证据。开发 live 仅可在独立验证 home 的临时 profile manifest 中显式设置；正式/验收使用锁定的 startup 定义并冷启动核对。patchReload 来自 manifest.dsh.profile.patchReload（DSH profile.ts:775-782），不能靠业务 patch/overlay 切换；本决定不就地更改现有 55120 配置 |
+| ARCH-D05 | ORG-13 直接沿用既有需求正文；本文由 SOLO-F09、SOLO-ACC-07/08 承接 | 其权威在 02-company-contract.md §11.9 及 ORG-A09/A10；站内停线不延期，短信/邮箱按既有后续边界 |
+| ARCH-D06 | “任务数为 0”限定于文档阶段，不再作为后续工程的长期限制 | 进入已获授权的工程切片时，使用现有原生任务系统登记真实工作；不为填板而批量建任务，不以本裁定替代 S0 实现或新建团队授权 |
+| ARCH-D07 | 后续按 S0 的最小闭环推进：先绑定真实安装候选/数据根，核验公司写保护及 Host 接线，再核对目标 client 组合与冷启动恢复 | fence 候选已存在，重点是每个真实提交点与路径别名的证据。允许在已授权切片中边修接线边完成验收，不要求尚未实现的功能在开工前已经通过；没有通过 ORG-06 则不启用公司写入 |
+
+**技术收敛不等于实施许可**：本次落实文档决定；产品代码、运行探针、新服务、55120 部署切换、凭据与真实外部副作用仍分别遵守项目授权。工程任务登记可与获授权切片的准备并行，不把所有待决项排成串行审批关卡。
 
 ## 2. 目的与范围
 
@@ -72,7 +88,7 @@
 
 ### 2.2 范围内
 
-- 交付形态与包清单的候选边界（术语与判据在本文，规则正文在各技术章）。
+- 交付形态与包清单的已选边界（术语与判据在本文，规则正文在各技术章）。
 - 装配层必须遵守的宿主机制约束（〔源码事实〕+ 复核状态），集中登记于 4.3，正文归第 6、10 章。
 - 业务事实归属与「客户端零可写业务状态」的分离线（SOLO-A02、ORG-06、CLIENT-*）。
 - 失败半径、恢复与回滚缺口对应的验收合同（第 10、11 章）。
@@ -87,19 +103,17 @@
 | 包内领域建模、字段定义与持久 schema 细节 | 属第 5、7 章（backend-deepseek）；本文只收录其包级与写权威结论 |
 | 实现进度、谁在做、哪个版本当前可用 | documentation.liveStatusInCommittedMarkdown: forbidden；动态状态留在原生任务系统 |
 | 第二套任务/尝试状态机或状态台账 | docs/architecture.md §3（SOLO-A02）：任务与尝试的唯一权威在协作内核 |
-| 修改宿主源码、服务配置、凭据或既有权威文档 | AGENTS.md 红线；本次交付只写本文一个文件 |
+| 修改宿主源码、服务配置或凭据 | 本文是设计基线；运行与实现动作按项目红线另行授权 |
 | 微服务集群、第二套调度器、向量库等预留设计 | docs/architecture.md §6：需要它们时应有业务量或功能证据 |
 
-### 2.4 单一权威与合并路径
+### 2.4 单一权威与文档落点
 
-本文按 SOLOIP-DOC-001 §7 不新建同题权威：
+〔约束 DRAFT-D01〕按 ARCH-D01 登记为独立技术架构；原 SOLO-ARCH-DRAFT〔已取代〕→ SOLO-TECH-ARCH，保留原 DRAFT-* 等 ID 作为追溯标识。原文件迁移，不保留第二份相同正文。
 
-- 产品分层、数据归属、首版范围与切片顺序以 docs/architecture.md（SOLO-ARCH）为准；本文只写指针。
-- 部门、资料室、员工生命周期、入职准入、头像等要求以 REFACTORING_DOCS_ROOT 正文为准；本文只写 ID 指针，见 4.4。
-- 文档格式与标注以 SOLOIP-DOC-001 为准。
-- 本文内部同样要求单一正文：各章重复陈述同一机制处登记于附录 A3，定稿前必须合并为一条正文并按 §3 保留 ID 取代关系。
-
-〔待决 DRAFT-D01〕本草稿审查后的落点：(a) 并回 docs/architecture.md 新章节；(b) 登记为 document-registry.yaml 中的独立文档身份；(c) 只作为一次性评审材料丢弃。责任人：队长 + 用户。**在决定前，本文不进入注册表，也不主张任何权威。**
+- 产品目标、首版成果与业务取舍引用 [架构入口](architecture.md) 和既有用户/重构需求来源。
+- 包边界、装配、存储身份、运行配置、恢复与技术验收以本文指名正文为准；架构入口不重复维护这些规则。
+- 部门、资料室、员工生命周期、入职准入、头像和 ORG-13 仍引用 REFACTORING_DOCS_ROOT；本文不改其需求。
+- 文档格式与角色分别由 SOLOIP-DOC-001 与注册表负责。
 
 ## 3. 术语与边界
 
@@ -113,10 +127,10 @@
 | TERM-02 | bundle | dsh.profile.bundles 的条目；该数组决定 bundle patch 层的叠加序，之后另有 profile/home/launcher 层；服务激活不由数组位次保证 | 〔源码事实〕SOLO-C01/C02、§6.1 |
 | TERM-03 | profile | 声明 bundles 数组与部署设置的 DSH 装配清单；只负责组合依赖与部署设置，不是状态权威 | 〔约束〕承接 docs/architecture.md §6 既有表述 |
 | TERM-04 | 层（包职责标签） | 对插件包职责的文档性标签（装配层 = soloips-bundle、唯一状态包 = soloips-core、可丢弃层 = soloips-web），**无 DSH 运行时语义、不承载加载顺序**；soloips-tools-pv 的标签为「不 open domain」（含义见 DRAFT-D02），adapter 包的层标签待定稿 | 〔建议〕定稿权在队长/用户（TERM 冲突 C-5） |
-| TERM-05 | patch | 对配置文件中带行 id 的行执行的整行替换操作，非深合并 | 〔源码事实〕SOLO-C03 |
-| TERM-06 | 行 id | 配置行在 patch 机制中的稳定定位标识；patch 按「行 id → 整行替换」定位 | 〔源码事实〕SOLO-C03、SOLO-C04 |
+| TERM-05 | patch | 按 id 定位行后替换给出的顶层字段；其中 config 若给出则整体替换，非深合并 | 〔源码事实〕SOLO-C03 |
+| TERM-06 | 行 id | 配置行的稳定定位标识；多次 patch 可顺序覆写同一既有行，区别于 group 配置重复定义 entry ID | 〔源码事实〕SOLO-C03、SOLO-C04、SOLO-F03 |
 | TERM-07 | domain | DSH 持久化的命名状态域；同一 DomainFacility 实例内每个 domain name 只允许一个 opener；跨实例或跨进程独占另见 SOLO-FENCE-01 | 〔源码事实〕packages/storage/storage-domain/src/index.ts:65-72、103-107；基线附录 B 第 3 项 |
-| TERM-08 | 写权威 | 某类事实的唯一合法写入来源；首版建议由 soloips-core 持有业务写入口，其余包只读或经命令服务请求写入。不与人或角色的 owner 混用 | 〔需求〕ORG-06 要求实际独占；〔建议〕包归属见第 7 章 |
+| TERM-08 | 写权威 | 某类事实的唯一合法写入来源；ARCH-D02 规定 core 持有业务写入口，其余包只读或经命令服务请求写入，不与人或角色的 owner 混用 | 〔需求〕ORG-06 要求实际独占；〔约束〕包归属见 ARCH-D02 |
 | TERM-09 | 投影 | 由权威事实派生的只读视图（界面列表、计数、AGENTS.md 之于 project-binding.yaml）；投影不回写、不是第二事实来源，与 document-registry 的 role=projection 同义 | 〔约束〕引用 document-registry，不重抄定义 |
 | TERM-10 | 装配 | DSH 组合配置并按服务依赖激活插件的过程；bundle 层按数组叠加不等于插件顺序启动 | 〔源码事实〕SOLO-C01/C02、SOLO-F02/F04 |
 | TERM-11 | 组合 | 一次交付所选插件包 + profile + 版本锁定的静态构成清单；**组合是清单、装配是动作，不得互换** | 〔约束〕本文用词规则 |
@@ -125,19 +139,19 @@
 | TERM-14 | 回滚 | 恢复指定装配或状态检查点：装配回退须证明状态兼容；状态回退须有一致恢复点及明确的数据处置 | 〔建议〕SOLO-ROLLBACK-02、SOLO-ACC-06；默认根见 SOLO-DATA-01 |
 | TERM-15 | 底座 | 宿主运行时基础设施统称，本项目 = DSH 及其公开扩展点；旧稿「DSH 执行底层」为被取代同义词 | 〔约束〕用户 2026-09-15「DSH 是基础设施」（见 4.2 SOLO-R01） |
 | TERM-16 | 单包失败 | 须区分 bundle 解析、Loader 挂载、缺依赖 pending、客户端激活/稳态；不得从“某包出错”一概推出整个 profile 无法启动 | 〔源码事实〕SOLO-F01/F02/F04/F06；CLIENT-03 |
-| TERM-17 | 状态包 | open domain 持有持久状态的插件包；soloips-core 是唯一状态包 | 〔建议〕归属正文见第 5、7 章 |
+| TERM-17 | 状态包 | 持有业务 domain 的包；soloips-core 为所选唯一业务状态包，其他包不另持有该业务权威 | 〔约束〕ARCH-D02；真实写保护仍按 SOLO-FENCE-01 验证 |
 
-### 3.2 候选插件包清单与边界词表
+### 3.2 插件包清单与边界词表
 
-包清单是〔建议〕（来源与状态见 4.2 DRAFT-S02）。**正式边界以实际调用和状态归属为准**（docs/architecture.md §6）。本节只给术语与判据，包职责的可执行规则归第 5、6、7 章。
+包边界与分期交付为 ARCH-D02〔约束〕；包内接口与未采纳实现细节仍保持各自标注。正式写权威必须以实际调用和状态归属验证，不能由包名推导。
 
-| 候选包 | 一句话职责（〔建议〕） | 是否 open domain | 规则正文 |
+| 已选包（ARCH-D02） | 职责与细节标注 | 是否 open domain | 规则正文 |
 | --- | --- | --- | --- |
-| soloips-bundle | 装配层：组合依赖、profile 与 patch；唯一允许覆写官方行的包 | 否 | 第 6 章（SOLO-C01–C07） |
-| soloips-core | 唯一状态包：company + collaboration + artifacts + ip，内部按模块分目录，不拆包 | 是（唯一） | 第 5 章 5.1、第 7 章 7.4 |
-| soloips-adapter-dsh | 官方 seam 适配层，收敛所有 @deepseek-ai/* import | 否（第 5 章 5.1） | 第 5 章 5.1、第 7 章 |
-| soloips-web | 可丢弃视图层，client 注入 | 否 | 第 8、9 章 |
-| soloips-tools-pv | 制作工具 job，写 core 的 artifact domain | 否（含义见 DRAFT-D02） | 第 6 章 + 第 5 章 5.1 |
+| soloips-bundle | 〔约束〕装配职责；〔建议〕官方行仅经此包覆写，具体规则见第 6 章 | 否 | 第 6 章（SOLO-C01–C07） |
+| soloips-core | 〔约束〕唯一业务状态包：company + collaboration + artifacts + ip；内部模块化 | 是（唯一业务 opener 包） | 第 5 章 5.1、第 7 章 7.4 |
+| soloips-adapter-dsh | 〔约束〕DSH seam 适配职责；具体 import 契约见第 5 章 | 否（第 5 章 5.1） | 第 5 章 5.1、第 7 章 |
+| soloips-web | 〔约束〕可替换视图层；client 注入细节按第 9 章建议验证 | 否 | 第 8、9 章 |
+| soloips-tools-pv | 〔约束〕S1 制作工具适配；〔建议〕经 core 命令服务保存 job/产物（DRAFT-D02），不直接写 domain | 否（含义见 DRAFT-D02） | 第 6 章 + 第 5 章 5.1 |
 
 ### 3.3 边界判据（中性判据，供各章引用）
 
@@ -157,7 +171,7 @@
 | ID | 处理规则 | 决策边界 |
 | --- | --- | --- |
 | C-1 | Team 域指状态；collaboration 指 core 内模块；swarm 指实现来源插件；官方 Team face 指宿主接口 | 〔建议〕不互换含义 |
-| C-2 | 5 包候选见 DRAFT-S02；PKG-01–03 专用于新增持久业务状态包判据 | 〔建议〕不将 SOLO-A01 标为已取代，不复用 PKG-01 作取代 ID |
+| C-2 | 包边界见 ARCH-D02；PKG-01–03 专用于新增持久业务状态包判据 | 〔约束〕不复用 PKG-01 作取代 ID，产品分层仍保留 |
 | C-3 | 统一用 TERM-12“验收基线” | 〔约束〕本文术语 |
 | C-4 | 工作台是用户入口；soloips-web 是候选实现包；DSH Web 是宿主界面 | 〔建议〕分别保留 |
 | C-5 | 职责层不决定包数或启动顺序 | 〔建议〕旧产品分层仍有效 |
@@ -165,7 +179,7 @@
 | C-7 | DSH 基础设施统一称底座 | 〔需求〕SOLO-R01 |
 | C-8 | patch、append、回滚、行 id 使用 TERM-05/06/13/14 | 〔约束〕本文术语 |
 | C-9 | 源码基线与部署观察分开记录 | 〔约束〕附录 B |
-| C-10 | 含 core 的完整候选顺序只在 SOLO-C01 定义；5.4、SOLO-LAYER-01 引用它 | 〔建议〕最终装配层覆写此前插入的行；不升格为用户确认 |
+| C-10 | 完整与 S0 顺序只在 SOLO-C01 定义；5.4、SOLO-LAYER-01 引用它 | 〔约束〕ARCH-D02；服务启动先后仍不由数组位次保证 |
 | C-11 | 源码复核用〔源码事实〕；运行验收另给实际证据 | 〔约束〕SOLOIP-DOC-001 §2 |
 
 ### 3.5 本文不采用的概念
@@ -187,7 +201,7 @@
 
 ### 4.2 交付形态：用户要求与团队候选必须分开
 
-用户原话（Team 公开记录，作者 local-operator）已直接确立底座关系与交付形态；把功能**拆成哪几个插件包、怎么组合**是用户要求团队研究的问题，其结论仍是候选。
+用户原话（Team 公开记录，作者 local-operator）确立底座关系与交付形态；§1.4 的后续委托确立本稿所选技术约束，不能倒写成此前已逐项确认。
 
 | ID | 陈述 | 决策 | 来源（可核对） |
 | --- | --- | --- | --- |
@@ -195,13 +209,13 @@
 | SOLO-R02 | SoloIPs = 一组插件包 + 一个 profile，从 DSH 基础设施上组合起来；用户同时要求研究「如何拆分插件、优化组合方式」并先整理核心包 | 〔需求〕 | public-082313dc（15:46:11Z）、public-74132fa8（「先把核心包给我整理出来」） |
 | SOLO-R03 | 先落实一份架构草稿文档，按规范执行，队长与 QA 都要审查 | 〔需求〕 | public-45c5f8fa（16:00:58Z）；本文即该要求的交付物，交付状态仍为〔提案〕 |
 | DRAFT-S01 | 「SoloIPs 自身为主」的精确措辞（底座归 DSH、业务事实归 SoloIPs） | 〔建议〕 | 队长对成员意见的综合表述（public-27fd2c06，2026-09-15 15:44:07Z 前后，4/4 选路线 B）；**用户原话只说「DSH 是基础设施」**，故本条不得标〔需求〕 |
-| DRAFT-S02 | 5 个插件包清单（3.2）与锁定顺序（SOLO-C01） | 〔建议〕 | 队长综合 public-a6e12b45（2026-09-15 15:57:18Z，5/5 成员一致）；成员一致不构成确认；该消息本身列明「需要用户裁决」的 5 项 |
-| DRAFT-S03 | soloips-core 是唯一状态包；soloips-web 是可丢弃层 | 〔建议〕 | 判据 DRAFT-B01/B02/B05；归属正文见 5.1、7.4 与 CLIENT-09 |
+| DRAFT-S02 | 5 包边界、分期装配与 SOLO-C01 顺序 | 〔约束〕ARCH-D02 | 原团队方案为技术来源；生效依据为 2026-09-16 用户委托及 ARCH-D02，不以成员一致代替授权 |
+| DRAFT-S03 | core 持有唯一业务状态权威，web 为可替换视图层 | 〔约束〕ARCH-D02 | 业务单权威要求沿用 SOLO-A02/ORG-06；具体分包为受委托技术决定 |
 
-- **复合陈述拆分**：SOLO-R01/R02 是用户确立的；「拆成 5 个包」不是。二者不得合并成一条〔需求〕。
-- 反面声明：队长公开结论、成员 5/5 一致、本文或任一章的〔源码事实〕，都不构成交付形态的用户确认；交付形态的包数量取舍仍是用户的裁决项（见 12.1）。
+- **复合陈述拆分**：SOLO-R01/R02 是已有用户需求；5 包为受委托技术约束 ARCH-D02，二者不得合并成一条业务〔需求〕。
+- 历史成员一致不构成用户确认；本轮技术选型的授权来源单独保留在 §1.4。
 
-〔待决 DRAFT-D03〕DRAFT-S01/S02/S03 是否作为 S0 的实施边界提交用户确认。责任人：队长 + 用户。
+〔约束 DRAFT-D03〕DRAFT-S02/S03 按 ARCH-D02 纳入技术设计基线；S01 仅为术语建议。实际产品实现须有切片授权，不再重复询问已在 §1.4 决定的技术选择。
 
 ### 4.3 装配机制事实（集中登记，便于一次性复核）
 
@@ -209,20 +223,20 @@
 
 | ID | 陈述 | 证据标注 | 正文/反例 | 对交付形态的直接影响 |
 | --- | --- | --- | --- | --- |
-| MECH-01 | bundles 决定 bundle patch 层序；层内 patch 依列表遍历；其后还有 profile/home/launcher 层；服务激活依赖就绪情况 | 〔源码事实〕§6.1、SOLO-C02 | SOLO-C01、SOLO-ACC-CE-A | 配置覆盖序与服务激活先后分别验收 |
-| MECH-02 | patch 是整行替换，不是深合并；被替换行的 config 必须整行重述 | 〔源码事实〕（同上） | SOLO-C03；SOLO-FAIL-01、SOLO-FAIL-10、CLIENT-F03、CLIENT-X06 | 静默丢字段风险；覆写官方行必须整行重述 |
-| MECH-03 | dsh plugin add 只 append，无排序语义 | 〔源码事实〕（同上） | SOLO-C01 依据 2；SOLO-FAIL-03；SOLO-LAYER-02 | 插入位置需靠 patch 行写入，装配不能靠安装顺序 |
-| MECH-04 | DSH 不提供跨包事务 | 〔推断〕+〔未验证〕：qa-hy4 未取得正面源码证据，检索无结果不等于证明不存在；队长公开结论把它表述为事实 | SOLO-ACC-CE-G（保持〔提案〕）；DEP-D05、ORG-07 | 多域写入不承诺共同原子提交；实现阶段必须重核（DRAFT-D05） |
+| MECH-01 | bundles 决定 bundle patch 层序；层内 patch 依列表遍历；其后还有 profile/home/launcher 层；服务激活依赖就绪情况 | 〔源码事实〕apps/cli/src/profile-boot.ts:206-213；packages/boot/app-boot/src/profile.ts:784-793；vendor/include/src/index.ts:77-124；packages/bundle/base/cordis.patch.yml:12-13 | SOLO-C01/C02、SOLO-ACC-CE-A | 配置覆盖序与服务激活先后分别验收 |
+| MECH-02 | 命中行的顶层字段按键赋值；提供 config 时整体替换 config，不做深合并；未给出的顶层字段保留 | 〔源码事实〕vendor/include/src/index.ts:121-124；packages/bundle/base/cordis.patch.yml:6-10 | SOLO-C03；SOLO-FAIL-01、SOLO-FAIL-10、CLIENT-F03、CLIENT-X06 | 覆写 config 必须重述所需字段，不能推断整行所有字段都被删除 |
+| MECH-03 | reconcile 将新发现的 bundle 追加到数组，不重排已有项；失去声明的受依赖管理项会移除 | 〔源码事实〕apps/cli/src/plugin.ts:65-69、77-90 | SOLO-C01 依据 2；SOLO-FAIL-03；SOLO-LAYER-02 | 交付维护完整 bundles 与 patch 顺序，不能把安装先后当完整装配合同 |
+| MECH-04 | 当前设计不得依赖未经证明的跨 domain 原子提交 | 〔未验证〕DRAFT-D05：尚未取得目标存储组合的跨 domain 事务正面证据；检索无结果不证明能力不存在 | SOLO-ACC-CE-G（保持〔提案〕）；DEP-D05、ORG-07 | 多域写入不承诺共同原子提交，具体能力在实现切片核实 |
 | MECH-05 | already-open 只拦截同一 DomainFacility 实例内的同名 open；默认 JSON 后端无跨进程写锁 | 〔源码事实〕2026-09-16 复核，storage-domain/src/index.ts:65-72、103-107；storage-json/README.md:142（均位于 packages/storage/） | §7.2、SOLO-FENCE-01、SOLO-ACC-02/09；ORG-06 | 同实例 open 与跨 Host 独占分别验收；缺少后者不能启用公司写入 |
-| MECH-06 | bundle 无法解析或缺少声明时组合失败；挂载错误、pending 与客户端稳态另有边界 | 〔源码事实〕解析路径，运行影响待目标验证 | SOLO-F01/F02/F04、CLIENT-03 | 按实际阶段评估失败范围，不由包数推导全部结果 |
-| MECH-07 | dsh plugin 无回滚（就地写 manifest，无快照） | 〔源码事实〕（同上） | SOLO-F07；SOLO-ACC-06；SOLO-ACC-CE-D；SOLO-ROLLBACK-01/02/03 | 装配与状态分别恢复；数据根、兼容性与一致检查点见 SOLO-DATA-01–04、SOLO-ACC-06 |
-| MECH-08 | 升级后包丢失 dsh.bundle 声明会被静默移出 bundles（profile 照常启动、功能消失） | 〔源码事实〕（同上） | SOLO-F05；SOLO-ACC-CE-E；SOLO-FAIL-04 | 必须用生效树核对，不能只看 bundles 数组（SOLO-REG-04） |
-| MECH-09 | patch 目标行不存在只告警不阻断；用户层最后写赢 | 〔源码事实〕（同上） | SOLO-F06；SOLO-FAIL-02；SOLO-ACC-CE-C；SOLO-REG-Q5 | 退出码 0 不代表组合正确；patch 告警应按错误处理 |
-| MECH-10 | patchReload: live 下磁盘组合与进程组合可分离 | 〔源码事实〕（同上）；55120 实际取值见附录 B | SOLO-F08；SOLO-ACC-05；SOLO-ACC-CE-H | 直接冲击 S0「写入→停止→重启→读回」验收口径 |
+| MECH-06 | bundle 无法解析或缺少声明会拒绝本次 profile 加载；后续挂载、pending 与客户端稳态分别处理 | 〔源码事实〕packages/boot/app-boot/src/profile.ts:749-756、784-793；vendor/cordis/README.md:65；目标运行影响〔未验证〕 | SOLO-F01/F02/F03/F04、CLIENT-03 | 按实际阶段评估失败范围，不由包数推导全部结果 |
+| MECH-07 | runPlugin 路径不提供应用级安装快照或失败恢复；实际残留由安装器与失败阶段决定 | 〔源码事实〕apps/cli/src/plugin.ts:120-162 | SOLO-F07；SOLO-ACC-06；SOLO-ACC-CE-D；SOLO-ROLLBACK-01/02/03 | 装配与状态分别恢复；不从此推断安装器所有内部行为 |
+| MECH-08 | 失去 dsh.bundle 的受依赖管理项被移出 bundles；该移除分支不发专门告警 | 〔源码事实〕apps/cli/src/plugin.ts:70-75、77-90 | SOLO-F05；SOLO-ACC-CE-E；相关普通依赖场景见 SOLO-FAIL-04 | 核对完整生效树与功能入口，其他层仍可能接入该能力 |
+| MECH-09 | 未命中/不匹配分支调用 warn 后跳过；日志可见性由调用入口决定，覆盖次序包含 launcher 层 | 〔源码事实〕vendor/include/src/index.ts:83-90、110-119、267-270；packages/boot/app-boot/src/profile.ts:841-847；apps/cli/src/profile-boot.ts:206-213 | SOLO-F06；SOLO-FAIL-02；SOLO-ACC-CE-C；SOLO-REG-Q5 | 退出码不能替代组合断言；局部 warn/skip 不保证整个启动结果 |
+| MECH-10 | live 更新未完成、被拒或恢复旧配置时，磁盘候选与运行树可能不同 | 〔源码事实〕apps/cli/src/profile-boot.ts:328-333、350-381；vendor/include/src/index.ts:296-319；vendor/hmr/src/index.ts:305-315 | SOLO-F08；SOLO-ACC-05；SOLO-ACC-CE-H | 旧树保留受回滚是否成功限制；冷启动与状态读回分别验证 |
 
 〔未验证 DRAFT-D04〕各阶段失败范围见 TERM-16、MECH-06、SOLO-F02 与 CLIENT-03；组合解析、Loader 挂载、客户端激活及稳态须分别核对，具体目标运行表现待 S0 验证。
 
-〔待决 DRAFT-D05〕MECH-04（无跨包事务）的标注分歧：队长公开结论按事实表述，qa-hy4 标注为推断且未取得正面证据。责任人：backend-deepseek（第 5、7 章）、qa-hy4。
+〔待决 DRAFT-D05〕目标存储组合的跨 domain 事务能力尚未验证。实施者按 MECH-04、ORG-07 核对实际公开契约与提交边界；能力未证时设计不得依赖共同原子提交，不把历史成员结论当作能力不存在的证据。
 
 ### 4.4 重构文档既有约束（指针，不复制正文）
 
@@ -237,7 +251,7 @@
 | DEP-A01–DEP-A11 | 上述要求的验收场景 | 02-company-contract.md | 第 11 章验收合同的既有来源，本文不重复设计 |
 | DEP-O01–DEP-O07 | 人事权、人格初始化、跨部门协作、知识保留边界、审计组织等待决 | 02-company-contract.md | 保持〔待决〕，不得因本文整理而升格 |
 | ORG-01–ORG-13 | 公司根与暂停入口、完整入职与增量复核、文件不授权、私人资产、**实际单 writer（ORG-06）**、准备/撤权/接管分开、分层归属、自主与交接、入口分离、先审查再纵向交付、上游故障停线 | 02-company-contract.md | ORG-06 要求跨 Host 独占；ORG-11 否决准入旁路；ORG-13 已确认正文在 §11.9，验收 ORG-A09/A10 在 §11.8；本稿承接见 SOLO-F09、SOLO-ACC-07/08 |
-| AVATAR-64-01–AVATAR-64-05 | 仅原生 64、偏好、读写与展示一致性、提示词与反例要求 | 04-avatar-64.md | 入职必需项不降为可选（→ ORG-03）；AVATAR-64-01 的「先存文本资料、回读、再生成头像」顺序在本文作者装配自身头像时已被实证可行 |
+| AVATAR-64-01–AVATAR-64-05 | 仅原生 64、偏好、读写与展示一致性、提示词与反例要求 | 04-avatar-64.md | 入职必需项不降为可选（→ ORG-03）；执行顺序按原需求验证，个人经历不作为目标候选的运行证据 |
 | — | 纵向交付顺序、缺项反例、候选集成与实际安装验收 | 03-delivery-and-acceptance.md | 第 11 章验收合同的现行正文；SOLO-REG-04 的〔需求〕来源 |
 
 〔推断〕上表中 DEP-D/R/A/O 按 02-company-contract.md 章节含义归类；具体条目及决策状态以来源正文为准。
@@ -248,10 +262,10 @@
 
 | 红线 | 对本文形态的直接后果 |
 | --- | --- |
-| 用户是产品目标与最终验收的唯一决定者 | 4.2 的形态候选必须由用户裁决（包数量、patchReload、profile 名、发布形态、与 swarm 的关系） |
+| 用户是产品目标与最终验收的唯一决定者 | ARCH-D01–07 仅落实受委托文档/技术决定，不确认新业务需求，不替代产品验收 |
 | 上游 API 鉴权、额度、QPS、连接或流中断错误：首次发现立即停止受影响动作并通知用户；不自动重试、不换路由、不归档、不删除、不批量取消 | SOLO-F09、SOLO-ACC-07/08 承接 ORG-13；外部通知占位不阻塞站内停线 |
 | 不改凭据、不启新服务、不开原生 Windows 终端或目录选择窗口 | 本文所有核对均为只读；55120 的部署不因本文改变 |
-| 不修改既有权威（本次只写本文一个文件） | 注册表登记动作待 DRAFT-D01 决定后由获授权者执行 |
+| 单一权威与授权修订 | 按 ARCH-D01 同步本技术正文、产品入口与注册表，不建立同题副本 |
 | 安装启用 ≠ 实际调用；构建成功 ≠ 产品验收 | 所有「可用」陈述必须区分装配、调用、验证三层（SOLO-REG-04、第 11 章） |
 | 未获用户明确授权，不开展产品实现 | 本文与各章只产出文档候选 |
 
@@ -263,19 +277,21 @@
 
 作者：backend-deepseek。本章范围：包级边界与状态归属；包内模块划分见第 7 章；业务对象字段定义不在本章。本章依据：SOLO-A01（独立产品仓库 + 插件与 Profile 组合）、第 7 章状态归属与写权威。本章证据：组合机制为〔源码事实〕（app-boot、bundle patch 头注释）；包划分为〔提案〕。
 
-### 5.1 包清单（5 个）
+### 5.1 首版包边界与分期交付（5 个）
 
-〔建议〕首版收敛为 5 个包。每包是否 open domain 必须显式声明；§7.2 的同实例唯一 opener 不替代 SOLO-FENCE-01 对真实写路径的跨进程保护。
+〔约束〕ARCH-D02 确立以下 5 个包的职责边界与统一交付方式。S0 不装配尚未交付的 tools-pv；S1 加入后形成完整首版。每包是否 open domain 必须声明，同实例唯一 opener 不替代跨进程 fence。
 
 | 包 | 职责 | 状态归属 | 依赖方向 | 是否 open domain |
 | --- | --- | --- | --- | --- |
-| soloips-bundle | 装配层：携带 dsh.bundle.patch，以有序 patch 叠加定义首版组合；不含运行时代码 | 无业务状态（仅装配声明） | 被 profile 引用；不依赖其它 SoloIPs 包 | 否 |
+| soloips-bundle | 装配层：携带 dsh.bundle.patch，以有序 patch 叠加定义首版组合；不含运行时代码 | 无业务状态（仅装配声明） | 被 profile 引用；无业务运行时 import，profile 仍须安装 patch 引用的完整能力集合 | 否 |
 | soloips-core | 唯一状态包：Team 聚合（成员/任务/尝试/消息/预算/目标/记忆）、组织与准入、资料室、IP 业务对象 | **全部可写业务状态的唯一归属** | 依赖 soloips-adapter-dsh；被 soloips-web、soloips-tools-pv 经服务消费 | **是（唯一 opener）** |
 | soloips-adapter-dsh | 适配层：把 DSH 官方 seam（storage-domain、subagent、session、tools、events）包装为 SoloIPs 内部接口 | 无自有业务状态；不持有权威 | 依赖 DSH 官方包；被 soloips-core 依赖 | 否 |
-| soloips-web | 界面层：工作台读投影与交互（首版复用 DSH Web 插槽） | 无权威；仅消费投影 | 依赖 soloips-core 的只读服务 | 否 |
+| soloips-web | 界面层：工作台读投影与交互（首版复用 DSH Web 插槽） | 无业务写权威；读投影、提交操作意图 | Host 桥依赖 core 的查询/命令服务；Client 只用公开 client API 与安全契约（DEV-04） | 否 |
 | soloips-tools-pv | PV 制作工具适配：提交生成请求、保存 jobId、查询、取回结果与失败信息 | 不持有业务权威；外部 jobId 与结果按第 7 章由 core 落库 | 依赖 soloips-adapter-dsh；经服务回写 core | 否 |
 
-〔建议〕首版由 soloips-core 统一持有业务 domain。〔源码事实〕现有 dsh-agent-swarm 在同一包内打开多个 domain，见 src/storage/team-spec.ts:346、member-private-memory.ts:98、workflow-run-overlay.ts:79 与 src/human/human-interaction-store.ts:194（附录 B 第 3 项）。这些调用不证明跨进程独占。
+〔约束〕ARCH-D02 由 soloips-core 持有业务 domain。〔源码事实〕现有 dsh-agent-swarm 在同包内打开多个 domain（附录 B 第 3 项），这只说明同包承载方式，不证明跨进程独占。
+
+各包的源码目录、公开入口与开发/profile 锁落点见[代码开发规范 §2.1–2.2](governance/code-development-standard.md)；本文只维护职责与装配权威，不再复制目录树。
 
 ### 5.2 建包判据
 
@@ -305,9 +321,9 @@
 
 〔建议〕完整数组及变更规则只定义于 SOLO-C01；本节不维护第二份顺序。装配层最后应用，以覆写此前已插入的行；服务激活由 inject/service 可用性决定。
 
-C-10 的候选顺序按 SOLO-C01 统一；后续修改须同步验收基线。
+C-10 的顺序按 SOLO-C01 统一；后续修改须同步验收基线。
 
-〔源码事实〕patch 是**整行替换而非深合并**：packages/bundle/base/cordis.patch.yml:6-7「A patch replaces the targeted row's whole config rather than merging into it」；packages/bundle/web-app/cordis.patch.yml:5-6 同义重述。
+〔源码事实〕patch 的 config 整体替换语义与精确字段边界统一见 SOLO-C03；包拆分必须计入覆写字段形成的依赖面。
 
 〔源码事实〕新增 bundle 追加机制见 MECH-03，安装路径不提供自动回滚见 MECH-07。各阶段失败范围见 TERM-16、SOLO-F02；具体目标运行表现仍为〔未验证〕，不得把源码证据扩为任意单包错误均导致整个 profile 失败。
 
@@ -327,9 +343,9 @@ C-10 的候选顺序按 SOLO-C01 统一；后续修改须同步验收基线。
 
 **〔源码事实〕** 层不是逐层应用，而是**一次性扁平化后单次应用**：apps/cli/src/profile-boot.ts:336 以 structuredClone(allPatches(composed)) 调用 boot；packages/boot/app-boot/src/index.ts:441-449 的 snapshot() 亦把前 k 层 flatMap 后一次性交给 applyEntryPatches。**后果**：不存在「层间事务」或「部分应用成功」的中间态，只有「最后写入者生效」。
 
-### 6.2 唯一候选 bundles 顺序（SOLO-C01）
+### 6.2 唯一 bundles 顺序
 
-**〔建议〕** dsh.profile.bundles 的首版完整候选如下。包数量仍属 DRAFT-S02；此顺序不代表用户已批准实施。
+**〔约束〕** 按 ARCH-D02 采用以下首版完整 bundles 顺序；S0 暂不列入 soloips-tools-pv，其余相对顺序保持不变，S1 工具包真实交付后加入指定位置。不允许引用未发布或空占位包：
 
 ~~~text
 @deepseek-ai/dsh-base
@@ -355,7 +371,7 @@ soloips-bundle
 
 **边界**：移动 Loader 行不能保证它先激活；移动同文件内的 patch 指令或 bundles 位次则可能改变配置覆盖结果。两者须分别核对，不能一概称“yml 行序无影响”。
 
-### 6.4 patch 是整行替换，不是深合并（SOLO-C03）
+### 6.4 patch 顶层字段替换，config 不做深合并（SOLO-C03）
 
 **〔源码事实〕** 覆盖语义为逐键替换目标行：vendor/include/src/index.ts:78 取 patch 中 id、insert、name 之外的键作为 overrides，:121-124 对每个 override 键执行 target 键赋值。因此 **config 对象整体被替换，不做深合并**。
 
@@ -387,7 +403,7 @@ soloips-bundle
 | pnpm-workspace.yaml | 必须入 | profile 自有，决定 pnpm 链接行为与 allowBuilds |
 | cordis.yml | 建议忽略 | 启动器每次重写为空根（profile-boot.ts:190），入 git 只产生噪声与误改 |
 
-**〔源码事实〕** 版本约束**不被运行期强制**：packages/util/package-manifest/src/types.ts:39-49，engines.dsh 的注释明确写「DSH compatibility is declarative until a reader enforces it」；作者在 packages/ 下检索 engines.dsh 的读取点命中数为 0。即：**写 engines.dsh 不会阻止不兼容组合启动。**
+**〔源码事实〕** packages/util/package-manifest/src/types.ts:21-22 明确版本兼容声明需要 reader 执行；:39-49 定义 engines 字段，类型声明本身不执行兼容检查。**〔未验证〕** 作者在 packages/ 下检索 engines.dsh 的读取点无命中，不足以证明完整启动链没有其他校验。交付者必须核对目标 reader/安装入口；仅写 engines.dsh 不能作为不兼容组合一定被拒的证据。
 
 **〔建议〕** 版本锁只认三处：pnpm-lock.yaml、dependencies 中的精确来源（tarball 文件名或 pinned commit），以及 --dump-config 基线快照（6.7）。不要把 engines.dsh 当作保护。
 
@@ -411,21 +427,21 @@ soloips-bundle
 
 **〔源码事实〕** 同名内置 profile 的模板会在首次使用时被写入并可能被「规范化」覆盖：profile.ts:689-711 的 normalizeShippedProfile 在 bundle 列表等于内置元组或缺少 patchReload 默认值时**回写 manifest**。
 
-**〔建议〕** SoloIPs 使用独立 profile 名（建议 soloips），不复用 web。理由：web 属于内置模板，其 bundle 列表可能被 normalizeShippedProfile 写回；且 patchReload 默认 live（profile.ts:112-113）。独立名可用 --from-default-profile web 一次性复制模板（apps/cli/src/profile-boot.ts:104-154，只复制模板 bundle 列表与 patchReload，不复制源 profile 的本地装配文件；同 home 默认仍共享业务状态，见 SOLO-DATA-01）。
+**〔约束〕** ARCH-D04 选用 profile 名 soloips，不复用内置 web；正式与验收显式配置 patchReload: startup。若用 --from-default-profile web 起底，必须再将继承的 live 改为 startup 并核对 dump。该命令不复制源 profile 的本地装配文件，同 home 仍共享默认业务根（SOLO-DATA-01）。
 
-**〔待决〕** profile 最终名、以及是否允许同一台机器并存 soloips-dev 与 soloips，需用户确认（并入 12.1，与队长公开结论 public-a6e12b45 第六节裁决项 3 合并）。
+**〔约束〕** profile 名与环境并存方式已由 ARCH-D03/04 决定：同一个 soloips 定义在独立 home 部署；不靠 soloips-dev 名称证明隔离。
 
 ### 6.9 本章稳定 ID 汇总
 
 | ID | 内容 | 状态 |
 | --- | --- | --- |
-| SOLO-C01 | 唯一候选 bundles 顺序与新增包校验 | 〔建议〕（顺序正文只在 §6.2） |
+| SOLO-C01 | 完整与 S0 分期 bundles 顺序 | 〔约束〕ARCH-D02，唯一正文 §6.2 |
 | SOLO-C02 | yml 行序无加载语义 | 〔源码事实〕 |
-| SOLO-C03 | patch 整行替换，非深合并 | 〔源码事实〕 |
+| SOLO-C03 | patch 顶层字段替换；config 整体替换，非深合并 | 〔源码事实〕 |
 | SOLO-C04 | 行 id 前缀 + 单行单写者 | 〔建议〕 |
 | SOLO-C05 | profile 三件套入 git 与版本锁落点 | 〔建议〕 |
 | SOLO-C06 | --dump-config 作为组合回归门禁 | 〔建议〕 |
-| SOLO-C07 | 独立 profile 名策略 | 〔待决〕 |
+| SOLO-C07 | soloips 名称与 startup 策略 | 〔约束〕ARCH-D03/04 |
 
 ### 6.10 DSH_HOME 与多 profile 数据根（SOLO-DATA-01–04）
 
@@ -441,7 +457,7 @@ soloips-bundle
 
 **〔推断〕** 默认同 home 多 profile 共享业务存储、Session 根与 home overlay。新建 profile、更名或 --patch 不自动隔离状态。上述为默认源码事实；具体部署可覆写 root，必须核对生效配置与实际 backend 路由，不能冒充 PROFILE-55120 的新实测。路径 resolve 不证明 realpath、大小写别名或链接已经归一。
 
-**SOLO-DATA-02〔建议〕最小环境规划。** 一个交付 profile 可部署到不同 home；验证用 home 不改变 SOLO-R02 的产品交付形态。
+**SOLO-DATA-02〔约束〕最小环境规划。** ARCH-D03 决定一个交付 profile 分别部署到生产、验证与恢复 home，符号和实际根绑定如下：
 
 | 符号 | 用途与边界 |
 | --- | --- |
@@ -458,7 +474,7 @@ soloips-bundle
 
 ## 7. 状态归属与写权威
 
-作者：backend-deepseek。本章范围：写权威归属、原子边界、必须同包清单、判定规则 R1–R4、跨域一致性范式、ORG-05 占用裁定。本章依据：SOLOIP-DOC-001、DEPT/LIB 与 DEP/ORG 重构要求、本轮架构论证。本章证据：基线为 DSH_CHECKOUT（根包 0.1.5-rc.2，HEAD c291e7961a515f6d7af9304e7fd1d257929aef26）与 packages/.external/dsh-agent-swarm 0.1.4；company-core 候选为独立 worktree。机制部分为〔源码事实〕；R1–R4 与包划分建议为〔建议〕；ORG-05 裁定为〔建议〕并标出需用户裁决点。
+作者：backend-deepseek。本章范围：写权威归属、原子边界、必须同包清单、判定规则 R1–R4、跨域一致性范式、ORG-05 占用裁定。本章依据：SOLOIP-DOC-001、DEPT/LIB 与 DEP/ORG 重构要求、本轮架构论证。本章证据：基线为 DSH_CHECKOUT（根包 0.1.5-rc.2，HEAD c291e7961a515f6d7af9304e7fd1d257929aef26）与 packages/.external/dsh-agent-swarm 0.1.4；company-core 候选为独立 worktree。机制部分为〔源码事实〕；R1–R4 为实现建议，包边界按 ARCH-D02 为技术约束；ORG-05 裁定为〔建议〕并标出需用户裁决点。
 
 ### 7.1 核心命题：原子更新绑定 domain handle 内的单次记录操作
 
@@ -477,6 +493,8 @@ soloips-bundle
 〔源码事实〕packages/storage/storage-json/README.md:142 明确无跨进程写锁；src/atomic.ts:24-35 的随机临时文件创建与 rename 是整文件替换，不是目标数据根的跨进程独占。
 
 **边界**：同一 facility 内，不同包或同包的第二次同名 open 会被拒；另一个 facility、进程或 Host 不共享此 Set。异名 domain 也可能重复保存同一业务事实。命名边界、包边界与 ORG-06 所要求的真实存储独占须分别说明；跨进程设计见 SOLO-FENCE-01，验收分别见 SOLO-ACC-02/09。
+
+〔源码事实〕packages/storage/storage-domain/src/spec.ts:1-9 定义 spec 是一个 domain 的身份、布局与记录 schema 的唯一来源，由 owning package 用 defineDomain 定义一次。〔建议〕拆包的 opener 检查沿用 R2，并同时核对业务事实、实际介质与 SOLO-FENCE-01，不能只比对名字是否相交。
 
 ### 7.3 Team 聚合不可切：参与 revision CAS 的状态必须与其计数同记录
 
@@ -569,15 +587,15 @@ nextMemoryNumber, createdAt, updatedAt
 | WA-F6 | per-scope 锁被复制成每包一份 | at-most-one-active-Team 保证失效（team-store.ts:238-246 明确警告） |
 | WA-F7 | Team 持锁反向等待组织临界区 | 死锁；违反 :213 固定顺序 |
 
-### 7.9 待决与需用户裁决
+### 7.9 已选边界与待验证接线
 
-〔待决 DRAFT-D07-D1〕**拆包粒度**：现有插件把多个 domain 放在一个包内，同实例命名隔离见 §7.2；实际存储独占另见 SOLO-FENCE-01。拆成多包的主要收益是**可独立发布**，代价是跨包栅栏与加载顺序管理。是否值得，需用户裁决（与队长公开结论裁决项 1 合并）。
+〔约束 DRAFT-D07-D1〕包数与交付粒度按 ARCH-D02：首版 5 包边界、同仓统一版本锁，S0 按所需四包装配；后续拆出独立发布单元须有实际需求证据。
 
-〔待决 DRAFT-D07-D2〕**组织域是否分包**：直接决定 7.7 裁定的落地形态（同包 = 由 soloips-core 单一 opener 持有；分包 = 必须为占用权威设计跨包栅栏）。
+〔约束 DRAFT-D07-D2〕组织域留在 soloips-core，不新增独立组织状态包；跨域调用与原子边界仍按 ORG-05/07 验证。
 
 〔待决 DRAFT-D07-D3〕**agent_swarm domain name 的最终 owner**：〔源码事实〕repair-release 与 company-core 的 src/storage/team-spec.ts:346 声明**同一个** team domain，历史报告称二者分叉（单方向 git merge-base --is-ancestor 退出码 1 只证明该方向非祖先，完整关系待双向核对；前者独有 avatar-preference.ts、team-recovery.ts，后者独有 organization-*.ts、delivery-evidence.ts）。两个包若通过同一 facility 打开同名 domain 则 already-open；另造 facility/Host 不在该保证内。仍须指定唯一业务写入口并保护其实际介质。
 
-〔未验证〕company-core 的 getEmployeeOnboardingGaps（src/domain/organization-assets.ts 附近）是否满足 ORG-03 完整准入、以及 ORG_ALLOW_LEGACY_UNBOUND 是否已移除，本次未逐条复核，实施前须验证。（写者注：docs/architecture.md §4 已把同两条缺口记为「必须在正式业务入口启用前修正」，两者一致，不构成本文内的冲突。）
+〔源码事实〕2026-09-16 复核 COMPANY_CORE_CHECKOUT（附录 B 第 9 项，HEAD 4c6d05ef30452df2b7adbfb24d625aef4e58f239）：src/domain/organization-assets.ts:232-240 的 getEmployeeOnboardingGaps 只检查 profileRef/avatarText 是否缺省；src/domain/organization-admission.ts:135-139 在 session 无 binding 时返回 ORG_ALLOW_LEGACY_UNBOUND。它们尚不能满足 ORG-03 完整入职与公司入口的绑定要求，须在正式业务入口启用前修正，验收见 SOLO-ACC-04。该观察只证明指名候选的源码行为，不证明目标安装已采用它或场景已通过；全文准入候选证据统一引用本段。
 
 〔反面声明〕本章描述的是**写权威归属**，不蕴含「已实现」。所有 soloips-* 包均为〔提案〕，尚无代码；现有证据来自 dsh-agent-swarm 0.1.4 与 company-core 候选，**不等于** SoloIPs 已具备这些性质。
 
@@ -587,17 +605,32 @@ nextMemoryNumber, createdAt, updatedAt
 
 **〔源码事实〕可复用候选。** COMPANY_CORE_CHECKOUT（附录 B 第 9 项）已有以下代码；这不证明目标安装包已接线或通过运行验收：
 
-| 落点 | 本次读到的机制 | 已证边界 |
+| 候选源码位置 | 本次读到的机制 | 已证边界 |
 | --- | --- | --- |
 | src/storage/company-writer-store.ts:66-94 | commit 在 withFileLock 窗口内检查恢复状态、writer fence，再执行 publish | 只覆盖确实经过该 commit 的发布回调 |
 | src/storage/company-writer-lease.ts:418-434 | 重读 holder 与 generation counter，失权时拒绝 | 单独检查后再无锁写入仍不足 |
 | src/plugin/company-stack.ts:129-152 | 同一 storageRoot 构造 JSON backend、facility 并 acquire lease，然后打开组织服务 | 启动时持 lease 不证明每个持久提交都受 fence |
 | src/plugin/config.ts:208-212 | 检查 root 非空且无首尾空格 | 该检查不完成实际路径身份规范化 |
-| src/domain/organization-assets.ts:77-81、119-140 | 通过传入 facility 打开 domain；绑定入口直接 employees.put | 这条已读调用链未由 CompanyWriterStore.commit 包裹，须补真实提交点接线证据 |
+| src/domain/organization-assets.ts:77-81 | 优先取 input.facility；缺省时回退到 input.ctx?.storageDomain，再直接 open | open 自身不检查 lease；公司入口必须排除回退路径和任意未受保护 facility，不能以正常装配传入了专属 facility 证明所有打开路径安全 |
+| src/domain/organization-assets.ts:57-58、94-106 | 实例上的 Promise Map 串行，源码明确为 process-local | 不是跨进程保护；下列直接表写没有在这些方法内部经 CompanyWriterStore.commit 发布 |
+
+〔源码事实〕同一 COMPANY_CORE_CHECKOUT 候选中，组织资产服务有以下 **7 个公开写方法、8 个 put/delete 点**；行号均相对 src/domain/organization-assets.ts：
+
+| 写方法 / 入口行 | 持久写点 | 必须纳入的验证 |
+| --- | --- | --- |
+| bindEmployeeSession:119 | employees.put:140 | 绑定的唯一性与失权后发布拒绝 |
+| createAppointment:156 | appointments.put:170 | 任职创建的真实提交 |
+| setEmployeeProfile:182 | employees.put:194 | 资料更新的真实提交 |
+| revokeAppointment:202 | appointments.put:210 | 撤销任职的真实提交 |
+| bindExecutionBinding:266 | bindings.put:294 | 执行绑定的真实提交 |
+| savePersonalAsset:327 | versions.put:355；校验失败清理 versions.delete:358 | 正常保存与失败清理均受写权保护 |
+| promotePersonalAsset:375 | currents.put:399 | current 指针推进与失权拒绝 |
+
+src/domain/organization-departments.ts:205、250 另有部门创建/生命周期的直接表写。上述清单是已核的最小集合；Team、迁移和恢复的完整提交点仍须实施者枚举。正常公司装配（company-stack.ts:129-152）先 acquire 再打开 domain，不能把仅在启动时持 lease 外推成每个直接表写已受提交保护。
 
 **〔建议〕最小接入合同。** 优先复用并修齐该候选，通过 DSH 公开存储/服务扩展点装配；不把自建分布式共识列为前置。
 
-1. **actor / precondition**：Host 的公司写入口启用前，把 SOLOIPS_STORAGE_ID 解析为真实存储身份；backend、lease 与恢复操作必须指向同一介质及保护集合。实际支持的相对路径、链接与平台别名必须落到同一独占键。
+1. **actor / precondition**：Host 的公司写入口启用前，把 SOLOIPS_STORAGE_ID 解析为真实存储身份；backend、lease 与恢复操作必须指向同一介质及保护集合。实际支持的相对路径、链接与平台别名必须落到同一独占键。生产公司入口须拒绝缺少受保护 facility/有效写权的调用；复用候选的 ctx.storageDomain 回退与任意 facility 注入不能成为绕过途径，测试或兼容入口如需保留须证明与正式可写入口隔离。
 2. **action**：在装载可写 domain/缓存前取得跨进程写权。枚举公司、Team、迁移、恢复等所有权威写入口；资格检查后到真实持久发布之间，必须持有接管方同样遵守的跨进程互斥窗口，或使用在存储提交点验证的等价 fencing。只在启动、claim 入口或提示词里检查不够。
 3. **scope / outcome**：旧 writer 失权后，包括它已持有的 domain handle、排队任务和恢复写路径，均不能发布。后继取得新代际后重开 domain、重建缓存并核对未决 operationId；恢复完成前不接受新任务。跨域顺序仍按 ORG-05/07，不承诺跨域原子提交。
 4. **failure / recovery**：锁状态未知、心跳故障、失权、root 不一致或恢复窗口未关闭时，拒绝受影响写入并保留事实与诊断。崩溃遗留锁按经验证的维护恢复协议处理，不按文件年龄擅自清锁；在线入口不能绕过停写边界。
@@ -615,7 +648,7 @@ nextMemoryNumber, createdAt, updatedAt
 | --- | --- | --- |
 | L-F1 | profile 的装配单元是 loader row（具名行），行由 id 标识；组合是把若干 patch 层按序作用在一个空根 entry list 上 | 〔源码事实〕packages/boot/app-boot/src/profile.ts:5-13、:784-798；apps/cli/src/profile-boot.ts:84-88（根是空 entry list，注释要求改 cordis.patch.yml 而非 cordis.yml） |
 | L-F2 | 一层的 patch 命中同 id 行时整行替换其 config，不做深合并；后写层胜出 | 〔源码事实〕packages/bundle/base/cordis.patch.yml:2-4、:6-10 |
-| L-F3 | yml 内的书写行序不携带加载语义；实际启动由服务可用性驱动 | 〔源码事实〕同上文件 :12-13 |
+| L-F3 | yml 配置行的书写顺序不保证服务激活先后；同层 patch 指令仍按列表执行 | 〔源码事实〕packages/bundle/base/cordis.patch.yml:12-13；vendor/include/src/index.ts:77；SOLO-C02 |
 
 推论（〔推断〕，前提为 L-F2 + L-F3）：层顺序只决定「谁的 config 最终生效」，不决定「谁先启动」。因此任何跨包状态依赖必须走服务声明（inject），不得用层顺序表达。
 
@@ -623,19 +656,19 @@ nextMemoryNumber, createdAt, updatedAt
 
 | ID | 规则（actor · trigger · action · scope · outcome） | 标注 |
 | --- | --- | --- |
-| SOLO-LAYER-01 | actor：装配维护者。trigger：发布或调整包组成。action：只维护 SOLO-C01 的完整顺序，并按 SOLO-C06 回读生效组合。scope：全部交付 profile。outcome：声明与组合一致，服务启动先后由服务可用性决定 | 〔建议〕 |
+| SOLO-LAYER-01 | actor：装配维护者。trigger：发布或调整包组成。action：按 SOLO-C01 维护对应切片的完整顺序，并按 SOLO-C06 回读生效组合。scope：全部交付 profile。outcome：声明与组合一致，服务启动先后由依赖就绪决定 | 〔约束〕ARCH-D02 |
 | SOLO-LAYER-02 | actor：交付/部署脚本。trigger：安装或升级 SoloIPs。action：禁止把 dsh plugin --profile <p> add <pkg> 作为装配的权威手段，应当以「已入版本库的 profile 三件套 + pnpm install」完成装配。scope：客户环境与客户演示环境。outcome：任意两台机器组合结果一致 | 〔建议〕（依据 S-F1） |
 | SOLO-LAYER-03 | actor：SoloIPs 各包。trigger：包需要改动非自身拥有的行。action：必须只经由 soloips-bundle 提出对官方行的覆写；能力包必须只 insert 自身前缀的 id。scope：全部 SoloIPs 包。outcome：每个 row id 只有一个写者（对齐 TERM-08 与 MECH-05 的单写权威） | 〔建议〕（依据 L-F2、S-F5） |
-| SOLO-LAYER-04 | actor：SoloIPs 装配层。trigger：创建 profile。action：必须使用 SoloIPs 专有名，不得复用 dsh 内置名 web / headless / sdk / acp / sdk-minimal。scope：全部 profile 命名。outcome：不被启动器的模板归一化改写（依据 S-F6） | 〔建议〕 |
+| SOLO-LAYER-04 | actor：装配维护者。trigger：创建正式/验收 profile。action：按 ARCH-D04 使用 soloips 名与显式 startup，不复用内置名。scope：SoloIPs 交付。outcome：清单与已选定义一致，不把名称当作数据隔离证明 | 〔约束〕ARCH-D04 |
 
-候选顺序已统一到 SOLO-C01；本节不保留互斥模板。
+顺序已统一到 SOLO-C01；本节不保留互斥模板。
 
 支撑证据：
 
 - S-F1 〔源码事实〕apps/cli/src/plugin.ts:59-91 对新发现 bundle 执行 append、对失去声明的既有 bundle 移除；它不重新排序已有项。〔推断〕不同安装历史可能形成不同数组，最终权威仍是实际 bundles 数组与后续 patch 层，不能将依赖书写顺序直接等同于完整装配顺序。
-- S-F2 〔源码事实〕profile 目录恰好三件：package.json（含 dsh.profile.bundles 有序清单）、cordis.patch.yml（用户层，最后应用）、pnpm-workspace.yaml。packages/boot/app-boot/src/profile.ts:165-185；工作区设置见 :150-155。
+- S-F2 〔源码事实〕初始化创建三份装配文件：package.json、cordis.patch.yml、pnpm-workspace.yaml（packages/boot/app-boot/src/profile.ts:150-185）；后续可有 lockfile、node_modules 等。profile 用户层在完整叠层中的位置见 SOLO-C01 与 §6.1。
 - S-F3 〔源码事实〕层叠应用顺序为：bundles 数组序 → profile 自身 cordis.patch.yml → home 级 $DSH_HOME/cordis.patch.yml → 启动器 --patch 与派生 patch。profile.ts:5-13；apps/cli/src/profile-boot.ts:68-75（home 级 overlay 位于 profile 层之上）。
-- S-F4 〔源码事实〕组合是一次纯函数式 applyEntryPatches，作用于空根并把各层摊平，dump 与启动看到同一结果。profile.ts:841-848。
+- S-F4 〔源码事实〕composeEntries 克隆输入后调用同一 patch 算法组合（profile.ts:841-847）；启动器也为可变 patch 输入作克隆（apps/cli/src/profile-boot.ts:323-327）。共享算法不等于任意时点的 dump 与运行树一致，输入层、求值和生效时点另按 SOLO-C06、SOLO-F08 验证。
 - S-F5 〔源码事实〕真实包已在用「覆写官方行」：dsh-agent-swarm 的 bundle 层给官方行 connection 补注入，并在注释里点明依赖宿主 rc 版本、目标行不存在时跳过该 patch。packages/.external/dsh-agent-swarm/cordis.patch.yml:26-31。
 - S-F6 〔源码事实〕启动器会回写「与内置或已退役 tuple 完全相同」的 bundles 清单，其它清单视为用户所有；内置 profile 名不可作为自定义目标。profile.ts:689-711；apps/cli/src/profile-boot.ts:119-124。
 
@@ -653,8 +686,8 @@ nextMemoryNumber, createdAt, updatedAt
 | ID | 规则（actor · trigger · action · scope · outcome） | 标注 |
 | --- | --- | --- |
 | SOLO-REG-01 | actor：SoloIPs 回归流水线。trigger：任一包或层顺序变更。action：必须生成并比对 L1 golden = 仅 bundle 层的组合导出（--dump-default-config，按层来源分段标注，不含 profile 用户层与 --patch）。scope：CI。outcome：升级宿主或调整层序造成的组合漂移以 diff 可见 | 〔建议〕（依据 S-R1、S-R2） |
-| SOLO-REG-02 | actor：同上。trigger：同。action：必须生成并比对 L2 golden = 含 profile 用户层与 overlay 的生效导出（--dump-config），必须覆盖每个交付 profile。scope：CI。outcome：客户实际生效树被锁住 | 〔建议〕（依据 S-R1、S-R2） |
-| SOLO-REG-03 | actor：同上。trigger：每次发布。action：应当按项目既有 per-profile e2e 范式补一条 SoloIPs profile 场景（golden 文件与 overlay patch 同目录组织）；应当在 Web 侧以「只追加自己的 overlay 层」方式复用同一组合栈，不复制整棵配置树。scope：CI。outcome：装配回归与界面回归同源 | 〔建议〕（依据 S-R3、S-R4） |
+| SOLO-REG-02 | actor：CI/验收执行者。trigger：相关装配变更或发布候选产出。action：必须生成并比对 L2 golden = 含 bundle、profile、home 与 launcher overlay 的完整导出（--dump-config），覆盖每个交付 profile。scope：CI。outcome：声明组合及预期字段可核对；运行接线仍另验 | 〔建议〕（依据 S-R1、S-R2） |
+| SOLO-REG-03 | actor：CI/验收执行者。trigger：每次发布。action：应当按项目既有 per-profile e2e 范式补一条 SoloIPs profile 场景（golden 文件与 overlay patch 同目录组织）；应当在 Web 侧以「只追加自己的 overlay 层」方式复用同一组合栈，不复制整棵配置树。scope：CI。outcome：装配回归与界面回归同源 | 〔建议〕（依据 S-R3、S-R4） |
 | SOLO-REG-04 | actor：任一成员/交付者。trigger：主张「某包已装配生效」。action：禁止以 bundles 数组含包名、依赖列表含包名或「已安装启用」作为装配证据；必须给出 L2 生效树中的对应行 + 一次功能探针结果。scope：全部汇报与验收。outcome：杜绝「安装启用 ≠ 实际被调用」类误报 | 〔建议〕（依据 S-R5、S-R6） |
 
 支撑证据：
@@ -663,7 +696,7 @@ nextMemoryNumber, createdAt, updatedAt
 - S-R2 〔源码事实〕bundles-only 消费方被显式设计为不读用户层，以免损坏的用户层让导出失败（userLayer:false）。profile.ts:810-812。〔推断〕这是「L1 看不到用户层覆写」的根因；SoloIPs 的界面相关配置多为覆写型，只在 L2 可见。
 - S-R3 〔源码事实〕仓库内已存在 per-profile e2e 目录 apps/cli/tests/profiles/，内含场景子目录、expected.e2e.ts、expected.jsonl 与 overlay patch 文件。〔未验证〕作者只列目录，未读该目录说明，范式细节以该目录既有说明为准。
 - S-R4 〔源码事实〕Web 侧测试用同一组合栈（bundle 层按 bundles 序 composeEntries 作用于同一空根），并支持注入额外 overlay。apps/web/tests/scaffold.ts:501-522。
-- S-R5 〔源码事实〕存在「依赖里有包但 bundles 里没有」的真实 profile：另一个 home（$DSH_HOME_OTHER，**非 55120**，见 §8.7）的 web profile 依赖含 dsh-rlm（link 形式）而 bundles 不含它；同一 profile 的 cordis.patch.yml 以一条 insert: id: rlm 把它插入树 → 只读 bundles 数组必然漏项。
+- S-R5 〔源码事实〕普通依赖不自动成为 bundle 层（apps/cli/src/plugin.ts:70-75），而用户 patch 可通过 insert 增加 entry（vendor/include/src/index.ts:80-102）。〔推断〕只审 bundles 数组不足以列全可能的入口，须审完整组合。OTHER home 的旧实例缺独立回执，按 §8.7 保持〔未验证〕，不承担该机制的证明。
 - S-R6 〔需求〕用户确认的验收口径：不能把安装某包等同于功能可用，安装包存在不等于工具可调用（refactoring 03-delivery-and-acceptance.md:40，路径相对 $REFACTORING_DOCS_ROOT）。〔约束〕装配属宿主、UI 只做投影（refactoring 02-company-contract.md:189）。
 
 ### 8.5 灰度与回滚
@@ -677,12 +710,12 @@ nextMemoryNumber, createdAt, updatedAt
 
 支撑证据：
 
-- S-B1 〔源码事实〕profile 身份取目录名，manifest 的 name 字段不参与身份。profile.ts:95-102、:798。〔源码事实〕作者观察到一个复制产物：$DSH_HOME_OTHER（**非 55120**）下并存 web 与 web-rc2 两份，清单内容一致且 web-rc2 的 manifest name 仍写 dsh-profile-web → 复制式灰度会留下误导性元数据。
+- S-B1 〔源码事实〕profile 身份取目录名，manifest 的 name 字段不参与身份。profile.ts:95-102、:798。〔推断〕直接复制可能留下旧 name，不能据 name 判断实际 profile 身份。OTHER home 的历史实例未独立复验，按附录 B 第 4 项使用。
 - S-B2 〔源码事实〕模块面是跨 profile 共享的安装闭包镜像目录，另有 profile 私有目录承接 bundle 独有依赖。profile.ts:535-560、:610-645。〔推断〕只改层不动该共享目录；「卸载某个包」不能当作影响隔离手段。
 - S-B3 〔源码事实〕从内置模板初始化具名 profile 的能力存在且受保护：目标名为内置名则拒绝、模板未知则拒绝且不落盘、启动器不读取源 profile 的本地装配文件，也不写继承元数据；同 home 业务状态仍按 SOLO-DATA-01 共享。apps/cli/src/profile-boot.ts:104-140；回归用例 apps/cli/tests/built-bin.e2e.ts:1026-1047。
 - S-B4 〔源码事实〕dsh plugin 的路径不提供安装快照或状态恢复（SOLO-F07）。〔推断〕选择旧 profile 只能恢复相应装配；能否读回业务数据取决于实际 root、schema 兼容性和恢复点，不能推出“回滚粒度天然是 profile”。
 - S-B5 〔源码事实〕overlay 形态有官方先例：可选用户 overlay 与示例 overlay 以单文件分发（apps/cli/config/examples/ 下存在多个 .cordis.yml 示例；docs/cookbook/extension-cookbook.zh.md:98）。〔未验证〕作者只列目录未读内容。
-- S-B6 〔源码事实〕patch 允许 !!js 表达式（如以宿主 home 路径函数拼路径）packages/bundle/base/cordis.patch.yml:113；profile 用户层模板也注明允许 !!js（profile.ts:139-143）。〔推断〕→ golden 必须先做机器路径归一化，否则跨机 diff 恒不等。
+- S-B6 〔源码事实〕patch 允许 !!js 表达式（packages/bundle/base/cordis.patch.yml:113；profile.ts:139-143），dump 不求值表达式（apps/cli/src/dump-config.ts:1-7）。〔建议〕仅对导出中实际出现的机器差异字段作明确归一化，保留相关断言；不能因存在表达式就预设跨机 diff 不等，也不能用归一化后的 dump 证明真实数据根隔离。
 - S-B7 〔源码事实〕自定义 profile 用户层默认热加载（live），内置模板各自声明（web 为 live，headless/sdk/acp 为 startup）。profile.ts:105-126、:136-137。〔推断〕单点临时回退可改 overlay 完成；改 bundle 层需按该 profile 的 patchReload 决定是否重启。
 
 ### 8.6 反面声明（本章明确不蕴含）
@@ -693,47 +726,45 @@ nextMemoryNumber, createdAt, updatedAt
 - 新建 profile 不蕴含与旧 profile 数据隔离：默认数据在 home/storages 与 home/sessions，实际 root 可被 patch 覆写（SOLO-DATA-01）；模块闭包共享是另一项依赖事实。
 - SoloIPs 用 profile 组合装配不蕴含可替换底座：底座层解析以安装目录为第一锚点，同名 bundle 不会取自 profile 本地副本（〔源码事实〕profile.ts:734-757）。
 
-### 8.7 更正（覆盖作者前一封邮件的错误归属，以本节为准）
+### 8.7 历史环境证据的使用边界
 
-- 前一封给队长的结论把另一个 home 标注为 55120 实际 home，该归属错误，队长已实测纠正：55120 实际 home 为 $DSH_HOME_LIVE55120（真值入运维交接，见附录 B 第 2 项），其 swarm 版本 0.1.5、patchReload 为 live、bundles 为 dsh-base + dsh-web-app + dsh-agent-swarm、依赖为 freeze-20260915-reteam 下的 tgz。
-- 因此本章凡引用 $DSH_HOME_OTHER（含 dsh-canvas、dsh-rlm 为 link、另有 web 与 web-rc2 两份）的观察，一律降级为「另一个 home 的真实实例」：仍证明机制存在，但不蕴含 55120 同样如此。〔未验证〕55120 的 profile 用户层是否也以 insert 挂载 rlm、是否含 dsh-canvas，本次未读取。
-- 上一封邮件中「checkout bundle 版本见 web-app/package.json:5」应为 :4（base 与 web-app 均在第 4 行）。
+- 早期报告曾把 OTHER home 误归属为 55120；相关历史转述见附录 B 第 2、4 项。实际路径与新的元数据观察在 ENV-01 指定的本机记录维护，正文不另设运行状态权威。
+- OTHER home 的实例与原始回执尚未定位，不能据其推断 55120 的安装、挂载或机制已验证。场景可以保留为待验证用例，机制依据改用指名源码。
+- 55120 的完整运行插件/client 组合和实际生效 overlay 尚无本章运行证据；磁盘声明与历史配置不替代该验证。
 
-### 8.8 待决（需用户裁决，勿代为确认）
+### 8.8 技术细节与已决定事项
 
 | ID | 待决问题 | 影响条目 |
 | --- | --- | --- |
 | SOLO-LAYER-Q1 | 官方行（connection、web-runtime、session 系列等）的覆写权是否只归 soloips-bundle | SOLO-LAYER-03、SOLO-REG-01/02 |
 | SOLO-LAYER-Q2 | 是否强制 row id 前缀命名空间（soloips-*） | SOLO-LAYER-03、SOLO-C04 |
 | SOLO-LAYER-Q3 | 版本锁是否写成客户交付硬要求（lockfile 入 git + 禁 file:/link: 个人路径） | SOLO-LAYER-05、SOLO-LAYER-06、SOLO-C05 |
-| SOLO-LAYER-Q4 | 交付是一个 profile 还是「少量具名 profile + overlay」 | SOLO-ROLLBACK-01、SOLO-ROLLBACK-04 |
-| SOLO-REG-Q5 | 未命中行的 patch 是静默跳过还是启动期报错（见 SOLO-FAIL-02 冲突） | SOLO-REG-04、SOLO-FAIL-02、MECH-09 |
+| SOLO-LAYER-Q4 | 已按 ARCH-D03/04 选择一个 soloips 定义、独立 home；共享根双 profile 不作为默认灰度 | SOLO-DATA-02、SOLO-ROLLBACK-01 |
+| SOLO-REG-Q5 | 源码分支已按 SOLO-F06 收敛为 warn/skip；待验证目标入口的告警可见性、组合断言与发布门禁是否拒绝漂移 | SOLO-REG-04、SOLO-FAIL-02、MECH-09 |
 
 ### 8.9 附录 · 失败场景清单（SOLO-FAIL-01…10）
+
+本表保留场景 ID 与检测方法，机制只引用其正文。SOLO-FAIL-* 与 SOLO-F0x 不按序对应：前者是装配/交付场景，后者是第 10 章的机制与恢复规则；同一问题的机制结论只在所指正文维护。
 
 每条：现象与触发 → 后果与检测。行号除注明外均相对 $DSH_CHECKOUT。
 
 | ID | 现象与触发 | 后果 / 检测 | 证据与标注 |
 | --- | --- | --- | --- |
-| SOLO-FAIL-01 | 用户层整行覆写吞掉新宿主默认字段：覆写型 overlay 早于宿主新增默认字段发布，宿主升级后 overlay 仍生效 | 新增默认值静默丢失；检测 = L2 golden diff + 关键字段断言 | packages/bundle/base/cordis.patch.yml:6-10〔源码事实〕；真实整行覆写实例 $DSH_HOME_OTHER/profiles/web/cordis.patch.yml（非 55120）〔源码事实〕；对 55120 的影响〔未验证〕 |
-| SOLO-FAIL-02 | 覆写的目标行在当前 mode 不存在 → 该 patch 被跳过 | 少挂一行且可能无报错；检测 = L1/L2 diff 比对行数与来源段 | packages/.external/dsh-agent-swarm/cordis.patch.yml:26-31 自述「目标行缺失则跳过」〔源码事实（注释声明）〕；组合层存在「跳过 patch」告警通道且默认静默 profile.ts:841-847〔源码事实〕；冲突：apps/web/tests/scaffold.ts:501-504 注释称 id 不再匹配会响亮失败 → 运行期语义〔未验证〕，见 SOLO-REG-Q5 |
-| SOLO-FAIL-03 | 层顺序由安装历史决定：两人以不同先后 add 同一组包 | 组合不同而清单看起来相同；检测 = 比对声明与实际清单 | apps/cli/src/plugin.ts:59-91（append、无插入位置）〔源码事实〕；apps/cli/tests/built-bin.e2e.ts:995-1004〔源码事实〕 |
-| SOLO-FAIL-04 | 未声明 dsh.bundle 的包只被提示一次，之后靠 overlay insert 挂载 | 装配清单不完整、审计漏项；检测 = L2 生效树 vs 声明 | apps/cli/src/plugin.ts:72-74〔源码事实〕；真实实例（非 55120）：依赖含 dsh-rlm 而 bundles 不含，用户层一条 insert 才挂上〔源码事实〕 |
-| SOLO-FAIL-05 | 多个 profile 共用同一 link:/file: 源 | 一处本地改动同时影响多套组合；检测 = 交付 lockfile 内不得出现个人路径 | 关联 SOLO-LAYER-06；〔源码事实〕某 home 下 web、web-rc2、rlm 三份 profile 指向同一 link 源（非 55120）；〔来源：队长实测〕55120 用 freeze tgz，未见 link |
-| SOLO-FAIL-06 | patch 含 !!js 表达式，golden 携带机器本地路径 | 跨机 golden 恒不等，或被人為放宽导致漏检；检测 = golden 前做路径归一化 | packages/bundle/base/cordis.patch.yml:113、profile.ts:139-143〔源码事实〕；归一化做法〔建议〕 |
-| SOLO-FAIL-07 | 只跑 L1 得到假绿：L1 显式不含用户层与 overlay | SoloIPs 多为覆写型配置，L1 看不见；检测 = 强制跑 L2 | apps/cli/src/args.ts:100-114、profile.ts:810-812〔源码事实〕 |
-| SOLO-FAIL-08 | 复制 profile 目录做灰度：元数据失真（name 仍指源、身份实为目录名），且模块闭包目录共享 | 误判隔离范围、回滚错对象；检测 = 禁止复制式 profile | profile.ts:95-102、:798、:535-560〔源码事实〕；复制实例（非 55120）〔源码事实〕 |
-| SOLO-FAIL-09 | 复用内置 profile 名，或 bundles 恰好等于内置/退役 tuple | 清单被启动器回写、目标名被拒绝；检测 = SOLO-LAYER-04 命名断言 | profile.ts:689-711；apps/cli/src/profile-boot.ts:119-124〔源码事实〕 |
-| SOLO-FAIL-10 | 两个包覆写同一 row id | 后加载层整行胜出、前一层意图消失且无冲突提示；检测 = SOLO-LAYER-03 唯一写者断言 | packages/bundle/base/cordis.patch.yml:2-4、:6-10〔源码事实〕 |
+| SOLO-FAIL-01 | 旧 overlay 给出的 config 未包含新宿主的默认字段 | 新字段可能被覆盖；检测 = L2 diff + 关键字段断言 | 机制正文 SOLO-C03 / MECH-02；场景〔未验证〕，不依赖 OTHER home 转述 |
+| SOLO-FAIL-02 | 当前组合没有 patch 所指的目标行 | 检测 = 完整导出与期望 entry/字段、来源层比对，日志辅助诊断 | 机制正文 SOLO-F06 / MECH-09；目标可见性及门禁见 SOLO-REG-Q5，场景〔未验证〕 |
+| SOLO-FAIL-03 | 两人以不同先后 add 相同依赖集合 | bundles 数组顺序可能不同；检测 = 对比实际有序清单与后续 patch 层 | 机制正文 SOLO-C01 / MECH-03；交付约束 SOLO-LAYER-02，场景〔未验证〕 |
+| SOLO-FAIL-04 | 普通依赖没有 dsh.bundle，却由 overlay insert 接入 | 只审 bundles 会漏入口；检测 = L2 完整树与实际入口声明 | 普通依赖分支见 apps/cli/src/plugin.ts:70-75；检测 SOLO-REG-04；升级移除另见 SOLO-F05，场景〔未验证〕 |
+| SOLO-FAIL-05 | 多 profile 指向同一未冻结开发源 | 本地编辑可能影响多套候选；检测 = 安装锁、来源和工件字节 | 工件约束正文 SOLO-C05 / SOLO-LAYER-06；场景〔未验证〕，历史 home 不作通过证据 |
+| SOLO-FAIL-06 | 导出含机器差异字段，或被宽泛归一化掩盖 | 检测 = 只归一化明确差异字段并保留关键断言，实际数据根独立核实 | 机制正文 SOLO-C06 / S-B6；检测 SOLO-REG-01/02；存在 !!js 不等于导出已求值，场景〔未验证〕 |
+| SOLO-FAIL-07 | 仅跑 L1，未覆盖 profile/home/launcher 层 | 检测 = 增加与目标一致的 L2 完整组合 | 机制正文 SOLO-C06；检测 SOLO-REG-01/02，场景〔未验证〕 |
+| SOLO-FAIL-08 | 把复制 profile 当成状态隔离或恢复证明 | 检测 = 实际 profile 身份、业务/Session/资产根与恢复边界 | 机制正文 SOLO-C07、SOLO-DATA-01–04；恢复 SOLO-ROLLBACK-01–03，场景〔未验证〕 |
+| SOLO-FAIL-09 | 复用内置名，或清单等于内置/退役 tuple | 检测 = 命名与最终清单断言，观察拒绝/回写分支 | 机制正文 SOLO-C07；约束 SOLO-LAYER-04，场景〔未验证〕 |
+| SOLO-FAIL-10 | 多个包的 patch 顺序覆写同一既有 row | 所给字段后写覆盖前写；检测 = row 写者和完整 config 断言 | 机制正文 SOLO-C03/C04、MECH-02；此操作区别于 SOLO-F03 的重复 entry 定义，场景〔未验证〕 |
 
 ### 8.10 本章未覆盖（避免被误读为已完成）
 
-- 〔未验证〕未启动任何服务、未执行任何 dsh 命令；本章结论来自源码只读与队长实测数值。SOLO-FAIL-02 的运行期语义尤其需要一次有界实测。
+- 〔未验证〕未启动任何服务、未执行任何 dsh 命令；本章采用指名源码基线及明确标注的历史观察。SOLO-FAIL-02 的 warn/skip 分支已由 SOLO-F06 定位，目标日志可见性、整体启动和业务结果仍需有界实测。
 - 〔待决 DRAFT-D08〕是否提供显式 disable 层及其支持边界；各阶段失败范围见 TERM-16、SOLO-F02，目标运行表现待 S0 验证，不预设任何包错误都必须整 profile 失败。→ 并入 12.1。
-
-〔源码事实〕packages/storage/storage-domain/src/spec.ts:1-9 定义 spec 是一个 domain 的身份、布局与记录 schema 的唯一来源，且由 owning package 用 defineDomain 定义一次。
-
-〔建议〕domain opener 名单不相交仅是拆包检查之一；还须核对业务事实、实际介质与跨进程写保护，见 R2、SOLO-FENCE-01。
 
 ## 9. 客户端组合与业务事实分离
 
@@ -846,42 +877,42 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 | --- | --- | --- | --- | --- |
 | F-1 | bundle 包不可解析 | packages/boot/app-boot/src/profile.ts:753-756（抛错并提示用 dsh plugin 安装） | 启动前即失败，**整个 profile 起不来** | 否 |
 | F-2 | 列入 bundles 的包没有 dsh.bundle 声明 | profile.ts:788-790 | 同上，启动前抛错 | 否 |
-| F-3 | 行 id 重复 | vendor/loader/src/config/group.ts:61-66（duplicate loader entry id 的 TypeError） | 整组回滚（group.ts:86-104） | 否 |
-| F-4 | 行 name 指向的模块导入失败 | vendor/loader/src/config/entry.ts:217-220、:280-287 | 该组回滚，不只是掉这一行 | 否 |
-| F-5 | 行 apply 抛错 | entry.ts:287、group.ts:71-80（allSettled，任一失败即 throw） | 同上 | 否 |
-| F-6 | 依赖服务未就绪 | inject 机制（docs/architecture.md:127-129；实例见 dsh-agent-swarm/cordis.patch.yml:5-9 注释：没有那些服务时 enabled 的子项保持 pending，fail closed） | 该行挂起等待，不报错也不工作 | **是（fail-closed pending）** |
-| F-7 | 升级后包丢失 dsh.bundle 声明 | apps/cli/src/plugin.ts:77-87（wasDependency 且不再 isBundle 则 splice） | **静默从 bundles 移除**：profile 仍启动，功能消失 | 是（静默） |
-| F-8 | patch 目标行不存在 / name 不匹配 | vendor/include/src/index.ts:111-119 | 只 warn 并跳过，**配置漂移且不阻断启动** | 是（静默） |
+| F-3 | 同一次 group 配置重复定义 entry ID | vendor/loader/src/config/group.ts:59-70 | 预检抛 TypeError，本次未创建条目且不进入该次 catch 回滚；外层影响另验 SOLO-F03 | 否 |
+| F-4 | 行 name 指向的模块导入失败 | vendor/loader/src/config/entry.ts:217-220、:280-287；group.ts:71-105 | 所在 group 的更新尝试恢复旧配置，恢复本身可能失败；作用范围见 SOLO-F02 | 否 |
+| F-5 | 行 apply 抛错 | vendor/loader/src/config/entry.ts:287；group.ts:71-105 | 所在 group 更新收集失败并尝试恢复，可能再报 rollback failed；见 SOLO-F02 | 否 |
+| F-6 | 依赖服务未就绪 | vendor/cordis/README.md:65；dsh-agent-swarm/cordis.patch.yml:5-9 的 pending 声明 | 缺少 inject 必需服务时插件不运行；目标挂起状态与可见性另验 SOLO-F04 | 是（等待依赖） |
+| F-7 | 受依赖管理的包升级后丢失 dsh.bundle 声明 | apps/cli/src/plugin.ts:77-90 | 该分支无专门告警地移出 bundles；其他接入层及最终启动/功能结果另验 SOLO-F05 | 是（移除该层） |
+| F-8 | patch 目标行不存在 / name 不匹配 | vendor/include/src/index.ts:111-119；SOLO-F06 | 此分支调用 warn 后跳过，不自行抛错；可见日志与整个启动结果由目标入口验证 | 是（跳过该 patch） |
 | F-9 | patch 文件本身不可解析或不是顶层数组 | packages/boot/app-boot/src/index.ts:350-368 的 parsePatchList（抛错）；:315-323 的 loadOverlayPatches（缺失即抛） | 启动失败 | 否 |
 | F-10 | 用户 patch 文件缺失 | index.ts:295-304 的 loadOptionalPatches（ENOENT 视为无此层） | 视为「无这一层」，不报错 | 是（按设计） |
 | F-11 | git 源安装无 prepare 构建 | docs/user/develop/basic/publish.md:161-173；apps/cli/src/plugin.ts:155-160（提示加 allowBuilds） | 首次 add 失败；加白后重跑 | 否（安装期） |
-| F-12 | live reload 期间 patch 应用失败 | vendor/hmr/src/index.ts:309-312（warn config reload failed + hmr/config-update-failed 事件） | 运行中原配置保留，新配置不生效 | 是（保留旧态） |
+| F-12 | live reload 期间配置读取或应用失败 | vendor/hmr/src/index.ts:305-315；vendor/include/src/index.ts:296-319；group.ts:85-105 | HMR 记录日志与失败事件；应用失败后旧树能否恢复取决于回滚结果，不能只据日志断言保留旧态 | 条件成立时恢复旧配置，见 SOLO-F08 |
 
 ### 10.2 组合失败与挂载失败的作用范围（SOLO-F02）
 
 **〔源码事实〕** 组合层没有「跳过坏包继续启动」的分支：
 
 1. 解析期：profile.ts:784-793 对每个 bundle 逐层解析，任一不可解析或缺少 dsh.bundle 即抛错；profile.ts:753-756 的错误信息明确要求先执行 dsh plugin 安装。
-2. 挂载期：vendor/loader/src/config/group.ts:71 用 Promise.allSettled 并发创建，:76-80 把一个失败原样抛出、多个失败包成 AggregateError；:85-105 捕获后**回滚全部新增行并按旧配置重建**，失败则再抛 AggregateError（loader entry rollback failed）。
+2. 挂载期：vendor/loader/src/config/group.ts:71 用 Promise.allSettled 并发创建；所在 fiber 仍存活时（:75），:76-80 将失败抛出，:85-105 尝试移除**该 group 本次新增条目**并重建该 group 旧配置。恢复本身可能失败并抛 AggregateError（loader entry rollback failed）；nested group 与外层传播需按具体入口判断，不提供全宿主整树必然回滚的保证。
 3. 单条目的错误被统一包装：vendor/loader/src/config/entry.ts:24-27 的 updateError（stage 为 import / dispose / apply / rollback）。
 
 **〔推断〕** 组合解析失败可能阻断该组合启动；挂载回滚的具体范围须按触发路径区分，不能由包数量直接推出任意错误的全部影响。无效 patch 可仅 warn/skip（SOLO-F06），服务缺失可保持 pending（SOLO-F04），客户端稳态另见 CLIENT-03。
 
-**〔建议〕** core 与 adapter 合包可减少交付单元，但不消除插件自身失败；也可通过依赖声明、预检、保持旧组合及明确支持的禁用配置控制影响。是否合包按 PKG-01–03 与实际成本评估，仍属 DRAFT-D07-D1。
+**〔约束〕** ARCH-D02 保留 core 与 adapter 的边界，同仓统一交付，不为各包另建发布流水线。包数不证明故障隔离，仍须按实际阶段验证失败范围。
 
-**〔待决〕** 包数量与故障半径的取舍由用户裁决。
+包数已由 ARCH-D02 决定；故障半径仍须真实验证，证据不因该决定补齐。
 
-### 10.3 重复行 id 的整树回滚（SOLO-F03）
+### 10.3 重复 entry ID 的预检拒绝（SOLO-F03）
 
-**〔源码事实〕** vendor/loader/src/config/group.ts:59-66：update() 先遍历配置收集 id，若已存在同名 id 直接抛 TypeError。抛出发生在任何 create 之前（group.ts:71 之后），因此**不会产生半挂载状态**；随后由 group.ts:85-105 回滚。
+**〔源码事实〕** vendor/loader/src/config/group.ts:59-66 在创建条目前检查本次 group 配置中的重复 ID；:64 的 TypeError 位于 :70 的 try 之前，因此本次调用尚未创建条目，也不会进入本函数 :85-105 的恢复分支。nested group 的异常可能继续经外层调用传播，最终启动或恢复结果按实际入口验证。此检查不拒绝多个 patch 顺序覆写同一既有 row（SOLO-FAIL-10、SOLO-C03）。
 
 **〔源码事实〕** 未写 id 的行不会撞车，但会得到随机 id：vendor/loader/src/config/tree.ts:66-73。这类行后续无法被 patch 稳定命中，属于隐性缺陷。
 
-**〔建议〕** 每条 patch 行必须显式写 id，并采用 6.5 的包名前缀；--dump-config 的输出应作为 id 唯一性的机器可查证据（同 id 在启动前即失败，故门禁价值在于**提前发现重名包前缀**）。
+**〔建议〕** 每条 patch 按 SOLO-C04 使用稳定目标 ID，insert 的 entry 使用包名前缀。对导出的 entry 结构执行明确的 ID 唯一性断言，并按实际 Loader 入口验证重复定义被拒；仅取得 --dump-config 输出不能声称执行过 EntryGroup 的预检。
 
 ### 10.4 服务未就绪：fail-closed pending（SOLO-F04）
 
-**〔源码事实〕** entry 通过 inject 声明所需服务，未满足时保持挂起而非报错——机制见 docs/architecture.md:127-129；行为契约的现成实例见 dsh-agent-swarm/cordis.patch.yml:1-9（安装只贡献一个结构组；启用该组从不自动创建 Team；子项消费单独组合的官方 storage hub、KV 后端、Storage Domain 与 Session persistence；**没有这些服务时，enabled 的子项保持 pending，即 fail closed**）。
+**〔源码事实〕** vendor/cordis/README.md:65 说明 inject 声明插件运行前必需存在的服务。现成插件的声明见 dsh-agent-swarm/cordis.patch.yml:1-9：子项消费单独组合的 storage hub、KV 后端、Storage Domain 与 Session persistence，缺服务时保持 pending。前者是官方公开契约，后者是插件声明；目标安装中具体挂起状态与诊断表现仍须验证。
 
 **〔建议〕** SoloIPs 的包必须沿用同一约定：**缺依赖服务时挂起并保持可诊断**，不得自行降级为「用内存实现顶上」。挂起必须有可观察出口（日志或 UI 提示），否则与「静默不工作」不可区分。
 
@@ -893,15 +924,15 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 
 **〔源码事实〕** 对普通依赖（无 dsh.bundle）只打印一次警告，不阻断：plugin.ts:70-75；docs/user/develop/basic/publish.md:64。
 
-**〔建议〕** 这是**最危险的静默失败**：profile 照常启动、功能整体消失。唯一可靠检测是 6.7 的 --dump-config 基线比对——该包的层会从输出中整体消失。（对应 SOLO-ACC-CE-E、SOLO-FAIL-04。）
+**〔源码事实〕** apps/cli/src/plugin.ts:81-90 的移除分支没有专门 warning；它只决定 bundles 数组的变化，不保证 profile 最终启动成功或能力完全消失，其他 overlay 仍可能接入能力。〔建议〕发布门禁结合 SOLO-C06 的完整生效树比对、预期入口断言与功能验证识别遗漏，不能只检查进程退出码。（SOLO-ACC-CE-E 验升级移除；SOLO-FAIL-04 另验普通依赖由 overlay 接入。）
 
-### 10.6 patch 未命中的静默 skip（SOLO-F06）
+### 10.6 未命中 patch 的告警与跳过（SOLO-F06）
 
-**〔源码事实〕** vendor/include/src/index.ts:111-119：目标 id 不存在则 warn（patch: entry not found）；name 与目标行不一致则 warn（name mismatch）并 continue。两条都**只告警不阻断**。设计意图见 packages/boot/app-boot/src/index.ts:341-343（单个 patch 目标缺失保持为 per-entry Loader 警告，以便一份 overlay 可跨多个 surface 复用）。
+**〔源码事实〕** vendor/include/src/index.ts:111-119：目标 id 不存在或 name 不匹配时调用 warn 并 continue；这两个分支不自行抛错。启动 Include 在 :267-270 转发 logger，而 packages/boot/app-boot/src/profile.ts:841-847 的 composeEntries 默认 warning sink 为空。因而调用入口决定告警是否可见；该局部分支不能推出整个程序退出码、总告警数量或最终功能结果。设计意图见 packages/boot/app-boot/src/index.ts:341-343。
 
 **〔源码事实〕** insert 到不存在的组、或插入到非组行，同样只 warn：vendor/include/src/index.ts:83-90。
 
-**〔建议〕** 规则：把「patch 告警」当作**错误**处理。--dump-config 会输出带来源标注的逐行结果（index.ts:388-395、:452-471），可用作「预期存在的行是否仍存在、归属层是否变化」的核对面。（与 SOLO-REG-Q5 的运行期语义待决并行保留。）
+**〔建议〕** 发布门禁对非预期 patch 告警及缺失条目判失败；同时按 SOLO-C06 比对带来源的配置导出与期望 entry/字段，不依赖日志必定出现。源码 warn/skip 语义已收敛，SOLO-REG-Q5 只保留目标可见性和门禁验证，不再将测试注释与实现分支列为未裁定冲突。
 
 ### 10.7 dsh plugin 无回滚（SOLO-F07）
 
@@ -917,17 +948,17 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 
 **对「重启读回」的影响（〔推断〕，重要）**：
 
-1. patchReload **与持久化无关**，它只决定 cordis.patch.yml 的编辑是否在运行中即时生效。它不保证、也不影响「写入 → 停止 → 重启 → 读回」。
-2. live 模式下，**运行中的树可能与磁盘上的 cordis.patch.yml 已经不同步**（编辑已热应用但未经过一次真实冷启动）。因此以 live 运行获得的行为，不能作为「重启后仍如此」的证据。
-3. live 的重放失败是「保留旧态」而非崩溃：vendor/hmr/src/index.ts:309-312。**后果**：一次失败的热更新会静默停留在旧配置，且失败只体现在日志与事件里。
-4. startup 模式下所有用户层在启动时一次性应用，配置与磁盘一致，但每次改 cordis.patch.yml 都必须完整重启才能生效。
+1. patchReload 控制配置生效时机，不提供持久化或状态恢复保证。配置变化仍可能改变存储路由、schema 或服务接线，因此会影响恢复验收所绑定的运行条件。
+2. live 更新未完成、被拒或恢复旧配置时，磁盘候选可能与运行树不同；未冷启动本身不证明二者不同步。热更新通过也不能替代冷启动后的配置与状态读回证据。
+3. HMR 失败路径记录日志和 hmr/config-update-failed 事件（vendor/hmr/src/index.ts:305-315）；vendor/include/src/index.ts:296-319 明确应用失败后旧树保留受回滚成功条件限制，group.ts:85-105 还可能抛恢复失败。必须观察实际恢复结果，不能只据失败日志断言旧态完整。
+4. startup 在启动时按当时读取的配置应用；运行期间编辑磁盘不会自动更新运行树，新候选需冷启动后再验证。两种模式均须记录实际生效组合与读回边界。
 
 **〔建议〕验收规则 SOLO-F08**：
 
 - **actor**：验证「写入 → 停止 → 重启 → 读回」的人。
 - **trigger**：任何涉及持久性与配置生效的验收。
 - **action**：必须显式确认当前 profile 的 patchReload 取值；live 模式下，验收前必须执行一次真实重启后再读回，不得以热更新后的状态作为证据。
-- **outcome**：读回结果与磁盘 cordis.patch.yml + 重启后重跑的 --dump-config 一致。
+- **outcome**：冷启动实际生效组合与本次绑定的 profile/home/launcher 输入及配置导出一致；表达式的实际求值结果另行核对。业务数据读回与本次已写事实比较，按 SOLO-ACC-05 验收。
 - **verification**：本规则只覆盖配置生效路径；不覆盖业务数据持久性（属第 11 章 SOLO-ACC-05 与业务侧正文）。
 
 ### 10.9 本章稳定 ID 汇总
@@ -936,10 +967,10 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 | --- | --- | --- |
 | SOLO-F01 | 装配层故障矩阵 | 〔源码事实〕+〔推断〕混合，逐条标注 |
 | SOLO-F02 | 组合解析失败与 Loader 挂载失败的作用范围 | 〔源码事实〕路径；目标运行后果〔未验证〕 |
-| SOLO-F03 | 重复行 id 整树回滚 | 〔源码事实〕 |
+| SOLO-F03 | 重复 entry ID 在当前 group 创建前拒绝；外层影响另验 | 〔源码事实〕预检路径／〔未验证〕目标后果 |
 | SOLO-F04 | 服务未就绪 fail-closed pending | 〔源码事实〕机制／〔未验证〕具体表现 |
 | SOLO-F05 | 升级丢失 dsh.bundle 的静默移除 | 〔源码事实〕 |
-| SOLO-F06 | patch 未命中的静默 skip | 〔源码事实〕 |
+| SOLO-F06 | patch 未命中的 warn/skip；可见性取决于入口 | 〔源码事实〕分支／〔未验证〕目标表现 |
 | SOLO-F07 | dsh plugin 无回滚 | 〔源码事实〕 |
 | SOLO-F08 | patchReload live/startup 与重启读回验收规则 | 〔源码事实〕机制／〔建议〕验收规则 |
 
@@ -976,17 +1007,17 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 
 - actor：实施者（或 CI 脚本）。
 - trigger/precondition：任一 SoloIPs 包被安装、升级或移除之后；每次发布候选产出之后。
-- action：必须 (1) 读取 profile 的 package.json 中的 dsh.profile.bundles 数组与依赖版本/tgz 路径，形成「部署组合清单」；(2) 对同一 profile 执行 dsh --profile 加名称与 --dump-config；(3) 将输出与受版本控制的「验收组合清单」（期望 bundles 顺序 + 每包版本/SHA）逐行比对。
+- action：必须 (1) 读取 profile 的 bundles 与依赖工件，记录 bundle、profile、home、launcher overlay 的完整层序、内容哈希及相关锁；(2) 对该组合执行 dsh --profile 加名称与 --dump-config，带上对应 launcher overlay；(3) 将导出的层、entry 及关键字段与受版本控制的验收组合清单比对，分别检查版本/SHA、唯一 entry ID 和预期 patch 结果。
 - scope：全部 SoloIPs 包 + 官方基础层（@deepseek-ai/dsh-base；web profile 另含 @deepseek-ai/dsh-web-app）。
-- outcome（通过）：dump 的层标签顺序、数量与验收清单一致，且每行 id 均命中（无 unmatched patch 报告）。
-- outcome（失败）：顺序不一致、缺层、多出层，或 dump 报告某 patch 未匹配任何行。
+- outcome（通过）：层序、工件与关键 entry/字段均符合验收清单，entry ID 唯一，所有预期 patch 结果可核对；不能只凭没有 unmatched 日志判通过。
+- outcome（失败）：顺序不一致、缺层、多出层、预期字段/entry 缺失或重复，或出现非预期 patch 告警。
 - failure/recovery：--dump-config 与 --dump-default-config 互斥，且 dump 不启动进程、不求值 !!js（〔源码事实〕apps/cli/src/dump-config.ts:1-7、apps/cli/src/args.ts:103-114）。若 profile 自身 cordis.patch.yml 损坏导致 dump 失败，必须改用 --dump-default-config（跳过用户层，〔源码事实〕dump-config.ts:25-27），**不得**换一个 profile 重跑以绕开。
 - verification：本条只验配置组成；业务功能、数据恢复与停线按 SOLO-ACC-02–10 及既有首片验收分别覆盖。
 - 证据状态：机制〔源码事实〕（作者核对到源码行）；场景〔未验证〕——**当前未执行**。
 
 **禁止的替代做法（反面声明）**：
 
-- 用「profile 能启动、退出码 0」推断组合正确 —— 不成立：patch 指定了不存在的条目时只输出 stderr 警告（〔源码事实〕packages/boot/app-boot/README.zh.md:55）。
+- 用「profile 能启动、退出码 0」推断组合正确 —— 不成立：未命中的 patch 分支可以跳过，具体日志由调用入口决定，须核对实际组合（SOLO-F06）。
 - 用 checkout 源码推断部署组合 —— 不成立：当前 checkout 的 dsh-agent-swarm 为 0.1.4，55120 部署为 0.1.5（〔源码事实〕两侧 package.json，附录 B 第 2、3 项）。
 
 ### 11.2 单写权威验收
@@ -1014,7 +1045,7 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 - outcome（通过）：三条路径均被拒，返回**具体缺项原因**（非泛化失败）；重试有界且不重建员工身份；任务保持 pending/ready=false。
 - outcome（失败）：任一路径放行；或放行「资料文件数量合格但内容无效」的员工；或拒绝后反复重建员工身份。
 - failure/recovery：缺项必须可修正并重试至通过；重试不得产生第二条员工身份或第二个 appointment。
-- 证据状态：场景〔未验证〕——**当前未执行**。相邻事实（〔源码事实〕，基线 51ddbe29，核对日期 2026-09-14）：现有 getEmployeeOnboardingGaps 仅检查资料引用与头像字段是否存在，且仍保留 ORG_ALLOW_LEGACY_UNBOUND 旁路。该旁路必须在业务入口启用前移除，否则本场景不可能通过（与 docs/architecture.md §4、7.9 一致）。
+- 证据状态：场景〔未验证〕——**当前未执行**。准入源码观察与精确候选统一见 §7.9；已知完整入职与未绑定旁路缺口须在正式业务入口启用前修正，源码已核对不等于本场景通过。
 
 ### 11.4 重启读回验收
 
@@ -1026,8 +1057,8 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 - scope：同一数据根只有一个合法 writer；不得出现第二个进程/分支持有同一数据根。
 - outcome（通过）：数据可核对且一致；无双重执行；重启前后 dump 组合一致。
 - outcome（失败）：读不回；读回值与写入值不一致；出现两个 writer；重启后组合与停止前 dump 不一致。
-- failure/recovery：patchReload 为 live 时，被拒绝的编辑会让**最后一个可用应用继续运行**（〔源码事实〕packages/boot/app-boot/README.zh.md:57），即磁盘组合与进程组合可分离。因此本场景应当 (a) 在 patchReload 为 startup 下执行，或 (b) 在步骤 (1) 显式记录并核对「进程内生效组合」。
-- 现状：55120 部署 profile 为 patchReload live（〔源码事实〕已部署 profile 的 package.json，附录 B 第 2 项）。
+- failure/recovery：新的正式/验收 profile 必须符合 ARCH-D04 的 startup。历史 live 观察只作诊断；热更新失败可能保留旧进程组合，不得用其替代本条冷启动验收。
+- 历史观察：附录 B 第 2 项记录 2026-09-15 的 profile 声明为 live；本次动作前须按 ENV-03 重新核实，不能把历史声明当当前运行组合。
 - 反面声明：清空数据后能启动**不算**恢复通过；patchReload 为 live 下进程未重启**不算**执行了本场景。
 - 证据状态：机制〔源码事实〕；场景〔未验证〕——**当前未执行**。
 
@@ -1053,13 +1084,13 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 | ID | 起点 | 动作 | 可观察失败（判定该反例成立） | 机制证据 |
 | --- | --- | --- | --- | --- |
 | SOLO-ACC-CE-A | 仅移动 company/collaboration 的 yml 行，声称能保证公司服务先激活 | 在隔离候选中改变两者服务就绪时点并观察激活；另核对同层 patch 的配置遍历 | 激活遵循 service/inject 依赖；一次恰好同序不能证明 yml 位次提供保证。若实现依赖位次且在依赖未就绪时放行则失败 | 〔源码事实〕packages/bundle/base/cordis.patch.yml:12；配置遍历见 vendor/include/src/index.ts:77，二者作用不同 |
-| SOLO-ACC-CE-B | 业务不变量（完整入职 ORG-03 / 单员工占用 ORG-05）只写在包 patch 的 config 里 | 在 home 级 cordis.patch.yml 对同一行整行替换并去掉该开关 | profile 正常启动、无错误，不变量被**静默关闭** | 〔源码事实〕packages/bundle/base/cordis.patch.yml:7-9（patch 整行替换、非深合并）；packages/boot/app-boot/README.zh.md:55（用户层最后写赢、home 级优先） |
-| SOLO-ACC-CE-C | 部署 profile 依赖官方 0.1.5-rc.2 的某行名/scope | 升级 DSH 至该行消失或改名 | 退出码 **0**、仅一行 stderr 警告，功能静默缺失（比崩溃更坏） | 〔源码事实〕packages/boot/app-boot/README.zh.md:55（条目不存在只警告）；packages/.external/dsh-agent-swarm/cordis.patch.yml:26-31（该行自述针对 Official 0.1.5-rc.2） |
+| SOLO-ACC-CE-B | 业务不变量（完整入职 ORG-03 / 单员工占用 ORG-05）只依赖包 patch 的 config 开关 | 在隔离候选的 home 级 cordis.patch.yml 覆写同一行 config 并去掉该开关 | 若缺少业务门禁仍可提交违规状态，则反例成立；启动/日志结果按实际记录，不预设必成功或无错误 | 〔源码事实〕SOLO-C03 的 config 替换、§6.1 的层序；业务后果为〔未验证〕场景 |
+| SOLO-ACC-CE-C | 隔离 profile 的 patch 依赖某行名/scope | 切换到该行消失或改名的 DSH 候选，核对完整导出及实际入口 | 未命中分支可跳过该 patch；若预期 entry/字段缺失却被发布门禁接受，则反例成立。记录真实退出码与日志，不预设 0 或一行 stderr | 〔源码事实〕vendor/include/src/index.ts:111-119、267-270；packages/boot/app-boot/src/profile.ts:841-847；机制正文 SOLO-F06 |
 | SOLO-ACC-CE-D | 在临时 profile 成功安装 A，并记录 manifest/lockfile/node_modules 基线 | 安装 B 时受控失败，逐项检查文件和安装闭包实际差异 | 可能留下部分变更且 DSH 不自动恢复；须报告实际残留，不能预设 manifest 必含 A+B | 〔源码事实〕apps/cli/src/plugin.ts:120-162：仅 pnpm 退出 0 才 reconcile；该路径无快照恢复 |
-| SOLO-ACC-CE-E | 某包已作为 bundle 在层栈中 | 升级该包，新版本丢失 dsh.bundle 声明 | 该包被静默 splice 移出层栈，profile 启动成功、功能缺失、无告警 | 〔源码事实〕apps/cli/src/plugin.ts:82-86（wasDependency 且不再 isBundle）、:71-74（仅对新装 bundle-less 依赖给一次性 warning） |
+| SOLO-ACC-CE-E | 受依赖管理的某包已列入 bundles | 升级至丢失 dsh.bundle 的候选并完成 reconcile，核对后续完整组合 | 该项从 bundles 移除；若能力未由其他合法入口提供且遗漏未被发布门禁发现，则反例成立。整体启动、功能与告警按实际观察，不预设必成功或全无告警 | 〔源码事实〕apps/cli/src/plugin.ts:70-90；机制正文 SOLO-F05 |
 | SOLO-ACC-CE-F | 两个包通过同一 facility 打开 storage domain | 顺序或并发 open 同名 domain | 第二次 already-open；改用异名并写同一业务事实仍可能双写；换 facility/进程不能据该错误预测结果 | 〔源码事实〕packages/storage/storage-domain/src/index.ts:65-72、103-107；跨 Host 单独验 SOLO-ACC-09 |
 | SOLO-ACC-CE-G | 建员工 + 过入职门 + 绑 Session + 建私有记忆 | 让这些写入跨越两个包各自 commit | 出现半状态：员工已建但入职未过；或 attempt 已建但所属员工不在 roster | DSH 不提供跨包事务（〔推断〕+〔未验证〕：作者未取得正面源码证据，检索无结果不等于证明不存在，实现阶段必须重核）。与 7.1 的〔推断〕一致；本文登记为 MECH-04、DRAFT-D05 |
-| SOLO-ACC-CE-H | patchReload 为 live 的 profile（现状 55120 即 live） | 做一次 live 编辑后再走「停止 → 重启 → 读回」 | 磁盘是新组合、停止前运行的是旧组合 → 重启读回验的是**另一套组合**，复现 docs/architecture.md §7「运行包与候选分支不同」 | 〔源码事实〕packages/boot/app-boot/README.zh.md:57；现状〔源码事实〕已部署 profile patchReload 为 live |
+| SOLO-ACC-CE-H | 隔离的历史兼容 profile 显式 live，先记录成功运行组合 | 注入受控失败编辑，观察实际更新/回滚；恢复可加载候选后执行停止、冷启动与读回 | 若把未生效的磁盘候选、恢复失败状态或重启后的另一组合当同次验证通过，则反例成立。分别记录更新、回滚与冷启动结果；任何一次失败不自动证明旧树完整 | 〔源码事实〕vendor/include/src/index.ts:296-319、vendor/hmr/src/index.ts:305-315；机制正文 SOLO-F08；场景不操作 55120 |
 | SOLO-ACC-CE-I | checkout 源码与部署包各自构建 | 用 checkout 构建产物去验收 55120 | 验收的包 ≠ 部署的包：checkout 的 dsh-agent-swarm = **0.1.4**，部署 = **0.1.5**（依赖 file: 指向 dsh-agent-swarm-0.1.5.tgz），其 peer 全钉死 0.1.5-rc.2（精确版本、无 caret） | 〔源码事实〕两侧 package.json 与已部署 profile 的 package.json（附录 B 第 2、3 项） |
 
 **CE-G 的证据诚实说明**：跨包事务「不存在」目前是〔推断〕，未取得正面源码证据。关键词检索无结果不等于证明不存在；实现阶段必须重核。在此之前 CE-G 的交付标签保持〔提案〕，**不得**因表格整齐而升格为事实。
@@ -1067,7 +1098,7 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 ### 11.7 本章与上游的关系
 
 - 本章是**验收合同**：写「什么算通过、什么算失败」，不是「已通过」。
-- 本章引用已确认的底座与交付形态、首片结果及 ORG 要求；5 个包仍为 DRAFT-S02〔建议〕。机制正文与验收判定分别维护，不重新制造需求。
+- 本章引用既有业务需求及受委托技术约束 ARCH-D01–07；5 包为 ARCH-D02 的技术决定，仍非用户逐项确认的业务需求。验收结果须另给运行证据。
 - 本章不记录动态状态（谁在跑、跑到哪一步）；动态状态留在原生任务系统。
 
 ### 11.8 验收门槛与技术候选
@@ -1075,7 +1106,7 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 | 项目 | 处理方式 | 决策边界 |
 | --- | --- | --- |
 | 装配身份 | 〔建议〕绑定宿主、插件、lockfile 与工件 SHA-256；仅版本号不足以发现同版本替换 | 具体执行工具随交付路径确定 |
-| patchReload | 〔建议〕保留目标既有配置，冷启动核对磁盘组合与进程行为；无需为测试预先改生产配置 | 改动运行配置须另有授权 |
+| patchReload | 〔约束〕新的 SoloIPs 正式与验收 profile 采用 startup；冷启动核对生效组合与业务读回 | ARCH-D04；现有 55120 不因本决定立即改配置 |
 | 回滚 | 〔建议〕按 SOLO-ACC-06 分支 A/B 及 SOLO-DATA-01–04 执行 | 用户决定真实状态回退中有效数据的处置 |
 | 首片门槛 | 〔需求〕ORG-03 完整准入、ORG-05 唯一占用、ORG-06 实际 writer、ORG-13 首错停线及现有架构 §5 必观察结果不得降级 | 测试编排仍可细化，不能借“未批准测试”豁免已确认结果 |
 | 后续扩展 | ORG-A10 外部通知送达与通知方式选择/读回在后续同一切片完成 | 本轮不要求短信/邮箱已实现；站内通知与停线不延期 |
@@ -1113,12 +1144,13 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 | 子场景 | 动作 | 通过 / 失败 |
 | --- | --- | --- |
 | 第二 Host | A 取得写权并写入；B 指向同一规范化根申请写权 | B 在业务发布前拒绝，A 状态完整；B 可写即失败 |
+| 打开路径绕过 | 在正式公司入口省略专属 facility、传入普通宿主 facility，或尝试候选的 ctx.storageDomain 回退 | 缺少有效公司写权时，必须在取得可写 domain handle 前拒绝；先取得可写句柄再阻止 put 不能替代本门槛。取得句柄后失权另按旧 handle 场景验收 |
 | 路径别名 | B 用目标平台支持的相对/绝对路径、链接或等价别名访问相同介质 | 仍识别相同独占身份；产生第二独占键并可写即失败 |
 | 失权旧 handle | 保留 A 的真实 handle，经受控接管使 B 获新代际并写入，再触发 A 的各业务发布点 | A 在持久发布前被拒，独立 reader 读回 B 的数据；只测便利 commitRecord 不够 |
 | 检查/发布竞争 | 在 A 的 fence 检查与发布间设可控暂停，尝试 B 接管 | A 合法提交先完成，或 B 先接管且 A 被拒；不允许失权发布 |
 | 崩溃恢复 | A 写入后异常退出，按指定维护协议恢复并接管 | 原数据和未决 operationId 可核对，恢复完成前不派工，无重复 attempt；盲目清锁或旧写入迟到覆盖则失败 |
 
-verification：留存进程、实际存储身份、代际、拒绝原因、发布计数及新 reader 读回证据；同实例 already-open 或测试文件存在不算通过。本场景〔未验证〕。
+verification：以 SOLO-FENCE-01 的已核写点为最低清单，补全 Team、迁移、恢复和失败清理路径；逐项绑定实际公开入口与持久发布证据。留存进程、实际存储身份、代际、拒绝原因、发布计数及新 reader 读回证据；同实例 already-open、只测试便利 commitRecord 或测试文件存在不算通过。本场景〔未验证〕。
 
 **SOLO-ACC-10〔建议〕验证 SOLO-DATA-01–03 的实际根绑定。**
 
@@ -1136,16 +1168,16 @@ verification：留存进程、实际存储身份、代际、拒绝原因、发�
 
 | ID / 来源 | 内容与建议 | 处置边界 |
 | --- | --- | --- |
-| DRAFT-D01 | 草稿最终并回 SOLO-ARCH、登记独立文档，或仅保留评审用途 | 用户决定；在此之前只作评审材料，不改变注册表与既有权威 |
-| DRAFT-D03、DRAFT-S01–03 | 5 包及 core/adapter 拆分候选；推荐职责见第 5 章 | 用户决定产品实施范围；技术候选不自动生效 |
+| DRAFT-D01 | 已按 ARCH-D01 迁移并登记技术架构；产品入口保留于 architecture.md | 已收敛；原草稿身份由 SOLO-TECH-ARCH 接续 |
+| DRAFT-D03、DRAFT-S01–03 | 包边界/分期与唯一业务状态包按 ARCH-D02；S01 保持术语建议 | 已收敛技术选型；实现授权与运行证据另行处理 |
 | DRAFT-D04 | loader 组合期与客户端稳态故障边界 | 工程核验各条目作用范围与真实失败结果，不以单包故障一概外推 |
 | DRAFT-D05 | 跨 domain 事务能力与目标存储组合 | 保持〔未验证〕；禁止依赖未经证明的共同原子提交 |
 | DRAFT-D06 | 装配顺序检查 | 〔建议〕按 SOLO-C01/C06 直接纳入候选回归，不另建第二套顺序正文 |
-| DRAFT-D07-D1 / D2 | 拆包粒度、组织域是否独立发布 | 技术推荐按生命周期与实际写权威评估，用户裁决产品取舍 |
+| DRAFT-D07-D1 / D2 | 首版 5 包边界、S0 所需四包；组织域留 core | 已按 ARCH-D02 决定，独立发布需新的实际需求证据 |
 | DRAFT-D07-D3 | agent_swarm domain 的迁移与唯一业务写入口 | 工程核实候选差异、迁移与所有写路径；ORG-06 结果要求已确认 |
 | DRAFT-D08 | 是否提供显式 disable 层及其可用边界 | 后续设计不得绕过准入、停线或存储独占 |
-| DRAFT-D09 | 实际 home/root 绑定、数据兼容性、一致恢复点及升级后变化处置 | 工程按 SOLO-DATA-01–04 提供具体材料；用户决定真实切换及有效数据处置 |
-| SOLO-C07、SOLO-LAYER-Q4 | 交付 profile 最终名、开发/验证环境部署 | 建议独立名及不同 home；测试用 profile 数量不改写 SOLO-R02 的交付形态 |
+| DRAFT-D09 | 独立 home 策略按 ARCH-D03；实际根/兼容性/一致检查点仍须工程取证 | 不再等待 home 选型；真实有效数据的处置仍由用户决定 |
+| SOLO-C07、SOLO-LAYER-Q4 | soloips 定义在独立 home 部署，新的正式/验收 profile 为 startup | 已按 ARCH-D03/04 决定；现有 55120 配置未因本决定改变 |
 | SOLO-LAYER-Q1 / Q2 / Q3 | 行覆写权、前缀与工件锁定 | 本稿技术推荐见 SOLO-LAYER-03、SOLO-C04/C05、§11.8，随正式候选验证 |
 | SOLO-REG-Q5 | 缺失 patch 目标在具体调用方的告警呈现与发布门禁 | 源码 warn/skip 与验收拒绝是不同层面，须核对实际输出 |
 | CLIENT-D01 / D02 / D03 | 首版视图形态、插槽与安装方式 | 用户决定体验取舍；工程验证服务及界面适配成本 |
@@ -1161,7 +1193,7 @@ DRAFT-D02 的语义已在 §3.3 明确为技术建议；C-1–C-11 的用词和�
 
 | ID | 问题或归一化 | 正文处置 |
 | --- | --- | --- |
-| A1 | 用户来源与团队建议混淆 | SOLO-R01–03 保留用户来源；5 包清单仅为 DRAFT-S02，不得称已确认 |
+| A1 | 用户来源与团队建议混淆 | SOLO-R01–03 保留原来源；5 包经后续委托成为 ARCH-D02 技术约束，不能倒写成此前用户已逐项确认 |
 | A2 | 证据与交付标签混用 | 静态代码阅读为〔源码事实〕，验收设计为〔建议〕+〔提案〕；不提供运行通过结论 |
 | A3 | 重复机制扩张为不同保证 | 同实例 open 正文在 §7.2，fence 在 §7.10，数据根在 §6.10，回滚在 §8.5；第 11 章只定义验收 |
 | A4 | 章级契约与成员交稿状态重复 | 阅读契约统一于第 1 章；原动态组装表改为阅读路径 |
@@ -1172,7 +1204,7 @@ DRAFT-D02 的语义已在 §3.3 明确为技术建议；C-1–C-11 的用词和�
 | A9 | PKG-01 同时拟作替代决策与建包判据 | PKG-01–03 只指新增持久业务状态包判据；不据此宣布 SOLO-A01 已被取代 |
 | A10 | 术语冲突与技术候选迟迟未收敛 | C-1–C-11 按 §3.4 给出一致用词，不升格业务决定 |
 | A11 | ORG-13 被误记为缺口 | 引用现有 §11.9、ORG-A09/A10，正文承接 SOLO-F09，验收细化 SOLO-ACC-07/08；取消“待交稿”前置 |
-| A12 | 5 包与 core/adapter 合包两种候选 | 5 包仅为当前文档候选；数量取舍保留 DRAFT-D07-D1，不把减少包数说成唯一故障缓解方式 |
+| A12 | 5 包与 core/adapter 合包两种候选 | ARCH-D02 选择 5 包边界及统一交付；包数不证明故障隔离，真实行为仍验收 |
 | A13 | already-open 被外推为跨进程保护 | 纠正 TERM-07、MECH-05、R2、WA-F1/F2、SOLO-ACC-02/CE-F；新增 SOLO-FENCE-01、SOLO-ACC-09，并记录现有 lease 候选及提交点接线缺口 |
 | A14 | 切 profile 被外推为状态回滚 | SOLO-DATA-01–04 固定数据根含义，SOLO-ACC-06 分开装配兼容回退与一致检查点恢复；不承诺一次改参数完成恢复 |
 | A15 | vendor/include/src/index.ts:77 被指为空行 | 2026-09-16 复核 DSH_CHECKOUT 文件共 377 行，:77 为 patch 循环；保留正确引用，证据仅说明配置遍历 |
@@ -1180,19 +1212,19 @@ DRAFT-D02 的语义已在 §3.3 明确为技术建议；C-1–C-11 的用词和�
 
 ## 附录 B · 证据基线与符号环境名
 
-正文只用符号名；机器本地绝对路径、home 真值与瞬时进程细节一律写运维交接，不进正文（SOLOIP-DOC-001 §6）。各章引用「附录 B 第 N 项」时指向本表。
+正文只用符号名；机器本地绝对路径、home 真值与瞬时进程细节一律按[环境定位与运维交接](operations/environment-handoff.md)写入本机记录，不进正文（SOLOIP-DOC-001 §6）。各章引用「附录 B 第 N 项」时指向本表；表内历史观察不能代替本次动作所需的最新环境核实。
 
 | # | 符号名 / 基线项 | 含义与已证边界 | 标注与日期 |
 | --- | --- | --- | --- |
 | 1 | 仓库内权威 | SOLOIP-DOC-001（格式）、project-binding.yaml、document-registry.yaml、AGENTS.md、docs/architecture.md（SOLO-ARCH）；基线提交 3f30ebaf3788f9a1a4c7bda63ad54135deadec31 | 〔源码事实〕仓库内文件，2026-09-15 建立（binding 记录） |
 | 2 | PROFILE-55120 | 端口 55120 实际使用的运行数据根与其 profile：swarm 0.1.5、patchReload 为 live、bundles 为 dsh-base + dsh-web-app + dsh-agent-swarm、依赖来自 freeze-20260915-reteam 下的 tgz（swarm 0.1.5、rlm 0.0.0）；是否存在 profile 级 lockfile 未读取 | 〔源码事实〕队长实测 2026-09-15；本文与 backend-hy4、qa-hy4 均未独立复核该 home → 引用它的运行时结论一律保持〔未验证〕。**实际生效版本属动态状态，权威在原生任务系统**（binding.liveStatusInCommittedMarkdown: forbidden） |
 | 3 | DSH_CHECKOUT | DSH 源码工作树：根包 0.1.5-rc.2、HEAD c291e7961a515f6d7af9304e7fd1d257929aef26；同 checkout 内 dsh-agent-swarm 为 0.1.4；工作树含既有修改，不能当官方纯净发布包（docs/architecture.md §9） | 〔源码事实〕多名成员 2026-09-15 静态只读；**未做启动/故障注入验证** |
-| 4 | DSH_HOME_OTHER | 另一个 DSH home：swarm 0.1.0（不是 55120，早期取证曾误标，已由队长实测更正）；其下并存 web 与 web-rc2 两份 profile、rlm 与 canvas 以 link 形式挂载 | 〔源码事实〕成员读取 + 队长更正 2026-09-15。**其观察只证明机制存在，不蕴含 PROFILE-55120 同样如此**（第 8 章 §8.7） |
-| 5 | REFACTORING_DOCS_ROOT | 重构文档入口（README + 01-departments.md + 02-company-contract.md + 03-delivery-and-acceptance.md + 04-avatar-64.md）；解析路径见 docs/architecture.md §9。用户裁决 2026-09-15：当前开发、修复与验收以重构文档为准 | 〔约束〕文档正文；条目 ID 见 4.4 |
+| 4 | DSH_HOME_OTHER | 历史报告提及的另一 home：swarm 0.1.0、web/web-rc2 profile 及 link 挂载；早期曾误归属为 55120，后被更正。本机交接尚未定位该实例与原始回执 | 〔未验证〕2026-09-15 历史转述，保留为来源线索；不得将它当作独立可复验的机制证明或 PROFILE-55120 证据。机制应引用指名源码，实例结论需补证 |
+| 5 | REFACTORING_DOCS_ROOT | 重构文档入口（README + 01-departments.md + 02-company-contract.md + 03-delivery-and-acceptance.md + 04-avatar-64.md）；解析路径按 ENV-02 核实。用户裁决 2026-09-15：当前开发、修复与验收以重构文档为准 | 〔约束〕文档正文；条目 ID 见 4.4 |
 | 6 | 旧插件候选基线 | repair-release 与 company-core 两个 worktree：前者独有 avatar-preference.ts、team-recovery.ts，后者独有 organization-*.ts、delivery-evidence.ts；曾记录 git merge-base --is-ancestor 单方向退出码 1；该结果只证明该方向不是祖先，分叉关系需双向核对；两者声明同一个 team domain（team-spec.ts:346） | 〔源码事实〕backend-deepseek 核对（日期随其邮件，2026-09-15/16）；D3 待决未解 |
 | 7 | Team 公开记录（用户来源） | public-97c9d584（2026-09-15 15:42:51Z）、public-082313dc（15:46:11Z）、public-74132fa8、public-a6e12b45（15:57:18Z，队长综合与 5 项裁决清单）、public-45c5f8fa（16:00:58Z） | 〔需求〕来源条目见 4.2；队长综合结论本身不构成用户确认 |
-| 8 | 本文自身 | docs/architecture-draft.md 为评审材料；其文档角色的最终安排见 DRAFT-D01 | 〔提案〕不因文本修订主张产品实现或运行验收 |
-| 9 | COMPANY_CORE_CHECKOUT | 由 REFACTORING_DOCS_ROOT 向上两级到 restore-control，再取 .worktree/company-core；本轮 HEAD 4c6d05ef30452df2b7adbfb24d625aef4e58f239。仅作为可复用候选，不等于已安装版本 | 〔源码事实〕2026-09-16 只读 writer lease/store、company-stack/config 与组织写入口；已证范围见 SOLO-FENCE-01 |
+| 8 | 本文自身 | SOLO-TECH-ARCH，登记为技术设计基线；原草稿身份由 DRAFT-D01 接续 | 决策状态见 §1.4，产品运行交付仍为〔提案〕 |
+| 9 | COMPANY_CORE_CHECKOUT | 复用候选的位置按 ENV-02 定位；本轮 HEAD 4c6d05ef30452df2b7adbfb24d625aef4e58f239。仅作为源码候选，不等于已安装版本；本轮引用文件的哈希与 Git 核验结果在本机交接回执保留 | 〔源码事实〕2026-09-16 复核 writer lease/store、company-stack/config/apply、organization-assets/admission/departments；这些已核文件无已跟踪修改。范围见 §7.9、SOLO-FENCE-01；未执行产品验收 |
 | 10 | 本次直接复核 | ORG-06/13 与 ORG-A03/A09/A10；DSH 的 domain facility、JSON 原子写与默认根、home/profile 解析、include patch 循环；DSH HEAD 与第 3 项一致 | 〔源码事实〕2026-09-16；源码与需求文本检查，未启动服务或运行故障场景 |
 
 通用判定约定（适用于 SOLO-ACC-01–10 与 SOLO-ACC-CE-A…I）：

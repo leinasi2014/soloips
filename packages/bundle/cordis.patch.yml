@@ -1,0 +1,20 @@
+# SoloIPs 装配层 patch。
+#
+# 顺序契约：完整 bundles 顺序的唯一正文是技术架构 SOLO-C01（§6.2）；本文件只声明
+# 本包在装配中的职责，不维护第二份顺序清单。
+#
+# 硬约束（SOLO-C03/C04）：
+#   - patch 是整行替换，不是深合并；覆写任何已存在的行必须完整重述该行全部 config；
+#   - 每个 row id 只允许一个写者；能力包只 insert 自身前缀（soloips-*）的 id；
+#   - 覆写官方行的权力只归本装配层。
+#
+# 〔提案〕骨架占位：本切片只建立装配边界与工具链，尚未接入任何能力包的行。
+# 首个实现切片按 SOLO-C01 的顺序在此 insert soloips-adapter-dsh / soloips-core /
+# soloips-web 的声明行，并按 SOLO-C06 以 --dump-config 回读生效组合。
+
+- insert:
+    - id: soloips
+      name: cordis:group
+      group: true
+      disabled: false
+      config: []

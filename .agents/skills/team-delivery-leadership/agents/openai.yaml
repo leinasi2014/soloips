@@ -1,0 +1,4 @@
+interface:
+  display_name: "团队领导与交付判断"
+  short_description: "通过目标、证据、瓶颈与决策权判断，带领团队形成自治并交付可验证成果"
+  default_prompt: "使用 $team-delivery-leadership 判断当前团队的目标、真实阻塞和责任边界，选择最有效的推进与干预方式。"

@@ -3,6 +3,9 @@
 # 本表登记文档角色、负责人、变更触发与验证入口。
 # 格式约束：两空格缩进映射；文档条目以 "  - documentId:" 引导；标量治理字段缩进四空格。
 # 本表是文档身份与归属的唯一权威；各文档不得重复抄写负责人与路径。
+# sourceAuthority 为直接来源的 documentId 列表；来源变化时由维护者复核投影，本表不提供自动刷新程序。
+# relatedPaths 与该条目共用角色、负责人和变更权；每个路径只登记一次。
+# validation 描述适用检查，不是通过回执；none-yet 表示尚未指定入口。实际结果按运维交接保留候选与命令证据。
 
 schemaVersion: 1
 project: soloips
@@ -44,11 +47,29 @@ documents:
     writeMode: agent-and-human
     accountableOwner: product-owner
     mutationAuthority: same-candidate-as-source-authority
-    updateTriggers: binding-or-project-red-line-change
-    validation: none-yet
-    sourceAuthority: project-binding
+    updateTriggers: binding-or-referenced-rule-or-project-red-line-change
+    validation: source-authority-and-local-reference-consistency
+    sourceAuthority: [project-binding, document-registry, agent-readable-documentation, product-architecture, technical-architecture, code-development-standard, environment-handoff, dsh-plugin-development-index]
     refreshPolicy: same-candidate-as-source-change
     expiryPolicy: invalid-on-source-authority-change
+  - documentId: environment-handoff
+    path: docs/operations/environment-handoff.md
+    role: stable-authority
+    subject: environment-location-and-operational-handoff
+    writeMode: agent-and-human
+    accountableOwner: engineering-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: environment-location-or-handoff-procedure-change
+    validation: local-reference-and-handoff-boundary-check
+  - documentId: dsh-plugin-development-index
+    path: .agents/skills/dsh-plugin-development/SKILL.md
+    role: reference
+    subject: official-dsh-plugin-documentation-navigation
+    writeMode: agent-and-human
+    accountableOwner: engineering-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: official-document-path-or-development-lookup-rule-change
+    validation: skill-frontmatter-and-official-link-and-task-routing-check
   - documentId: product-idea
     path: docs/SoloIPs_Studio_Idea_Document_V0.4.md
     role: reference
@@ -58,12 +79,80 @@ documents:
     mutationAuthority: user-authorized
     updateTriggers: product-vision-change
     validation: none-yet
+  - documentId: team-delivery-leadership
+    path: .agents/skills/team-delivery-leadership/SKILL.md
+    relatedPaths:
+      - .agents/skills/team-delivery-leadership/references/decision-cases.md
+      - .agents/skills/team-delivery-leadership/references/dsh-case-study.md
+      - .agents/skills/team-delivery-leadership/references/reorganization.md
+    role: reference
+    subject: team-leadership-and-delivery-judgment
+    writeMode: agent-and-human
+    accountableOwner: engineering-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: leadership-method-or-supporting-reference-change
+    validation: skill-frontmatter-and-reference-and-authority-boundary-check
   - documentId: product-architecture
     path: docs/architecture.md
-    role: reference
-    subject: architecture
+    role: stable-authority
+    subject: product-goals-scope-and-requirement-routing
+    authorityScope: 产品目标、首版范围与需求来源的维护正文；各条仍按来源及标签判定，不把建议或历史观察升为已确认需求
     writeMode: agent-and-human
     accountableOwner: architecture-owner
     mutationAuthority: user-authorized-reviewed-candidate
     updateTriggers: product-boundary-or-architecture-change
+    validation: none-yet
+  - documentId: technical-architecture
+    path: docs/technical-architecture.md
+    role: stable-authority
+    subject: technical-architecture
+    writeMode: agent-and-human
+    accountableOwner: architecture-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: delegated-technical-decision-or-interface-or-storage-contract-change
+    validation: source-trace-and-bounded-independent-document-review
+  - documentId: code-development-standard
+    path: docs/governance/code-development-standard.md
+    role: stable-authority
+    subject: software-development
+    writeMode: agent-and-human
+    accountableOwner: engineering-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: coding-or-toolchain-or-verification-or-delivery-rule-change
+    validation: authority-and-architecture-consistency-and-bounded-independent-review
+  - documentId: source-reference-index
+    path: docs/reference/rewrite-source-reference.md
+    role: reference
+    subject: source-rewrite-reference
+    writeMode: agent-and-human
+    accountableOwner: architecture-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: candidate-baseline-or-reuse-decision-change
+    validation: none-yet
+  - documentId: source-reference-domain-storage
+    path: docs/reference/rewrite-domain-storage.md
+    role: reference
+    subject: source-rewrite-reference
+    writeMode: agent-and-human
+    accountableOwner: architecture-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: candidate-baseline-change
+    validation: none-yet
+  - documentId: source-reference-seam-client
+    path: docs/reference/rewrite-seam-client.md
+    role: reference
+    subject: source-rewrite-reference
+    writeMode: agent-and-human
+    accountableOwner: architecture-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: candidate-baseline-change
+    validation: none-yet
+  - documentId: source-reference-test-contract
+    path: docs/reference/rewrite-test-contract.md
+    role: reference
+    subject: source-rewrite-reference
+    writeMode: agent-and-human
+    accountableOwner: architecture-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: candidate-baseline-change
     validation: none-yet

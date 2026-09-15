@@ -11,7 +11,8 @@ project:
 
 method:
   name: manage-agile-software-development
-  skillPath: D:/skills/manage-agile-software-development
+  skillResolution: session-catalog-by-name-then-local-handoff
+  locationAuthority: docs/operations/environment-handoff.md
   instructionAdapter: AGENTS.md
   candidateSelfActivation: forbidden
 
@@ -50,7 +51,9 @@ documentation:
 
 technical:
   runtime: DSH
-  note: 技术权威（依赖锁定、兼容基线）在引入代码与依赖后补充
+  architectureAuthority: docs/technical-architecture.md
+  developmentAuthority: docs/governance/code-development-standard.md
+  note: 技术裁定与验收设计见技术架构；具体依赖锁定与运行兼容证据在获授权的实现切片补齐
 
 redLines:
   - user-is-sole-business-decision-authority

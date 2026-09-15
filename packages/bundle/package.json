@@ -1,0 +1,19 @@
+{
+  "name": "soloips-bundle",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SoloIPs 装配层：携带 dsh.bundle.patch，按 SOLO-C01 锁定顺序叠加；不含运行时代码",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

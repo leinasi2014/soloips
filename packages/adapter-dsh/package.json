@@ -1,0 +1,17 @@
+{
+  "name": "soloips-adapter-dsh",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 官方 seam 适配层：收敛全部 @deepseek-ai/* 依赖，向 core 暴露内部接口",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ]
+}

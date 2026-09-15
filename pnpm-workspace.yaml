@@ -1,0 +1,6 @@
+# SoloIPs 开发 workspace。
+#
+# 交付 profile 是独立安装 workspace，需自己的锁文件（DEV-02）；
+# 本文件只覆盖开发根，不能代替 profile 锁。
+packages:
+  - packages/*
