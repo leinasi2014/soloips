@@ -1,0 +1,10 @@
+# 统一换行，避免跨平台差异污染文档 diff
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.zip binary
+*.tgz binary

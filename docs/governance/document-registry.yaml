@@ -1,0 +1,69 @@
+# SoloIPs 文档注册表
+#
+# 本表登记文档角色、负责人、变更触发与验证入口。
+# 格式约束：两空格缩进映射；文档条目以 "  - documentId:" 引导；标量治理字段缩进四空格。
+# 本表是文档身份与归属的唯一权威；各文档不得重复抄写负责人与路径。
+
+schemaVersion: 1
+project: soloips
+layoutPolicy: adapt-existing
+legalRoles: stable-authority|dynamic-authority|evidence|projection|reference
+
+documents:
+  - documentId: project-binding
+    path: docs/governance/project-binding.yaml
+    role: stable-authority
+    subject: governance
+    writeMode: agent-and-human
+    accountableOwner: product-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: project-authority-or-delivery-target-change
+    validation: none-yet
+  - documentId: document-registry
+    path: docs/governance/document-registry.yaml
+    role: stable-authority
+    subject: documentation
+    writeMode: agent-and-human
+    accountableOwner: product-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: document-authority-or-layout-change
+    validation: none-yet
+  - documentId: agent-readable-documentation
+    path: docs/governance/agent-readable-documentation.md
+    role: stable-authority
+    subject: documentation
+    writeMode: agent-and-human
+    accountableOwner: product-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: documentation-format-rule-change
+    validation: none-yet
+  - documentId: project-instructions
+    path: AGENTS.md
+    role: projection
+    subject: instruction
+    writeMode: agent-and-human
+    accountableOwner: product-owner
+    mutationAuthority: same-candidate-as-source-authority
+    updateTriggers: binding-or-project-red-line-change
+    validation: none-yet
+    sourceAuthority: project-binding
+    refreshPolicy: same-candidate-as-source-change
+    expiryPolicy: invalid-on-source-authority-change
+  - documentId: product-idea
+    path: docs/SoloIPs_Studio_Idea_Document_V0.4.md
+    role: reference
+    subject: product
+    writeMode: human
+    accountableOwner: product-owner
+    mutationAuthority: user-authorized
+    updateTriggers: product-vision-change
+    validation: none-yet
+  - documentId: product-architecture
+    path: docs/architecture.md
+    role: reference
+    subject: architecture
+    writeMode: agent-and-human
+    accountableOwner: architecture-owner
+    mutationAuthority: user-authorized-reviewed-candidate
+    updateTriggers: product-boundary-or-architecture-change
+    validation: none-yet

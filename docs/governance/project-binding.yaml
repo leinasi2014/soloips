@@ -1,0 +1,60 @@
+# SoloIPs 项目绑定
+#
+# 本文件是 SoloIPs 的方法、权威、交付与文档契约绑定。
+# 结构参照 dsh-agent-swarm 的 project-binding.yaml，按 SoloIPs 现状裁剪。
+# capability: NOT_CONFIGURED 表示该能力尚未配置，不得当作已就绪。
+
+bindingVersion: 1
+project:
+  identity: soloips
+  integrationRef: refs/heads/main
+
+method:
+  name: manage-agile-software-development
+  skillPath: D:/skills/manage-agile-software-development
+  instructionAdapter: AGENTS.md
+  candidateSelfActivation: forbidden
+
+authority:
+  repository:
+    kind: git-local
+    role: development-and-integration-authority
+    branch: main
+    remote: NOT_CONFIGURED
+    note: 本地 Git 仓库已建立（2026-09-15 用户授权）；尚无远程仓库，推送与镜像未配置
+  workSource:
+    kind: external-provider
+    capability: NOT_CONFIGURED
+  dynamicStatus:
+    kind: external-provider
+    capability: NOT_CONFIGURED
+    committedMarkdownAuthority: false
+
+deliveryTarget:
+  runtime: DSH
+  webProfilePort: 55120
+  note: 用户指定的目标服务；本文件不改变其部署
+  currentProductEntry: NOT_CONFIGURED
+
+documentation:
+  schemaVersion: 1
+  registry: docs/governance/document-registry.yaml
+  formatAuthority: docs/governance/agent-readable-documentation.md
+  layoutPolicy: adapt-existing
+  primaryReader: agent
+  humanReadable: secondary-by-structure
+  productPrecedence: latest-user-requirement-then-approved-documents
+  sharedAuthorityWriterCount: 1
+  liveStatusInCommittedMarkdown: forbidden
+
+technical:
+  runtime: DSH
+  note: 技术权威（依赖锁定、兼容基线）在引入代码与依赖后补充
+
+redLines:
+  - user-is-sole-business-decision-authority
+  - upstream-api-failure-stops-affected-work-and-notifies-user
+  - no-credential-or-service-config-change-without-authorization
+  - no-native-windows-dialogs-or-terminals
+  - activation-is-not-invocation
+  - build-success-is-not-product-acceptance
