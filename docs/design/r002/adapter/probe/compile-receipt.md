@@ -3,7 +3,7 @@
 - 工作目录：`SOLOIPS_ROOT`
 - tsc：Version 5.9.3（DEV-02 基线：strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes + noImplicitOverride + verbatimModuleSyntax）
 - 目标宿主工件：`SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules` 内已安装的 **0.1.6-alpha.1**（非 fork 源码）
-- 符号名解析见 [ENV-02](../../../../docs/operations/environment-handoff.md)；本机实际路径不入提交正文
+- 符号名解析见 [ENV-02](../../../../operations/environment-handoff.md)；本机实际路径不入提交正文
 - 证据边界：**仅编译期核对**；未装配、未启动服务、未调用模型。编译通过不证明运行期行为。
 
 ## P1 正向 · contracts.ts + consumer.ts（模拟 core 依赖）

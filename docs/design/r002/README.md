@@ -7,7 +7,7 @@
 | 范围 | `docs/design/r002/` 下全部正文的清单、角色、来源任务与通过边界；不含产品需求裁定 |
 | 决策状态 | 〔提案〕本目录是**设计候选**，不是已确认需求或已生效规则；其中的技术裁定须回到对应权威登记后才生效 |
 | 证据范围 | 各正文自带证据范围；本索引只描述范围与边界，**不提供**装配、安装、运行或产品验收证据 |
-| 依据 | [代码规范 DEV-12/13/14](../governance/code-development-standard.md)、[文档注册表](../governance/document-registry.yaml)、[文档格式规范](../governance/agent-readable-documentation.md)；需求与验收权威见 [技术架构](../technical-architecture.md) 与 [产品架构](../architecture.md) |
+| 依据 | [代码规范 DEV-12/13/14](../../governance/code-development-standard.md)、[文档注册表](../../governance/document-registry.yaml)、[文档格式规范](../../governance/agent-readable-documentation.md)；需求与验收权威见 [技术架构](../../technical-architecture.md) 与 [产品架构](../../architecture.md) |
 | 变更权 | 按注册表 `documentId: r002-design-index` 维护；**各分册的结论归其作者**，索引维护者不改写分册语义 |
 
 ## 1. 这个目录是什么
@@ -37,7 +37,7 @@ r002 批 1 的六名成员各自产出了设计候选。它们原先位于本机
 
 接手开发时按因果顺序读，而非按编号：
 
-1. **先读权威**：[技术架构](../technical-architecture.md) §11 验收合同与 [代码规范](../governance/code-development-standard.md) DEV-14 首片顺序。
+1. **先读权威**：[技术架构](../../technical-architecture.md) §11 验收合同与 [代码规范](../../governance/code-development-standard.md) DEV-14 首片顺序。
 2. **再读机制事实**：第 1 册（换版后的机制裁决）——它决定后续设计的行号与假设是否成立。
 3. **再读交付定义**：第 3 册（装配与 profile 三件套）+ 第 2 册（seam 契约）。这两册是批 2 并行的前置闸门。
 4. **再读验收编排**：第 4 册——写「什么算通过」。
@@ -47,22 +47,25 @@ r002 批 1 的六名成员各自产出了设计候选。它们原先位于本机
 
 | # | 事项 | 状态 |
 | --- | --- | --- |
-| 1 | `AGENTS.md` §2 授权边界全节在注册表中**无已登记的来源权威**（doc-reviewer B-05） | **未解决**。原拟以 `AGENTS.authorization-review.md` 登记解决，该文件经用户 2026-09-16 指示删除，路径消失。可选解法是在 [项目绑定](../governance/project-binding.yaml) 增 `authorization` 段，但属组织规则变更，不在本次授权内 |
+| 1 | `AGENTS.md` §2 授权边界全节在注册表中**无已登记的来源权威**（doc-reviewer B-05） | **未解决**。原拟以 `AGENTS.authorization-review.md` 登记解决，该文件经用户 2026-09-16 指示删除，路径消失。可选解法是在 [项目绑定](../../governance/project-binding.yaml) 增 `authorization` 段，但属组织规则变更，不在本次授权内 |
 | 2 | doc-reviewer 的其余 9 条阻断项（B-01–B-04、B-06–B-10） | **未处理**。本候选只入库正文，未修改被审查的文档结论；处置须单独授权 |
 | 3 | `assembly/probe/home/` 临时 home 目录树未入库 | **有意排除**。按 DEV-02 临时 home 应隔离，且其中 `node_modules/` 被根 `.gitignore` 排除；golden 基线已复制到 `assembly/evidence/baselines/`。原始完整目录保留在本机 `.artifacts/operations/`（被忽略） |
 | 4 | 各册内部的探针结论**未在本次集成中复跑** | **未验证**。本候选是原样入库 + 机器路径脱敏；探针结果的真实性由各册自述与 DEV-13 复核承担，未由集成者重新执行 |
 
 ## 5. 入库时的集成者改动（逐项可核对）
 
-入库不是逐字节复制，改动**限于以下三类**，均不改变任何结论、数字或裁决：
+入库不是逐字节复制，改动**限于以下四类**，均不改变任何结论、数字或裁决：
 
 | 类别 | 范围 | 说明 |
 | --- | --- | --- |
-| 机器绝对路径 → 符号环境名 | 28 个文件 | 开发机绝对路径改为 ENV-02 符号环境名（`$SOLOIPS_ROOT`、`$DSH_FORK_CHECKOUT`、`$SOLOIPS_DEVS_ROOT/versions/r001`）。依据 [文档格式规范 §6](../governance/agent-readable-documentation.md)「机器本地绝对路径写入本机记录，不进正文」 |
+| 机器绝对路径 → 符号环境名 | 28 个文件 | 开发机绝对路径改为 ENV-02 符号环境名（`$SOLOIPS_ROOT`、`$DSH_FORK_CHECKOUT`、`$SOLOIPS_DEVS_ROOT/versions/r001`）。依据 [文档格式规范 §6](../../governance/agent-readable-documentation.md)「机器本地绝对路径写入本机记录，不进正文」 |
 | 私有网络地址 → 占位符 | 2 个文件 | 本机私有内网与虚拟网卡地址（IPv4 私网段）改为 `<…地址>` 占位，**不在本正文复述具体值**。仓库 `visibility: public` |
+| 相对链接层级修正 | 4 个文件 / 8 行 | 见下 |
 | 目录重排 | `assembly/` | 见下 |
 
 **目录重排说明**：原始 `r002-*/` 平级目录改为 `docs/design/r002/<短名>/`，以符合仓库既有 `docs/<类别>/` 布局（`docs/decisions/`、`docs/operations/`、`docs/reference/`）。`assembly/probe/home/` 未入库（见 §4 第 3 项），其 `baselines/*.golden.txt` 移至 `assembly/evidence/baselines/` 以保留门禁基线。`assembly/evidence/probe-log.md` 已就地加入一条**明确标注为集成者注**的说明，记录该排除及其理由。
+
+**相对链接层级修正说明**：目录重排改变了部分正文与仓库根的距离，原有相对链接因此失效。已按目标文件的真实位置重算相对路径并修正 8 行（`README.md` 5 处、`adapter/contracts-design.md` 2 处、`adapter/probe/compile-receipt.md` 1 处），另修正 `baseline-intake/intake.md` 3 处指向 Skill `assets/` 的链接（该 3 处**在原 `.artifacts` 源目录中即为断链**，属原作者笔误，本次一并修正）。**只改链接目标字符串，未改动任何链接文字、结论或数据。** 修正后全仓库本地 Markdown 链接 116 条**断链 0**。
 
 **未改动**：所有裁决、数字、行号、哈希、ID、结论、待决项，以及各册自述的证据边界。凭据扫描在 `docs/design/` 全树为 0 命中。
 

@@ -6,7 +6,7 @@
 | 目的 | 冻结 `soloips-adapter-dsh` 对 core 暴露的内部接口，使批 2（`core-dev` / `flow-dev` / `web-dev`）可并行开工，不必等待 adapter 实现 |
 | 范围 | `apply(ctx, config)` 签名与分层职责；`contracts.ts` 完整类型契约；服务发布模式；settings 注册；禁止项清单；冻结边界。**不含** adapter 内部实现、装配行 patch、业务 domain schema |
 | 决策状态 | **〔已冻结〕** 契约形状已由 Lead 2026-09-16 裁定冻结，冻结范围 = §7.1 的 11 组类型；§7.2 条目仍可演进、**不得被批 2 依赖**。本文件不新增〔需求〕，不改 ARCH/DEV/SOLO 系列既有裁定 |
-| 证据范围 | 2026-09-16 只读核对：`DSH_FORK_CHECKOUT` 源码（HEAD `abdfeb4831e163462ea4dd17ca5bb4e581d40d1c`）+ `SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules` 内**已安装**的 0.1.6-alpha.1 工件；编译探针实测（`probe/compile-receipt.md`）。**未装配、未启动服务、未调用模型**。机器路径按 [ENV-02](../../../docs/operations/environment-handoff.md) 以符号名表示 |
+| 证据范围 | 2026-09-16 只读核对：`DSH_FORK_CHECKOUT` 源码（HEAD `abdfeb4831e163462ea4dd17ca5bb4e581d40d1c`）+ `SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules` 内**已安装**的 0.1.6-alpha.1 工件；编译探针实测（`probe/compile-receipt.md`）。**未装配、未启动服务、未调用模型**。机器路径按 [ENV-02](../../../operations/environment-handoff.md) 以符号名表示 |
 | 依据 | `docs/reference/rewrite-seam-client.md` SEAM-01–15 / SEAM-X1–X5；`docs/governance/code-development-standard.md` DEV-04/05；`docs/technical-architecture.md` §5.1/§7.2/§7.10/§11；`docs/decisions/official-team-and-dsh-fork.md` SOLO-TEAM-03；`.artifacts/operations/r002-baseline-20260916/baseline.md`；`.artifacts/operations/r002-mechanism-audit-20260916/audit.md`（W0）；Lead 2026-09-16 冻结裁定 |
 | 变更权 | 冻结范围内变更须经队长确认并通知全部消费方；未冻结区（§7.2）由 T08/T02 实现切片演进。**本设计不写入 `packages/adapter-dsh/**`**（未授权项 A3） |
 
@@ -476,7 +476,7 @@ tools-pv ──► adapter/contracts + core 命令契约
 
 ### 9.2 验证结果（实测）
 
-工作目录 `SOLOIPS_ROOT`，tsc 5.9.3，目标宿主工件 = `SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules` 内已安装的 0.1.6-alpha.1（符号名按 [ENV-02](../../../docs/operations/environment-handoff.md) 解析；本机实际路径不入提交正文）。
+工作目录 `SOLOIPS_ROOT`，tsc 5.9.3，目标宿主工件 = `SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules` 内已安装的 0.1.6-alpha.1（符号名按 [ENV-02](../../../operations/environment-handoff.md) 解析；本机实际路径不入提交正文）。
 
 | 探针 | 内容 | 预期 | 实际 |
 | --- | --- | --- | --- |
