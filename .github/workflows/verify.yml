@@ -72,6 +72,22 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Diagnose spawn from Node (temporary)
+        shell: pwsh
+        run: |
+          node -e @'
+          const { spawnSync, execSync } = require("node:child_process");
+          const show = (l, v) => console.log(l + ": " + String(v).trim().slice(0, 300));
+          show("node platform", process.platform);
+          show("PSModulePath from node", process.env.PSModulePath);
+          try { show("where powershell", execSync("where.exe powershell").toString()); } catch (e) { show("where powershell", "ERR " + e.message); }
+          const probe = "Write-Output (\"psver=\" + $PSVersionTable.PSVersion); Write-Output (\"pshome=\" + $PSHOME); Write-Output (\"psmp=\" + $env:PSModulePath); Write-Output (\"hasGetFileHash=\" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))";
+          const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", probe], { encoding: "utf8" });
+          show("status", r.status);
+          show("stdout", r.stdout);
+          show("stderr", r.stderr);
+          '@
+
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
