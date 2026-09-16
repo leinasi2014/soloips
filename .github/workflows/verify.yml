@@ -75,28 +75,40 @@ jobs:
       - name: Diagnose spawn from Node (temporary)
         shell: pwsh
         run: |
+          @'
+          Write-Output ("psver=" + $PSVersionTable.PSVersion)
+          Write-Output ("psmp=" + $env:PSModulePath)
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Write-Output ("getCmd=" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))
+          try { Write-Output ("hash=" + (Get-FileHash -LiteralPath 'package.json' -Algorithm SHA256).Hash.Substring(0,8)) }
+          catch { Write-Output ("hashFAILED=" + $_.Exception.Message) }
+          '@ | Set-Content -LiteralPath probe.ps1 -Encoding UTF8
           node -e @'
           const { spawnSync } = require("node:child_process");
-          const probe = [
-            "Write-Output (\"psver=\" + $PSVersionTable.PSVersion)",
-            "Write-Output (\"hasGetFileHash=\" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))",
-            "try { Write-Output (\"callHash=\" + (Get-FileHash -LiteralPath 'package.json' -Algorithm SHA256).Hash.Substring(0,8)) } catch { Write-Output (\"callHash FAILED: \" + $_.Exception.Message) }",
-            "Write-Output (\"utilityModule=\" + [bool](Get-Module -ListAvailable Microsoft.PowerShell.Utility))",
-            "Write-Output (\"utilityPath=\" + ((Get-Module -ListAvailable Microsoft.PowerShell.Utility | Select-Object -First 1).Path))",
-          ].join("; ");
-          const runCase = (label, psModulePath) => {
-            const env = { ...process.env };
-            if (psModulePath === undefined) delete env.PSModulePath;
-            else env.PSModulePath = psModulePath;
-            const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", probe], { encoding: "utf8", env });
-            console.log("### " + label + " (status=" + r.status + ")");
-            console.log((r.stdout || "").trim());
-            if ((r.stderr || "").trim()) console.log("STDERR: " + r.stderr.trim().slice(0, 200));
+          const path = require("node:path");
+          const script = path.resolve("probe.ps1");
+          const filter = (s) => s.split(";").filter((x) => x && !/(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(x.replace(/\//g, "\\").replace(/\\+$/, ""))).join(";");
+          const cases = {
+            "A -Command inherited": { mode: "cmd", keep: true },
+            "B -File inherited": { mode: "file", keep: true },
+            "C -File inherited+StrictMode": { mode: "file", keep: true },
+            "D -File PS7 filtered": { mode: "file", keep: "filter" },
+            "E -File PSModulePath deleted": { mode: "file", keep: false },
           };
-          const inherited = process.env.PSModulePath || "";
-          runCase("A: inherited from Node", undefined);
-          runCase("B: PS7 roots filtered", inherited.split(";").filter((s) => s && !/(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(s.replace(/\//g, "\\").replace(/\\+$/, ""))).join(";"));
-          runCase("C: PSModulePath removed", undefined === null ? "" : "");
+          for (const [label, cfg] of Object.entries(cases)) {
+            const env = { ...process.env };
+            delete env.NODE_OPTIONS; delete env.NODE_PATH;
+            if (cfg.keep === "filter") env.PSModulePath = filter(env.PSModulePath || "");
+            else if (cfg.keep === false) delete env.PSModulePath;
+            const args = cfg.mode === "file"
+              ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+              : ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '" + script + "'"];
+            const r = spawnSync("powershell.exe", args, { encoding: "utf8", env, cwd: process.cwd() });
+            console.log("### " + label + " status=" + r.status);
+            console.log("  " + (r.stdout || "").trim().split("\n").join(" | ").slice(0, 240));
+            if ((r.stderr || "").trim()) console.log("  ERR " + r.stderr.trim().slice(0, 160));
+          }
           '@
 
       - name: Install (frozen lockfile)
