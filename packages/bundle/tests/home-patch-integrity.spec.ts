@@ -108,13 +108,31 @@ function newFixture(
   return { root, integrity, port: currentPort };
 }
 
-/** 运行真实生产校验入口，返回退出状态与输出。 */
+/**
+ * 运行真实生产校验入口，返回退出状态与输出。
+ *
+ * 环境处理有两处，都是**测试进程的污染**，与被测规则无关：
+ *
+ * 1. 清掉 `NODE_OPTIONS` / `NODE_PATH`——启动器会拒绝带这两个变量的环境。
+ * 2. 把 `PSModulePath` 中属于 PowerShell 7 的模块根剔除。GitHub Actions 用
+ *    pwsh 7 跑每一步；当 **pwsh 7** 启动 `powershell.exe`(5.1) 时，PowerShell 会为
+ *    子进程翻译该变量，所以直连时 5.1 一切正常（运行器实测 `Get-FileHash ok`）。
+ *    但本测试是 **Node** 直接 spawn 5.1，没有这层翻译，5.1 会继承 PS7 的模块根，
+ *    于是解析到 PS7 的 `Microsoft.PowerShell.Utility` 并加载失败——
+ *    表现为 `Get-FileHash` 不存在，而启动器里正好以它作为第一个 Utility 命令。
+ *    保留 5.1 自己的模块根即可正常自动装载。
+ */
 function runVerify(versionRoot: string) {
-  // 启动器会拒绝带 NODE_OPTIONS/NODE_PATH 的环境（冻结运行时的保护）。测试进程
-  // 自身可能带这些变量（如 vitest 注入），故显式清掉，模拟干净的启动环境。
   const env = { ...process.env };
   delete env.NODE_OPTIONS;
   delete env.NODE_PATH;
+  if (env.PSModulePath) {
+    const filtered = env.PSModulePath.split(";")
+      .filter((segment) => segment && !isPowerShell7ModuleRoot(segment))
+      .join(";");
+    if (filtered) env.PSModulePath = filtered;
+    else delete env.PSModulePath;
+  }
   const result = spawnSync(
     "powershell.exe",
     [
@@ -131,6 +149,21 @@ function runVerify(versionRoot: string) {
     { cwd: repoRoot, encoding: "utf8", env },
   );
   return { status: result.status, output: `${result.stdout ?? ""}${result.stderr ?? ""}` };
+}
+
+/**
+ * 判断一个 `PSModulePath` 片段是否属于 PowerShell 7（Windows PowerShell 5.1 无法加载其模块）。
+ *
+ * 只认「PowerShell 自身安装/文档根下的 Modules」这一形态，即同时覆盖
+ * AllUsers（`Program Files\PowerShell\Modules`）、版本化（`Program Files\PowerShell\7\Modules`）
+ * 与 CurrentUser（`Documents\PowerShell\Modules`）。刻意不匹配含其他组件的路径
+ * （如 `Program Files\Microsoft SQL Server\...\PowerShell\Modules`），避免误删 5.1 可用的模块根。
+ */
+function isPowerShell7ModuleRoot(segment: string): boolean {
+  const normalized = segment.replace(/\//g, "\\").replace(/\\+$/, "");
+  return /(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(
+    normalized,
+  );
 }
 
 beforeAll(() => {

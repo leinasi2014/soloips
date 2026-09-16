@@ -72,22 +72,6 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Diagnose PowerShell environment
-        shell: pwsh
-        run: |
-          Write-Output "--- pwsh (step shell) ---"
-          Write-Output "PSVersion        = $($PSVersionTable.PSVersion)"
-          Write-Output "PSModulePath     = $env:PSModulePath"
-          Write-Output "has Get-FileHash = $([bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))"
-          Write-Output "--- powershell.exe (spawned by the launcher test) ---"
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command @'
-          Write-Output "PSVersion        = $($PSVersionTable.PSVersion)"
-          Write-Output "PSModulePath     = $env:PSModulePath"
-          Write-Output "has Get-FileHash = $([bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))"
-          try { Write-Output ("Get-FileHash ok: " + (Get-FileHash -LiteralPath 'package.json' -Algorithm SHA256).Hash.Substring(0,8)) }
-          catch { Write-Output ("Get-FileHash FAILED: " + $_.Exception.Message) }
-          '@
-
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
