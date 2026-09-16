@@ -13,6 +13,8 @@ import {
   SOLOIPS_ADAPTER_SETTINGS_NAMESPACE,
 } from "../src/index";
 import { createEventsPort, wireEventTranslations } from "../src/ports/events";
+import { soloipsSessionId } from "../src/ports/shared";
+import type { SubagentRunEndInfo, SubagentRunInfo } from "@deepseek-ai/dsh-subagent";
 
 describe("Config schema（SEAM-09：缺省值与契约常量同源）", () => {
   it("空配置解析为契约缺省值（单一事实来源，不复制数值）", () => {
@@ -28,6 +30,10 @@ describe("Config schema（SEAM-09：缺省值与契约常量同源）", () => {
   });
 
   it("非法值被 schema 拒绝（schemastery 解析失败）", () => {
+    // schemastery 的 schema 对象**可调用**（Schemastery 接口带调用签名）；非法值在调用时抛。
+    // 传非法值本身就是本用例的目的，故用 `@ts-expect-error` 声明「这里必须类型不合法」——
+    // 它比 `as unknown as` 诚实（后者会静默改变值的类型），且该指令被 typecheck:tests 求值。
+    // @ts-expect-error enabled 必须是 boolean，故意传字符串以验证 schema 拒绝
     expect(() => Config({ enabled: "yes" })).toThrow();
     expect(() => Config({ leaseWaitMs: -1 })).toThrow();
   });
@@ -83,15 +89,32 @@ describe("events port（真实 cordis 事件总线，词表只有 soloips:*）",
     const disposeStart = port.on("soloips:subagent/start", (info) => starts.push(info));
     const disposeEnd = port.on("soloips:subagent/end", (info) => ends.push(info));
 
-    ctx.emit("subagent/start", { runId: "run-1", provider: "spawn", id: "child-1", local: true });
-    ctx.emit("subagent/end", {
-      runId: "run-1",
+    // 宿主 subagent 生命周期事件的 info 形状取自 dsh-subagent 的公开导出
+    // （`SubagentRunInfo` / `SubagentRunEndInfo`），因此本用例的输入与宿主真实形状一致；
+    // 形状写错会在 typecheck:tests 下失败，而不是静默通过。
+    const startInfo: SubagentRunInfo = {
+      runId: "run-1" as SubagentRunInfo["runId"],
       provider: "spawn",
-      id: "child-1",
+      // id 的类型取自公开 info 自身，避免引入 dsh-session（非本包依赖，与 adapter 源码同法）。
+      id: "child-1" as SubagentRunInfo["id"],
       local: true,
+    };
+    const endInfo: SubagentRunEndInfo = {
+      ...startInfo,
       stopReason: "completed",
       // lastAssistantMessage 缺省 → 契约的空数组
-    });
+    };
+    // 宿主的 `Events` 把这两个事件声明为 `this: Scoped<SubagentRuntime>`，因此
+    // `ctx.emit` 的重载在**未装载 subagent 服务**的裸 Context 上匹配不到——这是类型层的
+    // 事实，不是本用例可以绕开的。这里用一个只含 `emit` 的最小发射面来表达「事件名 + info」，
+    // 与 adapter 翻译实际消费的调用形一致；不伪造 `Scoped` 载体，也不改动 production 代码
+    // 去迁就测试。
+    const emitHost = ctx.emit as unknown as (
+      name: "subagent/start" | "subagent/end",
+      info: SubagentRunInfo | SubagentRunEndInfo,
+    ) => void;
+    emitHost("subagent/start", startInfo);
+    emitHost("subagent/end", endInfo);
 
     expect(starts).toEqual([{ runId: "run-1", childId: "child-1", provider: "spawn" }]);
     expect(ends).toEqual([
@@ -149,9 +172,11 @@ describe("events port（真实 cordis 事件总线，词表只有 soloips:*）",
     const disposeSecond = port.on("soloips:session/flush", () => {
       seen.push(20);
     });
-    await expect(port.serial("soloips:session/flush", "session-1")).rejects.toThrow(
-      "first listener fails",
-    );
+    // 契约的 session 参数是品牌类型 SoloipsSessionId；经 adapter 自己的构造器产出，
+    // 不传裸字符串（品牌类型的存在本身就是「不能拿任意字符串当 id」的约束）。
+    await expect(
+      port.serial("soloips:session/flush", soloipsSessionId("session-1")),
+    ).rejects.toThrow("first listener fails");
     expect(seen).toEqual([10]); // 串行：首个抛出即中断后续
     disposeFirst();
     disposeSecond();

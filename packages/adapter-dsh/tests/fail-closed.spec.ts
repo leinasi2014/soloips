@@ -26,7 +26,8 @@ function bareContext(): Context {
     async parallel() {
       /* noop */
     },
-  } as Context;
+    // 同上：部分 stub 经 unknown 中转，不用 any。
+  } as unknown as Context;
 }
 
 const sessionId = "session-1" as SoloipsSessionId;

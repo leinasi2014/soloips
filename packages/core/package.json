@@ -9,6 +9,10 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./contracts": {
+      "types": "./lib/contracts.d.ts",
+      "default": "./lib/contracts.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -21,5 +25,9 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "soloips-adapter-dsh": "workspace:*"
   }
 }

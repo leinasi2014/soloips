@@ -56,7 +56,8 @@ function stubContextWithHub(): { context: Context; registered: string[]; unregis
     },
   };
   return {
-    context: stub as Context,
+    // 同上：部分 stub 经 unknown 中转，不用 any。
+    context: stub as unknown as Context,
     registered,
     get unregistered() {
       return state.unregistered;
@@ -73,7 +74,8 @@ function bareContext(): Context {
     emit() {
       /* noop */
     },
-  } as Context;
+    // 同上：部分 stub 经 unknown 中转，不用 any。
+  } as unknown as Context;
 }
 
 const tempRoots: string[] = [];

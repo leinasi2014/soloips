@@ -89,7 +89,9 @@ function createStubContext(settingsReady: boolean): ContextStub {
     injected,
     settingsRegistrations,
     // 单向窄化断言：桩的每个成员都是 Context 对应成员的宽松超集（any 参数/返回）。
-    context: stub as Context,
+    // 测试替身只实现被测路径用到的成员，不是完整 Context；经 unknown 中转是诚实的表达
+    // （直接 `as Context` 会被 TS 判为不充分重叠）。不使用 any（DEV-05）。
+    context: stub as unknown as Context,
   };
 }
 
