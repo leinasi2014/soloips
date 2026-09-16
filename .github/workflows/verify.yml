@@ -77,7 +77,6 @@ jobs:
         run: |
           @'
           Write-Output ("psver=" + $PSVersionTable.PSVersion)
-          Write-Output ("psmp=" + $env:PSModulePath)
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           Write-Output ("getCmd=" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))
@@ -89,26 +88,27 @@ jobs:
           const path = require("node:path");
           const script = path.resolve("probe.ps1");
           const filter = (s) => s.split(";").filter((x) => x && !/(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(x.replace(/\//g, "\\").replace(/\\+$/, ""))).join(";");
-          const cases = {
-            "A -Command inherited": { mode: "cmd", keep: true },
-            "B -File inherited": { mode: "file", keep: true },
-            "C -File inherited+StrictMode": { mode: "file", keep: true },
-            "D -File PS7 filtered": { mode: "file", keep: "filter" },
-            "E -File PSModulePath deleted": { mode: "file", keep: false },
-          };
-          for (const [label, cfg] of Object.entries(cases)) {
+          const cases = [
+            ["A -File inherited", "file", undefined],
+            ["B -File PS7 filtered", "file", "FILTER"],
+            ["C -File PSModulePath deleted", "file", "DELETE"],
+            ["D -Command inherited", "cmd", undefined],
+          ];
+          const lines = [];
+          for (const [label, mode, mode2] of cases) {
             const env = { ...process.env };
             delete env.NODE_OPTIONS; delete env.NODE_PATH;
-            if (cfg.keep === "filter") env.PSModulePath = filter(env.PSModulePath || "");
-            else if (cfg.keep === false) delete env.PSModulePath;
-            const args = cfg.mode === "file"
+            if (mode2 === "FILTER") env.PSModulePath = filter(env.PSModulePath || "");
+            else if (mode2 === "DELETE") delete env.PSModulePath;
+            const args = mode === "file"
               ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
               : ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '" + script + "'"];
             const r = spawnSync("powershell.exe", args, { encoding: "utf8", env, cwd: process.cwd() });
-            console.log("### " + label + " status=" + r.status);
-            console.log("  " + (r.stdout || "").trim().split("\n").join(" | ").slice(0, 240));
-            if ((r.stderr || "").trim()) console.log("  ERR " + r.stderr.trim().slice(0, 160));
+            const out = (r.stdout || "").replace(/\r/g, "").trim().split("\n").join(" ; ");
+            lines.push(label + " [status=" + r.status + "] " + out);
+            if ((r.stderr || "").trim()) lines.push("   ERR " + r.stderr.replace(/\r/g, "").trim().split("\n").slice(0, 2).join(" ; ").slice(0, 200));
           }
+          for (const line of lines) console.log("DIAG " + line);
           '@
 
       - name: Install (frozen lockfile)
