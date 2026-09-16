@@ -16,7 +16,9 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "pack-artifacts": "node scripts/development/pack-delivery-artifacts.mjs",
+    "delivery-lock": "node scripts/development/generate-delivery-lock.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
