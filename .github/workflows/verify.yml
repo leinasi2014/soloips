@@ -76,16 +76,27 @@ jobs:
         shell: pwsh
         run: |
           node -e @'
-          const { spawnSync, execSync } = require("node:child_process");
-          const show = (l, v) => console.log(l + ": " + String(v).trim().slice(0, 300));
-          show("node platform", process.platform);
-          show("PSModulePath from node", process.env.PSModulePath);
-          try { show("where powershell", execSync("where.exe powershell").toString()); } catch (e) { show("where powershell", "ERR " + e.message); }
-          const probe = "Write-Output (\"psver=\" + $PSVersionTable.PSVersion); Write-Output (\"pshome=\" + $PSHOME); Write-Output (\"psmp=\" + $env:PSModulePath); Write-Output (\"hasGetFileHash=\" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))";
-          const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", probe], { encoding: "utf8" });
-          show("status", r.status);
-          show("stdout", r.stdout);
-          show("stderr", r.stderr);
+          const { spawnSync } = require("node:child_process");
+          const probe = [
+            "Write-Output (\"psver=\" + $PSVersionTable.PSVersion)",
+            "Write-Output (\"hasGetFileHash=\" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))",
+            "try { Write-Output (\"callHash=\" + (Get-FileHash -LiteralPath 'package.json' -Algorithm SHA256).Hash.Substring(0,8)) } catch { Write-Output (\"callHash FAILED: \" + $_.Exception.Message) }",
+            "Write-Output (\"utilityModule=\" + [bool](Get-Module -ListAvailable Microsoft.PowerShell.Utility))",
+            "Write-Output (\"utilityPath=\" + ((Get-Module -ListAvailable Microsoft.PowerShell.Utility | Select-Object -First 1).Path))",
+          ].join("; ");
+          const runCase = (label, psModulePath) => {
+            const env = { ...process.env };
+            if (psModulePath === undefined) delete env.PSModulePath;
+            else env.PSModulePath = psModulePath;
+            const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", probe], { encoding: "utf8", env });
+            console.log("### " + label + " (status=" + r.status + ")");
+            console.log((r.stdout || "").trim());
+            if ((r.stderr || "").trim()) console.log("STDERR: " + r.stderr.trim().slice(0, 200));
+          };
+          const inherited = process.env.PSModulePath || "";
+          runCase("A: inherited from Node", undefined);
+          runCase("B: PS7 roots filtered", inherited.split(";").filter((s) => s && !/(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(s.replace(/\//g, "\\").replace(/\\+$/, ""))).join(";"));
+          runCase("C: PSModulePath removed", undefined === null ? "" : "");
           '@
 
       - name: Install (frozen lockfile)
