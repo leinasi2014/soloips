@@ -111,29 +111,33 @@ function newFixture(
 /**
  * 运行真实生产校验入口，返回退出状态与输出。
  *
- * 环境处理两处，都是**测试进程的污染**，与被测规则无关：
+ * 环境处理都是**测试进程的污染**，与被测规则无关：
  *
  * 1. 清掉 `NODE_OPTIONS` / `NODE_PATH`——启动器会拒绝带这两个变量的环境。
- * 2. **删除 `PSModulePath`**，让 Windows PowerShell 5.1 用自己的默认模块路径。
+ * 2. 清掉 `PSModulePath`，让 Windows PowerShell 5.1 用自己的默认模块路径。
  *
- * 第 2 点由运行器实测确定（windows-latest）：
- *   - 继承 PSModulePath 时，5.1 里 `Get-Command Get-FileHash` 为 **False**，
- *     调用报「无法识别 Get-FileHash」；
- *   - 剔除其中的 PowerShell 7 模块根、或**直接删除该变量**后均为 **True** 且调用成功。
+ * 第 2 点由运行器实测确定（windows-latest，单变量对照）：
  *
- * 成因是 GitHub Actions 用 pwsh 7 执行每一步：pwsh 7 启动 `powershell.exe` 时会为
- * 子进程翻译该变量，而**本测试由 Node 直接 spawn 5.1**，没有这层翻译，5.1 便继承了
- * PS7 的模块根并加载失败。`runtime.ps1` 里第一个 Utility 命令正是 `Get-FileHash`，
- * 所以报错看起来像脚本问题，实际是测试传入的环境。
+ * | PSModulePath | 子进程 5.1 里 Get-FileHash |
+ * | --- | --- |
+ * | 继承 | **不可见**，调用报「无法识别 Get-FileHash」 |
+ * | 删除 / 置空 / 仅保留 5.1 默认 / 剔除 PS7 模块根 | 可见，调用成功 |
  *
- * 删除而非过滤：运行器对照显示两者都可行，删除更少依赖路径形态的假设。
+ * 成因：GitHub Actions 用 pwsh 7 执行每一步。pwsh 7 启动 `powershell.exe` 时会为子进程
+ * 翻译该变量，所以 pwsh 里直连正常；而**本测试由 Node 直接 spawn 5.1**，没有这层翻译，
+ * 5.1 继承了 PS7 的模块根而无法自动装载 `Microsoft.PowerShell.Utility`。
+ * `runtime.ps1` 的第一个 Utility 命令正是 `Get-FileHash`，于是报错看起来像脚本缺陷。
+ *
+ * 注意：Windows 的环境变量名**不区分大小写**，而 JS 对象键区分。只 `delete env.PSModulePath`
+ * 可能留下另一处拼写的同名变量并继续传递给子进程；必须按大小写不敏感的方式清除。
  */
-/** 被测启动器要求的环境：不带 Node 注入变量，也不带继承来的 PowerShell 模块路径。 */
 function cleanPowerShellEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.NODE_OPTIONS;
-  delete env.NODE_PATH;
-  delete env.PSModulePath;
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    const upper = key.toUpperCase();
+    if (upper === "NODE_OPTIONS" || upper === "NODE_PATH" || upper === "PSMODULEPATH") continue;
+    env[key] = value;
+  }
   return env;
 }
 
@@ -160,29 +164,35 @@ function runVerify(versionRoot: string) {
 /**
  * 前置自检：确认该 PowerShell 里基础 cmdlet 可用。
  *
- * 若环境准备被破坏（例如 `PSModulePath` 又带回了 PowerShell 7 的模块根），
- * 启动器会报「无法识别 Get-FileHash」。那看起来像脚本缺陷，实际是环境问题。
- * 事先断言一句，可把失败指向真正原因，而不是让人去查 runtime.ps1。
+ * 若环境准备被破坏（例如 `PSModulePath` 又带回了 PowerShell 7 的模块根），启动器会报
+ * 「无法识别 Get-FileHash」——那看起来像 `runtime.ps1` 的缺陷，实际是环境问题。
+ * 事先断言，可把失败直接指向真正原因。
+ *
+ * 失败时一并打印子进程实际看到的 `PSModulePath`，让下一次复现自带证据，
+ * 不必再为同一问题多跑几轮 CI。
  */
 function assertPowerShellUsable() {
+  const script = [
+    "if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) { 'ok' } else { 'missing' }",
+    "Write-Output ('psmp=' + $env:PSModulePath)",
+  ].join("; ");
   const probe = spawnSync(
     "powershell.exe",
-    [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      "if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) { 'ok' } else { 'missing' }",
-    ],
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
     { encoding: "utf8", env: cleanPowerShellEnv() },
   );
-  const answer = `${probe.stdout ?? ""}`.trim();
-  if (answer !== "ok") {
-    throw new Error(
-      `Windows PowerShell 无法使用 Get-FileHash（探测结果：${JSON.stringify(answer)}）。` +
-        "这是测试环境问题，不是 runtime.ps1 的缺陷：请检查 PSModulePath 是否又带入了 PowerShell 7 的模块根。",
-    );
-  }
+  const lines = `${probe.stdout ?? ""}`
+    .replace(/\r/g, "")
+    .trim()
+    .split("\n")
+    .map((line) => line.trim());
+  if (lines[0] === "ok") return;
+
+  const reported = lines.find((line) => line.startsWith("psmp=")) ?? "(未报告)";
+  throw new Error(
+    `Windows PowerShell 无法使用 Get-FileHash（探测结果：${JSON.stringify(lines[0] ?? "")}，${reported}）。` +
+      "这是测试环境问题，不是 runtime.ps1 的缺陷：请检查传入的 PSModulePath 是否带入了 PowerShell 7 的模块根。",
+  );
 }
 
 beforeAll(() => {
@@ -197,11 +207,14 @@ beforeAll(() => {
   if (!/^v24\./.test((version.stdout ?? "").trim())) {
     throw new Error(`The launcher requires Node 24.x; found ${(version.stdout ?? "").trim()}`);
   }
+  // 先建临时根，再自检 PowerShell：若自检抛错，afterAll 仍能拿到 workRoot 正常清理，
+  // 不至于把环境问题再放大成一个无关的清理错误。
   workRoot = longFormPath(mkdtempSync(join(tmpdir(), "soloips-homepatch-")));
+  assertPowerShellUsable();
 });
 
 afterAll(() => {
-  rmSync(workRoot, { recursive: true, force: true });
+  if (workRoot) rmSync(workRoot, { recursive: true, force: true });
 });
 
 /**

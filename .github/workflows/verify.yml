@@ -72,9 +72,6 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Diagnose env seen by the test process (temporary)
-        run: node scripts/ci-diag.mjs
-
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
