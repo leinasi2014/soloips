@@ -51,7 +51,8 @@ r002 批 1 的六名成员各自产出了设计候选。它们原先位于本机
 | 2 | doc-reviewer 的其余 9 条阻断项（B-01–B-04、B-06–B-10） | **未处理**。本候选只入库正文，未修改被审查的文档结论；处置须单独授权 |
 | 3 | `assembly/probe/home/` 临时 home 的 `node_modules/` 部分未入库 | **已按配方重建**。64 个 stub 文件被根 `.gitignore` 的 `node_modules/` 规则排除，直接入库会产生残缺 fixture。现改为：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`，64 个 stub 由 `assembly/evidence/fixture/stubs.manifest.json` 还原，重建后文件集合 100/100 一致（洁净检出上 18 个文本文件仅行尾差异，见 `assembly/evidence/fixture/README.md` §3） |
 | 4 | 各册内部的探针结论**未在本次集成中复跑** | **未验证**。本候选是原样入库 + 机器路径脱敏；探针结果的真实性由各册自述与 DEV-13 复核承担，未由集成者重新执行 |
-| 5 | `assembly/evidence/fixture/` 重建后**未实跑门禁** | **未验证**。fixture 保真度已证（逐字节），但「重建后 `check-composition.mjs` 输出与 `gate-*.txt` 一致」未执行，属基线 §6 未授权的运行验证 |
+| 5 | `assembly/evidence/fixture/` 重建后**未实跑门禁** | **未验证**。fixture 文件集合保真度已证（100/100，洁净检出上 18 个文本文件仅行尾差异），但「重建后 `check-composition.mjs` 输出与 `gate-*.txt` 一致」未执行，属基线 §6 未授权的运行验证 |
+| 6 | **与文档规范 §7 的落点张力**（独立复核判定：处置不足，建议级） | **未解决，如实记录**。本目录含**过程性证据**（探针原始输出、审查回执、盘点记录、团队编制与版本台账）。`agent-readable-documentation.md` §7 要求「动态状态（谁在做、卡在哪、哪个版本可用）留在原生任务与发布系统，不写进已提交文档」；[项目绑定](../../governance/project-binding.yaml) 亦有 `liveStatusInCommittedMarkdown: forbidden`。**§1 的三条边界声明覆盖的是决策维度与交付维度，不能豁免 §7 的落点规则**——标注不替代落点。已知受影响处：`baseline/baseline.md` §1/§7 的瞬时值（端口占用、PID、版本目录实测状态）与 `baseline/roster.md` 的进度性表述。独立复核给出三个处置方案：**A**（推荐，最小改动）把动态行改写为不含瞬时值的契约表述、动态值留在本机记录；**B** 把 `baseline/` 两册改登记为 `role: evidence` 并在契约表写明时点边界（减轻但不消除张力）；**C**（最保守）`baseline/` 两册退出提交。**本候选未实施任何方案**——三者都涉及正文语义或登记角色变更，须回原作者/用户裁定 |
 
 ## 5. 入库时的集成者改动（逐项可核对）
 

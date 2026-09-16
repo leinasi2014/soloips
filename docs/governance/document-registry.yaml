@@ -208,7 +208,10 @@ documents:
     relatedPaths:
       - docs/design/r002/mechanism-audit/audit.md
       - docs/design/r002/adapter/contracts-design.md
+      - docs/design/r002/adapter/probe/compile-receipt.md
       - docs/design/r002/assembly/design.md
+      - docs/design/r002/assembly/evidence/probe-log.md
+      - docs/design/r002/assembly/evidence/fixture/README.md
       - docs/design/r002/qa/acceptance-plan.md
       - docs/design/r002/doc-review/review.md
       - docs/design/r002/baseline-intake/intake.md
