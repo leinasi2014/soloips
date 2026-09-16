@@ -72,45 +72,6 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Diagnose spawn from Node (temporary)
-        shell: pwsh
-        run: |
-          @'
-          Write-Output ("psver=" + $PSVersionTable.PSVersion)
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          Write-Output ("getCmd=" + [bool](Get-Command Get-FileHash -ErrorAction SilentlyContinue))
-          try { Write-Output ("hash=" + (Get-FileHash -LiteralPath 'package.json' -Algorithm SHA256).Hash.Substring(0,8)) }
-          catch { Write-Output ("hashFAILED=" + $_.Exception.Message) }
-          '@ | Set-Content -LiteralPath probe.ps1 -Encoding UTF8
-          node -e @'
-          const { spawnSync } = require("node:child_process");
-          const path = require("node:path");
-          const script = path.resolve("probe.ps1");
-          const filter = (s) => s.split(";").filter((x) => x && !/(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(x.replace(/\//g, "\\").replace(/\\+$/, ""))).join(";");
-          const cases = [
-            ["A -File inherited", "file", undefined],
-            ["B -File PS7 filtered", "file", "FILTER"],
-            ["C -File PSModulePath deleted", "file", "DELETE"],
-            ["D -Command inherited", "cmd", undefined],
-          ];
-          const lines = [];
-          for (const [label, mode, mode2] of cases) {
-            const env = { ...process.env };
-            delete env.NODE_OPTIONS; delete env.NODE_PATH;
-            if (mode2 === "FILTER") env.PSModulePath = filter(env.PSModulePath || "");
-            else if (mode2 === "DELETE") delete env.PSModulePath;
-            const args = mode === "file"
-              ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
-              : ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& '" + script + "'"];
-            const r = spawnSync("powershell.exe", args, { encoding: "utf8", env, cwd: process.cwd() });
-            const out = (r.stdout || "").replace(/\r/g, "").trim().split("\n").join(" ; ");
-            lines.push(label + " [status=" + r.status + "] " + out);
-            if ((r.stderr || "").trim()) lines.push("   ERR " + r.stderr.replace(/\r/g, "").trim().split("\n").slice(0, 2).join(" ; ").slice(0, 200));
-          }
-          for (const line of lines) console.log("DIAG " + line);
-          '@
-
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 

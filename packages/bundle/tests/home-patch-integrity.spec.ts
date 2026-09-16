@@ -111,28 +111,34 @@ function newFixture(
 /**
  * 运行真实生产校验入口，返回退出状态与输出。
  *
- * 环境处理有两处，都是**测试进程的污染**，与被测规则无关：
+ * 环境处理两处，都是**测试进程的污染**，与被测规则无关：
  *
  * 1. 清掉 `NODE_OPTIONS` / `NODE_PATH`——启动器会拒绝带这两个变量的环境。
- * 2. 把 `PSModulePath` 中属于 PowerShell 7 的模块根剔除。GitHub Actions 用
- *    pwsh 7 跑每一步；当 **pwsh 7** 启动 `powershell.exe`(5.1) 时，PowerShell 会为
- *    子进程翻译该变量，所以直连时 5.1 一切正常（运行器实测 `Get-FileHash ok`）。
- *    但本测试是 **Node** 直接 spawn 5.1，没有这层翻译，5.1 会继承 PS7 的模块根，
- *    于是解析到 PS7 的 `Microsoft.PowerShell.Utility` 并加载失败——
- *    表现为 `Get-FileHash` 不存在，而启动器里正好以它作为第一个 Utility 命令。
- *    保留 5.1 自己的模块根即可正常自动装载。
+ * 2. **删除 `PSModulePath`**，让 Windows PowerShell 5.1 用自己的默认模块路径。
+ *
+ * 第 2 点由运行器实测确定（windows-latest）：
+ *   - 继承 PSModulePath 时，5.1 里 `Get-Command Get-FileHash` 为 **False**，
+ *     调用报「无法识别 Get-FileHash」；
+ *   - 剔除其中的 PowerShell 7 模块根、或**直接删除该变量**后均为 **True** 且调用成功。
+ *
+ * 成因是 GitHub Actions 用 pwsh 7 执行每一步：pwsh 7 启动 `powershell.exe` 时会为
+ * 子进程翻译该变量，而**本测试由 Node 直接 spawn 5.1**，没有这层翻译，5.1 便继承了
+ * PS7 的模块根并加载失败。`runtime.ps1` 里第一个 Utility 命令正是 `Get-FileHash`，
+ * 所以报错看起来像脚本问题，实际是测试传入的环境。
+ *
+ * 删除而非过滤：运行器对照显示两者都可行，删除更少依赖路径形态的假设。
  */
-function runVerify(versionRoot: string) {
+/** 被测启动器要求的环境：不带 Node 注入变量，也不带继承来的 PowerShell 模块路径。 */
+function cleanPowerShellEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.NODE_OPTIONS;
   delete env.NODE_PATH;
-  if (env.PSModulePath) {
-    const filtered = env.PSModulePath.split(";")
-      .filter((segment) => segment && !isPowerShell7ModuleRoot(segment))
-      .join(";");
-    if (filtered) env.PSModulePath = filtered;
-    else delete env.PSModulePath;
-  }
+  delete env.PSModulePath;
+  return env;
+}
+
+function runVerify(versionRoot: string) {
+  const env = cleanPowerShellEnv();
   const result = spawnSync(
     "powershell.exe",
     [
@@ -152,18 +158,31 @@ function runVerify(versionRoot: string) {
 }
 
 /**
- * 判断一个 `PSModulePath` 片段是否属于 PowerShell 7（Windows PowerShell 5.1 无法加载其模块）。
+ * 前置自检：确认该 PowerShell 里基础 cmdlet 可用。
  *
- * 只认「PowerShell 自身安装/文档根下的 Modules」这一形态，即同时覆盖
- * AllUsers（`Program Files\PowerShell\Modules`）、版本化（`Program Files\PowerShell\7\Modules`）
- * 与 CurrentUser（`Documents\PowerShell\Modules`）。刻意不匹配含其他组件的路径
- * （如 `Program Files\Microsoft SQL Server\...\PowerShell\Modules`），避免误删 5.1 可用的模块根。
+ * 若环境准备被破坏（例如 `PSModulePath` 又带回了 PowerShell 7 的模块根），
+ * 启动器会报「无法识别 Get-FileHash」。那看起来像脚本缺陷，实际是环境问题。
+ * 事先断言一句，可把失败指向真正原因，而不是让人去查 runtime.ps1。
  */
-function isPowerShell7ModuleRoot(segment: string): boolean {
-  const normalized = segment.replace(/\//g, "\\").replace(/\\+$/, "");
-  return /(^|\\)(documents|program files( \(x86\))?)\\powershell(\\\d+(\.\d+)*)?(\\modules)?$/i.test(
-    normalized,
+function assertPowerShellUsable() {
+  const probe = spawnSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) { 'ok' } else { 'missing' }",
+    ],
+    { encoding: "utf8", env: cleanPowerShellEnv() },
   );
+  const answer = `${probe.stdout ?? ""}`.trim();
+  if (answer !== "ok") {
+    throw new Error(
+      `Windows PowerShell 无法使用 Get-FileHash（探测结果：${JSON.stringify(answer)}）。` +
+        "这是测试环境问题，不是 runtime.ps1 的缺陷：请检查 PSModulePath 是否又带入了 PowerShell 7 的模块根。",
+    );
+  }
 }
 
 beforeAll(() => {
@@ -172,6 +191,8 @@ beforeAll(() => {
   });
   // process.execPath 在 CI 运行器上也可能带短名成分（如 RUNNER~1），启动器同样会拒绝。
   nodeExe = longFormPath((probe.stdout ?? "").trim());
+  // 先确认 PowerShell 可用，避免环境问题伪装成 runtime.ps1 的缺陷。
+  assertPowerShellUsable();
   const version = spawnSync(nodeExe, ["--version"], { encoding: "utf8" });
   if (!/^v24\./.test((version.stdout ?? "").trim())) {
     throw new Error(`The launcher requires Node 24.x; found ${(version.stdout ?? "").trim()}`);
