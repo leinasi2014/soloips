@@ -1,0 +1,319 @@
+{
+  "head": "2f9fa433983008d138b4e6c241fd470551a31351",
+  "files": {
+    "docs/decisions/official-team-and-dsh-fork.md": "91574AA0C3E6447F13FC9A01AB24D0B6ECDFB6D800AB4D8306E170B436590E3F",
+    "AGENTS.md": "2683D33D4AA8682CE3F722DF02CFBF012D58BBC216E612A5C12026B09AD77A67",
+    "docs/architecture.md": "93223320EF00F9D671ACB802CCC8ABAEB29145ED71E22F5CD969E80D05861429",
+    "docs/technical-architecture.md": "F42D204203012C81139773CF5A4A5D6D7A9A67E57B2418C26F66A7F3DEA0BD50",
+    "docs/governance/code-development-standard.md": "C56D0F6C1DD14BADFE21ED52C814FE6FC0243908ECCC2FCAE202D474E2956013",
+    "docs/governance/document-registry.yaml": "7DC0548529478D59C1038C54A4CD32651F13216A028116B52F0273AD0502F3E4",
+    "docs/operations/environment-handoff.md": "3BD6B058673A37B35A8C195B2C0FD6C8D59AAAC33F1BE953E6E05BDBA8004B37",
+    "docs/reference/rewrite-source-reference.md": "3234CF6F0D2E8F018EF20FB35F0C8AF240E94283476013BA72C4C3B952CBF49A"
+  },
+  "localMarkdownLinkOccurrences": 72,
+  "links": [
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../architecture.md"
+    },
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../technical-architecture.md"
+    },
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../governance/code-development-standard.md"
+    },
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../../.agents/skills/dsh-plugin-development/SKILL.md"
+    },
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../governance/document-registry.yaml"
+    },
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/decisions/official-team-and-dsh-fork.md",
+      "target": "../operations/environment-handoff.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/project-binding.yaml"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/document-registry.yaml"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/architecture.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/agent-readable-documentation.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/technical-architecture.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/code-development-standard.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": ".agents/skills/dsh-plugin-development/SKILL.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/reference/rewrite-source-reference.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/operations/environment-handoff.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/code-development-standard.md#dev-15"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/code-development-standard.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/governance/agent-readable-documentation.md"
+    },
+    {
+      "source": "AGENTS.md",
+      "target": "docs/decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "SoloIPs_Studio_Idea_Document_V0.4.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "governance/project-binding.yaml"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "governance/document-registry.yaml"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "SoloIPs_Studio_Idea_Document_V0.4.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "target": "technical-architecture.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "architecture.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "governance/agent-readable-documentation.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "governance/project-binding.yaml"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "governance/document-registry.yaml"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "../AGENTS.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "architecture.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "architecture.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "governance/code-development-standard.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "architecture.md"
+    },
+    {
+      "source": "docs/technical-architecture.md",
+      "target": "operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../architecture.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../technical-architecture.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "project-binding.yaml"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "document-registry.yaml"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "agent-readable-documentation.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../../.agents/skills/dsh-plugin-development/SKILL.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "project-binding.yaml"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/governance/code-development-standard.md",
+      "target": "../technical-architecture.md"
+    },
+    {
+      "source": "docs/operations/environment-handoff.md",
+      "target": "../technical-architecture.md"
+    },
+    {
+      "source": "docs/operations/environment-handoff.md",
+      "target": "../governance/project-binding.yaml"
+    },
+    {
+      "source": "docs/operations/environment-handoff.md",
+      "target": "../governance/code-development-standard.md"
+    },
+    {
+      "source": "docs/operations/environment-handoff.md",
+      "target": "../governance/document-registry.yaml"
+    },
+    {
+      "source": "docs/operations/environment-handoff.md",
+      "target": "../decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "../decisions/official-team-and-dsh-fork.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "../operations/environment-handoff.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "../governance/agent-readable-documentation.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "../technical-architecture.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "rewrite-domain-storage.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "rewrite-seam-client.md"
+    },
+    {
+      "source": "docs/reference/rewrite-source-reference.md",
+      "target": "rewrite-test-contract.md"
+    }
+  ],
+  "registryDocuments": 16,
+  "registryPaths": 19,
+  "officialSourceBaseline": "c291e7961a515f6d7af9304e7fd1d257929aef26",
+  "officialPinnedLinkTargets": 13,
+  "officialLinksVerification": "path exists in pinned Git tree; no HTTP reachability claim",
+  "teamPackages": {
+    "@deepseek-ai/dsh-experimental-agent-team": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-client-ui-agent-team": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-agent-team-profile": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-agent-team-web-profile": "0.1.5-rc.2"
+  },
+  "registryStructure": "passed: documented mapping layout, unique IDs and paths, resolved references; not a general YAML parse",
+  "diffCheck": "passed",
+  "scope": "documentation only; no product tests, fork creation, artifact publication or runtime validation"
+}

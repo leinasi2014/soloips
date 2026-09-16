@@ -1,0 +1,32 @@
+# SoloIPs adapter 层 patch —— 草案（目标路径 packages/adapter-dsh/cordis.patch.yml）
+#
+# 本文件是 T01 交付的**草案副本**，不是产品文件。落地须先获得 A3 授权。
+#
+# 职责（ARCH-D02 / DEV-04）：收敛 Host 对 DSH storage / session / subagent / tools 的
+# 执行能力适配，向 core 暴露内部接口；**不持有业务 domain handle**。
+#
+# 本包是 SOLO-C01 顺序中**第一个** SoloIPs 层，因此它 insert 的行最早进入 entry 树，
+# 可被后续 soloips 层（core / web / bundle）命中并覆写。
+#
+# 行 id 使用包名前缀（SOLO-C04）：soloips-adapter-dsh。
+# 单行单写者：本行只由本包声明；其他层要改它必须完整重述（SOLO-C03）。
+
+- insert:
+    # 行 id 与包名同名，便于在 --dump-config 的来源分段里直接对应到包。
+    - id: soloips-adapter-dsh
+      # name 必须是**裸包名**：client-modules 的 locatePkgJson 用 exactPackageSpecifier
+      # 解析行名，带子路径（如 soloips-adapter-dsh/x）会返回 undefined，导致找不到清单。
+      name: 'soloips-adapter-dsh'
+      # inject = 本行 apply 前必须就绪的服务（服务注册 + inject 是跨包依赖的唯一机制，
+      # 不是 package.json 依赖声明，见 SOLO-C04 末段）。
+      #
+      # 只声明**必需且由目标组合保证存在**的服务：
+      #   storage —— dsh-base 的 `storage` 行提供（dsh-storage）。
+      # 其余能力（session / subagent / tools）走 ctx.inject([...], cb) 延迟注册，
+      # 不写进本数组：0.1.6 下缺服务的行只保持 pending 并产生一条 warning，
+      # 不再导致启动失败（W0 MECH-06/SOLO-F04），写进 inject 会让整包静默不生效。
+      inject: [storage]
+      # config 初值：SoloIPs 统一开关位。adapter 契约要求
+      # `config.enabled === false` 时在任何副作用之前早退（SEAM-07，task-4）。
+      config:
+        enabled: true

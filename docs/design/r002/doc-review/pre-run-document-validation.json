@@ -1,0 +1,44 @@
+{
+  "at": "2026-09-16T01:24:56.307Z",
+  "command": "node .artifacts/operations/r001-20260916/validate-docs.cjs",
+  "files": [
+    {
+      "file": "AGENTS.md",
+      "sha256": "b29b3928daf5fee145f43b73f2dd98d1334d772932e7ad55763797cad7093fe2"
+    },
+    {
+      "file": "docs/operations/development-iterations.md",
+      "sha256": "7e1a1245a666cca01d0090debf1e7679bf565e32e003458d9fc0d10a807abe13"
+    },
+    {
+      "file": "docs/governance/code-development-standard.md",
+      "sha256": "081d7e73d43fa4bedc24e11d969d1da0f9a7496b2cd251de5b2b2ce6ebb9ff61"
+    },
+    {
+      "file": "docs/operations/environment-handoff.md",
+      "sha256": "a26d26ba790e3a18259596df0b1cd9853338720db27035d0c897f681a3496f58"
+    },
+    {
+      "file": "profiles/development/README.md",
+      "sha256": "75dd39713c389a8d8f78c5335078185910c136173fc441cc36f389b414107e62"
+    },
+    {
+      "file": ".agents/skills/team-delivery-leadership/SKILL.md",
+      "sha256": "547d806e975b6684510f87879d2feacdc90f97feb1c919054d247c277ed27673"
+    },
+    {
+      "file": ".agents/skills/team-delivery-leadership/references/soloips-development.md",
+      "sha256": "c7c3eb3e2988c4c710a6842e8b47111e16a6a85e2381aa30dee545366570be3e"
+    },
+    {
+      "file": ".agents/skills/team-delivery-leadership/references/dsh-case-study.md",
+      "sha256": "700cce97fa8cb9b5971a2b340966d9c825bfc14b93dd77603c765a8371ea269f"
+    }
+  ],
+  "linkOccurrences": 70,
+  "broken": [],
+  "unregisteredSources": [],
+  "skillFrontmatter": "parsed and validated using js-yaml",
+  "officialSkillValidator": "unavailable: bundled Python lacks PyYAML; equivalent metadata and direct references checked separately",
+  "exitCode": 0
+}

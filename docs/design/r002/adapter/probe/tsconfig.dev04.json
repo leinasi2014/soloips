@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "lib": ["ES2023"], "module": "ESNext", "moduleResolution": "bundler",
+    "types": ["node"], "strict": true, "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true, "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true, "noImplicitReturns": true,
+    "noUnusedLocals": true, "noUnusedParameters": true,
+    "noPropertyAccessFromIndexSignature": true, "isolatedModules": true,
+    "verbatimModuleSyntax": true, "skipLibCheck": true, "noEmit": true,
+    "allowImportingTsExtensions": true, "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/cordis": ["../../../../../soloips-devs/versions/r001/runtime/node_modules/@deepseek-ai/cordis"],
+      "@deepseek-ai/dsh-storage-domain": ["__nonexistent-probe__/dsh-storage-domain"],
+      "@deepseek-ai/dsh-session": ["__nonexistent-probe__/dsh-session"],
+      "@deepseek-ai/dsh-session-persistence": ["__nonexistent-probe__/dsh-session-persistence"],
+      "@deepseek-ai/dsh-subagent": ["__nonexistent-probe__/dsh-subagent"],
+      "@deepseek-ai/dsh-tools": ["__nonexistent-probe__/dsh-tools"],
+      "@deepseek-ai/dsh-agent": ["__nonexistent-probe__/dsh-agent"],
+      "@deepseek-ai/dsh-settings": ["__nonexistent-probe__/dsh-settings"],
+      "@deepseek-ai/dsh-experimental-agent-team": ["__nonexistent-probe__/agent-team"],
+      "@deepseek-ai/dsh-storage": ["__nonexistent-probe__/dsh-storage"],
+      "@deepseek-ai/dsh-atomic-write": ["__nonexistent-probe__/dsh-atomic-write"]
+    }
+  },
+  "include": ["contracts.ts", "consumer.ts", "service-augmentation.ts"]
+}

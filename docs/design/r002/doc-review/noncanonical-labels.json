@@ -1,0 +1,170 @@
+[
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "解释",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "证据",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "未知",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "动作",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "负责人",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "合理时点/事件",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "变化",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/cognitive-judgment.md",
+    "line": 72,
+    "label": "反证/风险",
+    "text": "> 目前更支持〔解释〕，依据是〔证据〕，仍缺〔未知〕。选择〔动作〕，由〔负责人〕执行。预期在〔合理时点/事件〕看到〔变化〕；出现〔反证/风险〕就改判、暂停或回退。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "适用条件",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "证据/信号",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "动作",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "结果",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "出处",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "反例/失效条件",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": ".agents/skills/team-delivery-leadership/references/learning-and-coaching.md",
+    "line": 39,
+    "label": "候选/已有范围内验证/已废弃",
+    "text": "> 在〔适用条件〕下，观察到〔证据/信号〕，采取〔动作〕可能改善〔结果〕；依据是〔出处〕。当〔反例/失效条件〕出现时，不采用或重新验证。当前状态为〔候选/已有范围内验证/已废弃〕。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 16,
+    "label": "已确认，SOLO-01",
+    "text": "**〔已确认，SOLO-01〕** SoloIPs 以 DSH 为底层框架，独立产品仓库用 `SOLOIPS_ROOT` 表示，实际位置按[环境交接](operations/environment-handoff.md)解析。第一版让用户把目标交给 AI 公司，由员工协作产出，最后由用户验收。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 18,
+    "label": "已确认，SOLO-02",
+    "text": "**〔已确认，SOLO-02〕** 第一版先复用 DSH Web 界面，完成可用闭环，再逐步替换为 SoloIPs 产品界面。复用外壳仍需呈现业务目标、当前负责人、待回答事项和真实交付物。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 20,
+    "label": "已确认，SOLO-03",
+    "text": "**〔已确认，SOLO-03〕** 第一条业务验收选择短剧：先完成 IP 简纲，再测试生成可观看的 PV。PV 是试水宣传短片，首片不等于完整短剧制作与发行完成。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 22,
+    "label": "产品愿景，来自 V0.4",
+    "text": "**〔产品愿景，来自 V0.4〕** 业务主线是“原创 IP 孵化 → 试水作品 → 自营或合作发行 → 数据反馈 → 扩展、重构或资产复用”。小说、漫画、游戏、音乐及视频属于产品的创作与发行方向。第一条交付路径不会自动取消其余方向，也不等于整套商业生态已完成。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 73,
+    "label": "沿用重构要求，SOLO-A02",
+    "text": "**〔沿用重构要求，SOLO-A02〕** 长期组织身份、一次协作和一次执行分别建模。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 90,
+    "label": "迁移建议，SOLO-A03",
+    "text": "**〔迁移建议，SOLO-A03〕** 采用“按能力接入、逐片验证”。不将当前插件目录整体复制改名后宣布重构完成，也不要求重写已有合格能力。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 117,
+    "label": "已确认范围",
+    "text": "**〔已确认范围〕** AI 公司接受目标，员工协作交付，用户最终验收；首版使用 DSH Web。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 119,
+    "label": "已确认样例",
+    "text": "**〔已确认样例〕** 短剧 IP 简纲与第一支 PV。先产出简纲，确定故事钩子、主要人物和 PV 想验证的观感，再形成镜头计划、参考素材、镜头视频和可播放的合成片。首支片的时长、画幅、画风、声音和具体生成工具在制作任务启动前收敛；当前不假定已有视频服务可调用。"
+  },
+  {
+    "source": "docs/architecture.md",
+    "line": 186,
+    "label": "用户确认，2026-09-15",
+    "text": "**〔用户确认，2026-09-15〕** 本轮先组织文档团队，协助理清产品、重构架构与验收要求。下表替换此前的模型分配建议；它是建队配置要求，不代表团队已创建或成员已经执行。"
+  },
+  {
+    "source": "docs/technical-architecture.md",
+    "line": 200,
+    "label": "产品愿景，来自 V0.4",
+    "text": "- 业务主线（IP 孵化 → 试水作品 → 发行 → 数据反馈 → 扩展/重构/资产复用）是**〔产品愿景，来自 V0.4〕**，不是本文的规则来源。"
+  },
+  {
+    "source": "docs/technical-architecture.md",
+    "line": 307,
+    "label": "反面声明",
+    "text": "〔反面声明〕「包多」不蕴含「边界清」；「拆包」不蕴含「更安全」。包数不是架构质量的指标，domain name 归属表的清晰度才是。"
+  },
+  {
+    "source": "docs/technical-architecture.md",
+    "line": 488,
+    "label": "反面声明",
+    "text": "〔反面声明〕拆包不蕴含更安全；包边界不等于事务边界；包边界也不等于写权威边界。"
+  },
+  {
+    "source": "docs/technical-architecture.md",
+    "line": 603,
+    "label": "反面声明",
+    "text": "〔反面声明〕本章描述的是**写权威归属**，不蕴含「已实现」。所有 soloips-* 包均为〔提案〕，尚无代码；现有证据来自 dsh-agent-swarm 0.1.4 与 company-core 候选，**不等于** SoloIPs 已具备这些性质。"
+  }
+]

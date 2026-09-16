@@ -1,0 +1,21 @@
+{
+  "name": "dsh-profile-soloips",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {},
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@deepseek-ai/dsh-experimental-agent-team-profile",
+        "@deepseek-ai/dsh-experimental-agent-team-web-profile",
+        "soloips-adapter-dsh",
+        "soloips-core",
+        "soloips-web",
+        "soloips-bundle"
+      ],
+      "patchReload": "startup"
+    }
+  }
+}

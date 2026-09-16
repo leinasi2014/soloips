@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "lib": ["ES2023"], "module": "ESNext", "moduleResolution": "bundler",
+    "types": ["node"], "strict": true, "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true, "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true, "noImplicitReturns": true,
+    "noUnusedLocals": false, "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": true, "isolatedModules": true,
+    "verbatimModuleSyntax": true, "skipLibCheck": true, "noEmit": true,
+    "allowImportingTsExtensions": true, "baseUrl": ".",
+    "paths": { "@deepseek-ai/*": ["../../../../../soloips-devs/versions/r001/runtime/node_modules/@deepseek-ai/*"] }
+  },
+  "include": ["contracts.ts", "host-surface.control.ts"]
+}

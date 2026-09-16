@@ -5,7 +5,7 @@
 | 阅读契约 | 内容 |
 | --- | --- |
 | 身份 | SOLO-TECH-ARCH；由原 SOLO-ARCH-DRAFT 延续，旧需求/机制/验收 ID 保留；角色与路径见文档注册表 |
-| 文档状态 | 正式技术设计基线。§1.4 受委托裁定标〔约束〕；未采纳细节仍标〔建议〕/〔待决〕。产品目标与首版范围由 [架构入口](architecture.md) 及其需求来源承载 |
+| 文档状态 | 正式技术设计基线。§1.4 受委托裁定标〔约束〕；未采纳细节仍标〔建议〕/〔待决〕。官方 Team 复用及 DSH fork 的后续决定统一见 [SOLO-TEAM-FORK](decisions/official-team-and-dsh-fork.md)，精确取代范围见该文 SOLO-TEAM-09；产品目标与首版范围由 [架构入口](architecture.md) 及其需求来源承载 |
 | 读者 | 智能体优先（documentation.primaryReader: agent）；人类可读靠结构而非叙事 |
 | 目的 | 收敛「DSH 为基础设施，SoloIPs = 一组插件包 + 一个 profile」这一交付形态：包清单与边界、装配与 patch 机制、事实归属、失败与恢复、验收合同、待决项 |
 | 范围 | 交付形态与包边界；装配、profile 与 patch 组合契约；分层/回归/回滚；客户端组合与业务事实分离；失败与恢复；验收场景与反例；待决项。**不含**产品 PRD、PV 创意与制作参数、包内领域建模正文、实现进度、运行版本台账 |
@@ -34,6 +34,7 @@
 
 | 内容 | 正文入口 |
 | --- | --- |
+| 官方 Team 复用、原生协作权威、定制 fork 与升级 | [SOLO-TEAM-FORK](decisions/official-team-and-dsh-fork.md)；本文章节中的旧 swarm 事实仅在所标基线成立，不能据此继承旧实现布局 |
 | 已确认需求与技术候选分界 | 第 4 章；用户来源保留原消息 ID |
 | 包职责、装配顺序、数据根 | 第 5 章、SOLO-C01、SOLO-DATA-01–04 |
 | 同实例 open 与跨进程 fencing | §7.2、SOLO-FENCE-01 |
@@ -148,7 +149,7 @@
 | 已选包（ARCH-D02） | 职责与细节标注 | 是否 open domain | 规则正文 |
 | --- | --- | --- | --- |
 | soloips-bundle | 〔约束〕装配职责；〔建议〕官方行仅经此包覆写，具体规则见第 6 章 | 否 | 第 6 章（SOLO-C01–C07） |
-| soloips-core | 〔约束〕唯一业务状态包：company + collaboration + artifacts + ip；内部模块化 | 是（唯一业务 opener 包） | 第 5 章 5.1、第 7 章 7.4 |
+| soloips-core | 〔约束〕SoloIPs 公司、作品、IP、业务绑定与验收的唯一状态包；官方 Team 原生状态另归其服务 | 是（SoloIPs 业务 opener 包） | 第 5 章 5.1；SOLO-TEAM-03 |
 | soloips-adapter-dsh | 〔约束〕DSH seam 适配职责；具体 import 契约见第 5 章 | 否（第 5 章 5.1） | 第 5 章 5.1、第 7 章 |
 | soloips-web | 〔约束〕可替换视图层；client 注入细节按第 9 章建议验证 | 否 | 第 8、9 章 |
 | soloips-tools-pv | 〔约束〕S1 制作工具适配；〔建议〕经 core 命令服务保存 job/产物（DRAFT-D02），不直接写 domain | 否（含义见 DRAFT-D02） | 第 6 章 + 第 5 章 5.1 |
@@ -284,12 +285,12 @@
 | 包 | 职责 | 状态归属 | 依赖方向 | 是否 open domain |
 | --- | --- | --- | --- | --- |
 | soloips-bundle | 装配层：携带 dsh.bundle.patch，以有序 patch 叠加定义首版组合；不含运行时代码 | 无业务状态（仅装配声明） | 被 profile 引用；无业务运行时 import，profile 仍须安装 patch 引用的完整能力集合 | 否 |
-| soloips-core | 唯一状态包：Team 聚合（成员/任务/尝试/消息/预算/目标/记忆）、组织与准入、资料室、IP 业务对象 | **全部可写业务状态的唯一归属** | 依赖 soloips-adapter-dsh；被 soloips-web、soloips-tools-pv 经服务消费 | **是（唯一 opener）** |
+| soloips-core | SoloIPs 公司、准入、业务绑定、资料室、作品与 IP、业务验收；官方 Team 通过 adapter 接入 | **SoloIPs 业务事实的唯一归属**；原生协作及 attempt 扩展归属按 SOLO-TEAM-03 | 依赖 soloips-adapter-dsh；被 soloips-web、soloips-tools-pv 经服务消费 | **是（其业务 domain 的唯一 opener）** |
 | soloips-adapter-dsh | 适配层：把 DSH 官方 seam（storage-domain、subagent、session、tools、events）包装为 SoloIPs 内部接口 | 无自有业务状态；不持有权威 | 依赖 DSH 官方包；被 soloips-core 依赖 | 否 |
 | soloips-web | 界面层：工作台读投影与交互（首版复用 DSH Web 插槽） | 无业务写权威；读投影、提交操作意图 | Host 桥依赖 core 的查询/命令服务；Client 只用公开 client API 与安全契约（DEV-04） | 否 |
 | soloips-tools-pv | PV 制作工具适配：提交生成请求、保存 jobId、查询、取回结果与失败信息 | 不持有业务权威；外部 jobId 与结果按第 7 章由 core 落库 | 依赖 soloips-adapter-dsh；经服务回写 core | 否 |
 
-〔约束〕ARCH-D02 由 soloips-core 持有业务 domain。〔源码事实〕现有 dsh-agent-swarm 在同包内打开多个 domain（附录 B 第 3 项），这只说明同包承载方式，不证明跨进程独占。
+〔约束〕ARCH-D02 由 soloips-core 持有 SoloIPs 业务 domain；官方 Team / Session 的原生持久化归其服务，按 SOLO-TEAM-03 验证，不在 core 建第二份可写任务副本。〔源码事实〕现有 dsh-agent-swarm 在同包内打开多个 domain（附录 B 第 3 项），这只说明旧源码的同包承载方式，不证明跨进程独占。
 
 各包的源码目录、公开入口与开发/profile 锁落点见[代码开发规范 §2.1–2.2](governance/code-development-standard.md)；本文只维护职责与装配权威，不再复制目录树。
 
@@ -309,7 +310,7 @@
 
 | 不建的包 | 判据 | 理由 |
 | --- | --- | --- |
-| soloips-collaboration（独立协作内核包） | 违反 PKG-01 | Team 聚合参与同一 revision CAS，拆出即破坏原子性（7.3） |
+| soloips-collaboration（独立协作内核包） | SOLO-TEAM-01/03 | 复用 fork 中的官方 Agent Team，不另建 SoloIPs 协作引擎；旧 swarm CAS 布局不再作为其包边界依据 |
 | soloips-company（独立组织包） | 违反 PKG-02 | ORG-05 占用权威在协作侧（7.7）；首版组织事实由 soloips-core 同一 opener 持有，避免双写 |
 | soloips-ip / soloips-artifacts（独立业务对象包） | 违反 PKG-01、PKG-03 | 首版无独立发布需求；IP 与作品版本可并入 core 的同一 domain |
 | soloips-scheduler（第二套调度器） | 违反 PKG-02 | 会形成第二个任务权威；与「不维护第二个可写 Team 状态机」冲突 |
@@ -345,7 +346,7 @@ C-10 的顺序按 SOLO-C01 统一；后续修改须同步验收基线。
 
 ### 6.2 唯一 bundles 顺序
 
-**〔约束〕** 按 ARCH-D02 采用以下首版完整 bundles 顺序；S0 暂不列入 soloips-tools-pv，其余相对顺序保持不变，S1 工具包真实交付后加入指定位置。不允许引用未发布或空占位包：
+**〔约束〕** 按 [SOLO-TEAM-06](decisions/official-team-and-dsh-fork.md)，下列旧数组的“完整清单”声明〔已取代〕，仅保留 SoloIPs 包间的相对关系。官方 Team Host / 工具 / Client / Profile 及 subagent 的实际组合须由适配切片补齐并验证，不能照此数组宣称已装配官方 Team。S0 暂不列入 soloips-tools-pv，S1 真实交付后加入；不引用未发布或空占位包：
 
 ~~~text
 @deepseek-ai/dsh-base
@@ -498,6 +499,8 @@ soloips-bundle
 
 ### 7.3 Team 聚合不可切：参与 revision CAS 的状态必须与其计数同记录
 
+**适用范围更新：** 本节至 §7.7 的旧聚合源码事实保留；要求 core 复刻旧 Team schema、同包 / 同 domain 布局的建议按 SOLO-TEAM-09〔已取代〕。官方协作事实与 SoloIPs 业务事实的归属按 [SOLO-TEAM-03](decisions/official-team-and-dsh-fork.md)，ORG-05 的已确认需求继续有效。
+
 〔源码事实〕dsh-agent-swarm/src/domain/types.ts:363-419 的 TeamState 是**一个记录**，其中同时包含：
 
 ~~~text
@@ -519,7 +522,7 @@ nextMemoryNumber, createdAt, updatedAt
 
 ### 7.4 必须同包清单（原子边界）
 
-〔建议〕以下状态**必须**留在同一个包（soloips-core）的同一 domain 内：
+〔已取代〕以下清单是旧 swarm 聚合的同包设计建议，保留作参考，不再要求官方 Team 与 SoloIPs 业务事实落入 core 的同一 domain：
 
 | # | 状态 | 理由 |
 | --- | --- | --- |
@@ -537,7 +540,7 @@ nextMemoryNumber, createdAt, updatedAt
 
 〔建议〕以下四条可直接用于评审任何拆包提案：
 
-- **R1 原子规则**：需同次原子变更的字段保留在同一记录的 update()；首版统一归 core。包或 domain 的名称不能给多次提交增加原子性。
+- **R1 原子规则**：需同次原子变更的字段在其权威提交机制内一同保存；SoloIPs 业务归 core，官方协作归 Team（SOLO-TEAM-03）。包或 domain 的名称不能给多次提交增加原子性；旧“首版统一归 core”的范围已取代。
 - **R2 命名规则**：同实例每个 domain name 只有一个 opener；同时枚举业务事实与真实介质的唯一写入口，并满足 SOLO-FENCE-01。domain 名集合不相交只是必要检查，不能单独证明拆包安全。
 - **R3 跨域规则**：跨 domain 不变量**只能**用「单一权威侧 + 重读 + fail-closed」实现（7.6），禁止假设事务。
 - **R4 聚合规则**：参与 revision CAS 的状态必须与其 revision 计数同记录。
@@ -593,7 +596,7 @@ nextMemoryNumber, createdAt, updatedAt
 
 〔约束 DRAFT-D07-D2〕组织域留在 soloips-core，不新增独立组织状态包；跨域调用与原子边界仍按 ORG-05/07 验证。
 
-〔待决 DRAFT-D07-D3〕**agent_swarm domain name 的最终 owner**：〔源码事实〕repair-release 与 company-core 的 src/storage/team-spec.ts:346 声明**同一个** team domain，历史报告称二者分叉（单方向 git merge-base --is-ancestor 退出码 1 只证明该方向非祖先，完整关系待双向核对；前者独有 avatar-preference.ts、team-recovery.ts，后者独有 organization-*.ts、delivery-evidence.ts）。两个包若通过同一 facility 打开同名 domain 则 already-open；另造 facility/Host 不在该保证内。仍须指定唯一业务写入口并保护其实际介质。
+〔已取代 DRAFT-D07-D3〕**旧 agent_swarm domain owner 不再是新产品待决项**：按 [SOLO-TEAM-02/09](decisions/official-team-and-dsh-fork.md) 使用官方 Team，旧 swarm 只作参考；实际旧数据迁移须另获授权并制定合同。〔源码事实〕repair-release 与 company-core 的 src/storage/team-spec.ts:346 声明**同一个** team domain，历史报告称二者分叉（单方向 git merge-base --is-ancestor 退出码 1 只证明该方向非祖先，完整关系待双向核对；前者独有 avatar-preference.ts、team-recovery.ts，后者独有 organization-*.ts、delivery-evidence.ts）。该历史观察仅说明旧候选；同 facility 的 already-open 不能证明跨 Host 安全，新路线仍须满足 ORG-06。
 
 〔源码事实〕2026-09-16 复核 COMPANY_CORE_CHECKOUT（附录 B 第 9 项，HEAD 4c6d05ef30452df2b7adbfb24d625aef4e58f239）：src/domain/organization-assets.ts:232-240 的 getEmployeeOnboardingGaps 只检查 profileRef/avatarText 是否缺省；src/domain/organization-admission.ts:135-139 在 session 无 binding 时返回 ORG_ALLOW_LEGACY_UNBOUND。它们尚不能满足 ORG-03 完整入职与公司入口的绑定要求，须在正式业务入口启用前修正，验收见 SOLO-ACC-04。该观察只证明指名候选的源码行为，不证明目标安装已采用它或场景已通过；全文准入候选证据统一引用本段。
 
@@ -1032,7 +1035,7 @@ CLIENT-18〔建议〕附件与图片：客户端不得自行构造文件路径�
 - authority / boundary：源码保证只来自本实例的 reserved Set（§7.2）。该调用拒绝不直接证明整进程非零退出，更不证明 ORG-06。
 - verification：场景〔未验证〕；跨进程、路径别名和失权提交必须另过 SOLO-ACC-09。
 
-**SOLO-ACC-03〔建议〕异名双写探测**：对每项业务事实（入职状态 ORG-03、员工占用 ORG-05、任务/attempt 状态、artifact version、审核 receipt、mailbox），必须能指出唯一持有它的 domain + 表。指不出即〔未验证〕缺口，不得在文档中写为「已保证」。
+**SOLO-ACC-03〔建议〕异名双写探测**：对每项业务事实（入职状态 ORG-03、员工占用 ORG-05、任务/attempt 状态、artifact version、审核 receipt、mailbox），必须能指出唯一权威服务及实际持久介质 / 记录；使用 domain 的注明 domain + 表，官方 Team / Session 的日志不因此复制入 core 表。归属按 SOLO-TEAM-03；指不出即〔未验证〕缺口，不得在文档中写为「已保证」。
 
 ### 11.3 半状态拒绝验收
 
@@ -1174,7 +1177,7 @@ verification：以 SOLO-FENCE-01 的已核写点为最低清单，补全 Team、
 | DRAFT-D05 | 跨 domain 事务能力与目标存储组合 | 保持〔未验证〕；禁止依赖未经证明的共同原子提交 |
 | DRAFT-D06 | 装配顺序检查 | 〔建议〕按 SOLO-C01/C06 直接纳入候选回归，不另建第二套顺序正文 |
 | DRAFT-D07-D1 / D2 | 首版 5 包边界、S0 所需四包；组织域留 core | 已按 ARCH-D02 决定，独立发布需新的实际需求证据 |
-| DRAFT-D07-D3 | agent_swarm domain 的迁移与唯一业务写入口 | 工程核实候选差异、迁移与所有写路径；ORG-06 结果要求已确认 |
+| DRAFT-D07-D3 | 〔已取代〕旧 agent_swarm domain owner 的选择 | SOLO-TEAM-02/09 已确定官方复用；旧数据迁移另按实际授权处理，ORG-06 继续有效 |
 | DRAFT-D08 | 是否提供显式 disable 层及其可用边界 | 后续设计不得绕过准入、停线或存储独占 |
 | DRAFT-D09 | 独立 home 策略按 ARCH-D03；实际根/兼容性/一致检查点仍须工程取证 | 不再等待 home 选型；真实有效数据的处置仍由用户决定 |
 | SOLO-C07、SOLO-LAYER-Q4 | soloips 定义在独立 home 部署，新的正式/验收 profile 为 startup | 已按 ARCH-D03/04 决定；现有 55120 配置未因本决定改变 |
@@ -1183,7 +1186,7 @@ verification：以 SOLO-FENCE-01 的已核写点为最低清单，补全 Team、
 | CLIENT-D01 / D02 / D03 | 首版视图形态、插槽与安装方式 | 用户决定体验取舍；工程验证服务及界面适配成本 |
 | CLIENT-D04 | 目标部署实际 client 组合图 | 工程绑定实际安装工件与组合，源码版本号不能代替 |
 | DEP-O01–DEP-O07 | 人事权、人格、跨部门协作、知识保留及审计组织 | 沿用 02-company-contract.md 既有待决，不在本稿重作裁决 |
-| 现有交付选择 | 本地 tgz 或正式包发布、swarm fork 或参考迁移 | 先给可复现候选与公开接口证据，再由用户确定交付方式 |
+| 现有交付选择 | DSH 定制 fork + SoloIPs 锁定工件；旧 swarm 仅参考 | 路线按 SOLO-TEAM-01/02/06 已确定。tgz 或包渠道等实际交付方式由获授权切片结合可复现证据确定，不再重问 swarm fork 选型 |
 
 DRAFT-D02 的语义已在 §3.3 明确为技术建议；C-1–C-11 的用词和顺序按 §3.4 统一。ORG-13 正文及 ORG-A09/A10 已确认，落点在 SOLO-F09、SOLO-ACC-07/08；剩余的是产品实现与验收证据，不是需求待决。
 

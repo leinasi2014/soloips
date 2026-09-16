@@ -1,0 +1,4 @@
+# home 层探针
+- id: tool-todo
+  config:
+    allowParallelInProgress: false

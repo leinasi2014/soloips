@@ -40,3 +40,6 @@ Thumbs.db
 
 # 本机环境交接与只读核验记录（规程在 docs/operations/）
 .artifacts/operations/
+
+# 本机智能体记忆与工作日志（ENV-01：本机记录不入库；含机器路径、内网地址与瞬时进程细节）
+.workbuddy-ai/

@@ -15,6 +15,8 @@
 
 **〔约束，DEV-01〕** 开发者开始一个代码切片前，必须核对用户授权、对应需求 ID、实际入口、交付目标和一条可观察的验收样例。需求与授权以最新用户指令及项目绑定为准；包职责、装配和数据机制以技术架构为准；本文规定如何编写与验证代码。发现冲突时先追溯该条权威，不用代码实现反向确认需求。
 
+**官方协作复用范围：** [SOLO-TEAM-FORK](../decisions/official-team-and-dsh-fork.md) 是官方 Team / subagent / Session 复用及 DSH fork 的专题正文。DEV-03/04/08 的 core 写权与唯一 opener 限定 SoloIPs 业务事实；官方协作的最终提交由 Team 权威负责，适用准入、审核和失权检查须覆盖真实提交点，不能只在可绕过的 core 外层检查。旧参考代码的具体状态布局不覆盖该决定。
+
 - 文档任务交付文档；产品实现、运行探针、服务或部署变更分别遵守既有授权。本文不启动 S0。
 - 获授权实现后，按 ARCH-D06 使用真实原生任务记录范围、写者、结果与资源归属；配置能力以项目绑定为准，不虚构已建立的任务或 CI。
 - 技术选择由负责该切片的开发者在已定边界内解决。需要改变业务目标、扩大副作用或推翻已定架构时，才提交具体差异与证据供裁定。
@@ -43,6 +45,8 @@
 | `pnpm run build` | 生成本切片所交付包的实际工件，检查声明和入口 |
 
 没有入口或尚不能运行时，开发者应完成所需配置或在任务中记录具体缺口；不得用空脚本、跳过全部用例或始终返回成功填充门禁。集成/真实 Host 验收按切片增加明确入口，不让默认测试偷偷使用用户会话、生产数据或付费 API。代码切片交付前运行适用的格式、静态、类型、测试与构建检查，允许按受影响包收窄范围。
+
+**开发运行实例的安装边界：** [DEVENV-01–02](../operations/development-iterations.md) 的研发实例可采用官方打包验收使用的 npm tarball 消费方式：`runtime/package-lock.json` 锁定宿主依赖，Profile 自身的 `package-lock.json` 锁定外部 bundle 安装；bundles、patch 与 preset 同时由版本清单校验哈希。先安装 runtime，再安装 Profile；官方生成的模块代理只能指向本版本固定 runtime，不能指向开发源码或其他版本。在 `release.json` 记录实际 Node/npm 版本与安装方式。此例外限定开发实例，不改变 SoloIPs 源码 workspace 的 pnpm 工具链，也不提前宣布下节产品 Profile 交付锁已完成。
 
 ## 2. 目录、依赖与公开接口
 
@@ -89,6 +93,7 @@ soloips/
 
 - DEV-02 的格式化规则由根 formatter 配置承载，采用独立文件或 `package.json` 字段均可；不要为凑齐文件名同时维护两份。`.npmrc` 仅在所选依赖/安装方式确实需要项目设置时建立，不能写入凭据。
 - `profiles/soloips/` 是版本控制内的可移植定义与验收锁；实际运行 profile 仍位于获准的 `DSH_HOME/profiles/soloips`。它不加入 `packages/*` 开发 workspace：其依赖与锁须由交付工件在独立安装上下文解析，再以冻结锁重现，不能拿开发根锁冒充。各环境的实际 home、overlay、Session、业务和资产根按[环境交接](../operations/environment-handoff.md)绑定。
+- `profiles/development/` 是 DEVENV 开发 preset 模板及无密钥验证入口，与产品 `profiles/soloips/` 分别交付。其消费实例的安装锁按 DEV-02 开发运行例外维护，模板目录不伪造尚未交付的产品依赖锁。
 - 打包与配置行为先查[官方文档导航](../../.agents/skills/dsh-plugin-development/SKILL.md)对应版本。交付定义包含 profile manifest、需要的 patch 与独立锁，不包含用户会话、生产状态或机器绝对路径；初始化和安装方式随首片验证。宿主生成的 `cordis.yml` 不作为手工配置权威。
 - 源码、测试与受版本控制的交付定义进入仓库；编译产物、依赖、临时 home 与本机记录按忽略规则隔离。根 `scripts/`、共享测试夹具及 `.github/workflows/` 仅在有实际用途时创建，不能用空目录或空脚本宣称工程已就绪。
 
@@ -100,7 +105,7 @@ soloips/
 | --- | --- | --- |
 | `packages/soloips-bundle/` | `package.json`、`cordis.patch.yml`；配置回归放 `tests/` | 仅装配声明，无运行时 `src/index.ts`；检查 patch 随工件发布、引用的能力包已安装、覆写顺序符合 SOLO-C01 |
 | `packages/soloips-adapter-dsh/` | `package.json`、`cordis.patch.yml`、`src/index.ts`；需要共享端口时增 `src/contracts.ts`；适配按实际能力拆文件，测试放 `tests/` | `.` 为 Host 入口；按需公开 `./contracts`。契约由 adapter 拥有，不能反向 import core 形成环；不持有业务 domain handle |
-| `packages/soloips-core/` | `package.json`、`cordis.patch.yml`、`src/index.ts`、`src/contracts.ts`；当前切片需要的 `src/company/`、`src/collaboration/`、`src/persistence/` 与 `tests/` | `.` 为 Host 入口；`./contracts` 只暴露浏览器安全 DTO/类型。命令校验、写保护与提交统一在 core；IP/作品模块随相应切片增加 |
+| `packages/soloips-core/` | `package.json`、`cordis.patch.yml`、`src/index.ts`、`src/contracts.ts`；当前切片需要的 `src/company/`、`src/collaboration/`、`src/persistence/` 与 `tests/` | `.` 为 Host 入口；`./contracts` 只暴露浏览器安全 DTO/类型。SoloIPs 业务命令与提交归 core；collaboration 只承载业务绑定 / 规则，不另建官方 Team 状态机；IP/作品模块随相应切片增加 |
 | `packages/soloips-web/` | `package.json`、`cordis.patch.yml`、`src/index.ts`（Host 桥）、`src/client/index.ts`（Client 注册）、实际 `.tsx` 组件与 `tests/` | 公开 `.` 与 `./client`，声明并验证 `dsh.client`。Client 读投影、经 Host 提交意图；Host 重新鉴权并调用 core 命令，不另存业务权威 |
 | `packages/soloips-tools-pv/` | S1 创建 `package.json`、`cordis.patch.yml`、`src/index.ts`、具体制作工具适配与 `tests/` | `.` 为工具 Host 入口；通过 adapter 调用获准能力、通过 core 命令保存 job/产物；不获取 domain handle |
 
@@ -198,7 +203,7 @@ soloips/
 | 对象 | 维护的事实 | 维护者与关联方式 |
 | --- | --- | --- |
 | GitHub Issue | 工作来源、需求或提案的状态、验收条件、讨论与交付结论 | 队长、开发者或 QA 可创建；队长可以整理用户已授权需求，新增业务建议仍标为提案。登记不等于用户确认，用户无需亲自录入 Issue |
-| DSH Task | 本次执行的分配/领取、依赖、attempt、阻塞与提交/审核状态 | DSH 承接时，由其原生任务操作维护；Task 引用 Issue URL，Issue 记录真实 Team/Task 标识及结果入口，一个 Issue 可以拆成多个 Task |
+| DSH Task | 本次执行的分配/领取、依赖及实际启用契约支持的执行状态 | DSH 承接时，由其任务权威维护；Task 引用 Issue URL，Issue 记录真实 Team/Task 标识及结果入口，一个 Issue 可以拆成多个 Task。attempt 与业务审核按 SOLO-TEAM-03 适配验证，不声称官方原生已提供这些能力 |
 | GitHub PR / CI | 某个候选的文件差异、提交、检查、审查与合并结果 | 作者关联 Issue，评审者审查准确提交，集成者核对检查和验收范围；一个 Issue 可以关联多个 PR |
 | 已提交文档 | 稳定需求、设计与规范 | 修改相应既有权威并关联 Issue/PR；执行进度与当次检查回执留在工作项中 |
 

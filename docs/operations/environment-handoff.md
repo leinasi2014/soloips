@@ -25,6 +25,8 @@
 | `AGILE_SKILL_ROOT` | 按绑定 `method.name` 在当前会话技能目录中定位 SKILL.md，核对 frontmatter 的 name，再解析真实目录；无目录入口时使用本机交接记录并复核文件。多处候选不一致时核清所加载版本 | 这是执行者的查阅步骤，不是仓库已经实现的自动 resolver；找到目录不证明技能执行效果 |
 | `SOLOIPS_ROOT` / `LAUNCH_ROOT` | 前者由当前 checkout 与 Git 顶层核实；后者由相关进程的启动记录与启动器位置关联，历史文件按记录日期使用 | 当前工作目录不自动等于运行器目录；历史交接不证明当前服务状态 |
 | `DSH_CHECKOUT` | 实际目录、Git HEAD/脏状态、相关包 manifest；与目标官方 tag/commit 对照 | checkout 版本不等于已安装或正在运行的版本 |
+| `DSH_FORK_CHECKOUT` | 用户指定的定制源码目录、Git HEAD/脏状态、origin/upstream、仓库 packageManager 与相关包 manifest；同[SOLO-TEAM-10](../decisions/official-team-and-dsh-fork.md)的仓库身份及旧源码基线核对 | 新 fork 不覆盖历史 DSH_CHECKOUT；远程配置、同版本号或相同 Session 格式号均不证明上游已同步、工件兼容或运行迁移完成 |
+| `SOLOIPS_DEVS_ROOT` / 开发版本 | 用户指定的版本根、对应 `release.json` 和工件/安装锁哈希、独立 home/Profile/agents、工作目录及进程/端口归属；操作见 [DEVENV-01–04](development-iterations.md) | 开发环境可启动不等于 SoloIPs 业务插件已实现；复制配置不等于迁移会话或回滚状态 |
 | `REFACTORING_DOCS_ROOT` | 实际目录及 README、01–04 文档存在；核对本次引用的 ORG/验收 ID | 找到目录不等于所有旧需求已适配新工程 |
 | `COMPANY_CORE_CHECKOUT` 等复用候选 | worktree 实际位置、HEAD、相关文件与改动边界 | 候选提交不等于 55120 已采用 |
 | `DSH_HOME_LIVE55120` / `PROFILE-55120` | 55120 listener → owning process → 启动器/获准读取的 home 与 profile 参数；再核对对应 manifest、lock、安装包与 overlay | 端口存在或某 home 的文件存在都不能单独证明归属；磁盘配置也不证明进程已应用 |

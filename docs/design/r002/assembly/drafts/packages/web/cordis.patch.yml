@@ -1,0 +1,31 @@
+# SoloIPs web 层 patch —— 草案（目标路径 packages/web/cordis.patch.yml）
+#
+# 本文件是 T01 交付的**草案副本**，不是产品文件。落地须先获得 A3 授权。
+#
+# 职责（ARCH-D02 / DEV-10）：可替换视图层；消费 Host 只读投影，零可写业务状态。
+#
+# 本包在 SOLO-C01 顺序中位于 core **之后**、soloips-bundle 之前。
+#
+# 【重要】客户端注册不通过本 patch 完成。
+# `dsh.client` 是 **package.json 字段**，不是 patch 行字段：client-modules 扫描
+# **Loader entries 的包清单**（dsh-client-modules/lib/index.js:104-124 的模块注释），
+# 用行名解析到包目录后读其 package.json 的 `dsh.client`。
+# 因此 packages/web/package.json 需要（草案，见 design.md §2.3）：
+#   "exports": { "./client": "./lib/client/index.js", ... },
+#   "dsh": { "client": { "platform": "web", "inject": [ ... ] } }
+# 本 patch 只负责让这一行**进入 entry 树**，从而使该包进入 client 扫描面。
+
+- insert:
+    - id: soloips-web
+      name: 'soloips-web'
+      # 无 inject：
+      #   - Host 半边是纯投影消费者，通过 ctx.inject([...], cb) 在服务就绪后注册，
+      #     不阻塞本行挂载；
+      #   - 客户端半边在浏览器内按 dsh.client.inject 排序（该字段在 package.json）。
+      # 在 0.1.6 下把非必需服务写进 inject 只会让本行 pending 并静默不工作
+      # （W0 MECH-06 / SOLO-F04），不会报错 —— 因此这里刻意留空。
+      config:
+        # 统一开关位；false 时 Host 桥不注册任何路由/投影，客户端行也不应进入扫描。
+        enabled: true
+        # 部署期可覆写：是否注册客户端 UI 扩展点。默认开。
+        registerClient: true
