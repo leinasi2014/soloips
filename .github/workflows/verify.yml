@@ -48,3 +48,44 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  # Windows 专用运行器。`scripts/development/runtime.ps1` 是 Windows-only 启动器
+  # （Get-CimInstance / Get-NetTCPConnection / WindowStyle / node.exe），其 home patch
+  # 完整性用例在 ubuntu 上整体跳过、无法取得 CI 证据，故在此补齐同一套检查。
+  #
+  # 与 ubuntu 作业执行**相同的五条命令**（package.json scripts），不维护第二套检查清单；
+  # 两个平台的差异只在运行器，结果分别可查。
+  #
+  # 注意：当前分支保护的必需检查只有 `verify`（上面的 ubuntu 作业）。本作业失败会显示在
+  # PR 上但不阻止合并。把它纳入必需检查属仓库保护设置与项目绑定集成策略的变更，另行确认。
+  verify-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Format
+        run: pnpm run format:check
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build
