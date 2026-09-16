@@ -9,7 +9,7 @@
     "verbatimModuleSyntax": true, "skipLibCheck": true, "noEmit": true,
     "allowImportingTsExtensions": true, "baseUrl": ".",
     "paths": {
-      "@deepseek-ai/cordis": ["../../../../../soloips-devs/versions/r001/runtime/node_modules/@deepseek-ai/cordis"],
+      "@deepseek-ai/cordis": ["__DSH_INSTALL__/@deepseek-ai/cordis"],
       "@deepseek-ai/dsh-storage-domain": ["__nonexistent-probe__/dsh-storage-domain"],
       "@deepseek-ai/dsh-session": ["__nonexistent-probe__/dsh-session"],
       "@deepseek-ai/dsh-session-persistence": ["__nonexistent-probe__/dsh-session-persistence"],

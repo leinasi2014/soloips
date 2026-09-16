@@ -114,23 +114,78 @@ exit code: 2  （非零 = P8 的 exit 0 确有解析发生）
 
 ## 复现命令
 
+宿主面探针（P5–P9 中的 `tsconfig.host.json` / `tsconfig.hostcontrol.json` / `tsconfig.augment.json` / `tsconfig.dev04.json`）
+依赖目标安装位置，改用脚本入口按 ENV-02 解析（见下节「路径定位修复」）：
+
 ```powershell
 # 在 SOLOIPS_ROOT 下执行（符号名解析见 ENV-02）
-$p = ".artifacts/operations/r002-adapter-20260916/probe"
+node scripts/development/host-probe.mjs --target "$env:SOLOIPS_DEVS_ROOT/versions/r001"
+```
+
+其余探针不含安装路径依赖，仍可直接执行：
+
+```powershell
+# 在 SOLOIPS_ROOT 下执行
+$p = "docs/design/r002/adapter/probe"
 foreach ($f in @("tsconfig.positive.json","tsconfig.integrity.json","tsconfig.json",
-                 "tsconfig.control.json","tsconfig.host.json","tsconfig.hostcontrol.json",
-                 "tsconfig.augment.json","tsconfig.dev04.json","tsconfig.dev04.control.json")) {
+                 "tsconfig.control.json","tsconfig.dev04.control.json")) {
   & node_modules/.bin/tsc.CMD -p "$p/$f" ; "exit=$LASTEXITCODE  $f"
 }
 ```
 
-宿主面探针（P5–P9）的 `paths` 用**相对路径**指向 `SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules`（`../../../../../soloips-devs/versions/r001/runtime/node_modules`），不含机器绝对路径；若该 runtime 不在该相对位置，需按 ENV-02 重新定位后调整。
+**最早一次全量运行（2026-09-16，`SOLOIPS_ROOT` 下 `.artifacts/operations/r002-adapter-20260916/probe/`）：9/9 符合预期，0 失败。**
+该次运行的目标工件为已安装的 **0.1.6-alpha.1**，与本文其余结果同版本。上表 P1–P9 的实际值来自该次记录，**不改写**。
 
-**最终一次全量运行（2026-09-16，入库前路径脱敏后复跑）：9/9 符合预期，0 失败。**
+### 路径定位修复（2026-09-16 后续）
 
-仓库既有门禁（本次未改动 `packages/**`，仅确认未被污染）：`pnpm run lint` exit 0、`pnpm run typecheck` exit 0、`pnpm run test` 4 文件 / 8 用例通过。
+**入库时的路径回归。** 本目录从 `.artifacts/operations/r002-adapter-20260916/probe/`（5 层）迁到
+`docs/design/r002/adapter/probe/`（6 层）后，配置里指向 `SOLOIPS_DEVS_ROOT` 的相对路径
+`../../../../../soloips-devs/...` 已少一层 `..`，解析到 `SOLOIPS_ROOT/soloips-devs/...`。
+以入库版本直接执行 `tsc -p docs/design/r002/adapter/probe/tsconfig.host.json` 会得到 10 个
+`TS2307`，**宿主探针 P5–P9 整体失效**。这不是当时那 9/9 结论有误，而是**迁移后的路径未随深度更新**。
 
-**入库前脱敏**：本目录已清除机器绝对路径（改写为 ENV-02 符号名或相对路径）、凭据与内网地址；脱敏后 9 个探针已复跑确认结果不变。`tsconfig.dev04*.json` 中指向不存在目录的 `__nonexistent-probe__` 是**刻意**的占位符（P8/P9 的方法本身要求能力包不可解析），非机器路径。
+**修复方式。** 4 个依赖安装位置的配置把目标路径改为占位符 `__DSH_INSTALL__`，由
+`scripts/development/host-probe.mjs` 在运行时按 `--target` 生成临时配置（临时目录用完即删，
+`--keep` 可保留排查）。TypeScript 的 JSON 配置不展开 `$env:…`/`${…}`，故不能直接写环境变量；
+受版本控制的配置也不写机器绝对路径。`tsconfig.dev04.json` 中 `__nonexistent-probe__` 的
+刻意占位保持不变（P8 的方法依赖能力包不可解析）。脚本在**编译前**核实目标目录、必要包是否齐备，
+缺失即报错退出，不进入类型检查。
+
+**修复后重新验证（2026-09-16，目标工件仍为已安装的 0.1.6-alpha.1）：**
+
+```text
+node scripts/development/host-probe.mjs --target <r001 版本根>
+host          期望 成功  实际 成功  符合
+host-control  期望 失败  实际 失败  符合   (P6: TS2339 'noSuchSeamMember' 不存在)
+augment       期望 成功  实际 成功  符合
+dev04         期望 成功  实际 成功  符合
+4/4 符合预期
+```
+
+负向输入的分辨：未提供 `--target`、目标目录不存在、目标不含 `@deepseek-ai` 安装、
+必要包缺失四种情况均非零退出并给出明确原因，且不产生 `TS2307` 噪声。
+
+**已证边界**：上述是**编译期**结果，未装配、未启动服务、未调用模型。`host-probe.mjs` 的
+回归测试（`packages/adapter-dsh/tests/host-probe.spec.ts`）用桩目录固定定位与前置校验接线，
+不核对真实工件的类型结论；真实工件的结论以上表为准。
+
+**与历史记录的差异说明**：本次复跑 P9（`tsconfig.dev04.control.json`）得 3 条错误
+（TS2307、TS2664，以及因 cordis 不可解析级联的 TS7006），而原表记为 2 条。该配置与
+`service-augmentation.ts` 在本次修复中**均未改动**，差异来自环境（TypeScript 5.9.3 下的级联诊断），
+与路径修复无关；此处如实记录，不修改原表数值。P9 的判定语义（非零退出 = P8 的 exit 0 确有解析发生）不受影响。
+
+该 TS7006 已实测确认为**级联**产物，而非新增缺陷：`ctx.inject(...)` 的回调参数类型来自 cordis；
+cordis 不可解析时参数退化为隐式 `any`，故报 TS7006。把同一份配置中的 `@deepseek-ai/cordis`
+单独指向可解析的安装后，该文件**错误数归零**。因此 P9 的 3 条错误同源于「cordis 不可解析」这一个原因，
+与 P8 的判定互为印证。
+
+**探针配置必须保持严格 JSON**：`host-probe.mjs` 与回归测试都直接 `JSON.parse` 读取这些配置，
+不能在 `tsconfig.*.json` 中写注释（TypeScript 本身接受 JSONC，但其他消费方不接受）。
+本目录的说明文字统一写在各配置的**同目录文档**（即本回执）中。
+
+仓库既有门禁（本次改动前基线）：`pnpm run lint` exit 0、`pnpm run typecheck` exit 0、`pnpm run test` 4 文件 / 8 用例通过。
+
+**入库前脱敏**：本目录已清除机器绝对路径（改写为 ENV-02 符号名、占位符或相对路径）、凭据与内网地址。`tsconfig.dev04*.json` 中指向不存在目录的 `__nonexistent-probe__` 是**刻意**的占位符（P8/P9 的方法本身要求能力包不可解析），非机器路径。
 
 ## 附：`consumer.broken.ts` 与两个 `.control.ts` 的用途
 

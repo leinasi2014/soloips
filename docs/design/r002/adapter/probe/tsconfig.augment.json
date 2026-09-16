@@ -8,7 +8,7 @@
     "noPropertyAccessFromIndexSignature": true, "isolatedModules": true,
     "verbatimModuleSyntax": true, "skipLibCheck": true, "noEmit": true,
     "allowImportingTsExtensions": true, "baseUrl": ".",
-    "paths": { "@deepseek-ai/*": ["../../../../../soloips-devs/versions/r001/runtime/node_modules/@deepseek-ai/*"] }
+    "paths": { "@deepseek-ai/*": ["__DSH_INSTALL__/@deepseek-ai/*"] }
   },
   "include": ["contracts.ts", "service-augmentation.ts"]
 }

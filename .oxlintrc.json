@@ -1,4 +1,33 @@
 {
+  // DEV-04 依赖边界的可执行部分。规则按包分工，目标是收窄而不是放宽：
+  // 规范允许的（公开插件注册接口、官方 Client API、core 浏览器安全契约）必须放行，
+  // 规范禁止的（绕过公开入口、Client 引入 Host/Node/凭据、core 绕过 adapter）必须拒绝。
+  //
+  // 通配符语义（实测 oxlint 1.83）：`*` 匹配**恰好一个**路径段，`**` 匹配**一个及以上**
+  // 路径段。因此 `@deepseek-ai/*` 匹配不到 `@deepseek-ai/pkg/sub`，拦截子路径必须用
+  // `@deepseek-ai/**`；`node:*` 也匹配不到 `node:fs/promises`。
+  //
+  // 关键约束（实测，易踩）：`patterns` 数组里**只要有一个对象产生白名单（`!`）命中，
+  // 就会抑制其他对象已累积的诊断**。因此每个覆盖项只用**一个** patterns 对象、
+  // **一个** group 数组，并在数组内排好序：先宽禁令，再 `!` 例外，最后放必须压过例外的
+  // 深层/私有路径禁令（数组内后匹配者胜）。
+  //
+  // 未列出的包由「默认拒绝」覆盖项兜住（fail-closed）：新增包必须先在此声明其依赖面。
+  //
+  // 另一组易漏的形态（均已按实测补齐）：
+  //   - `.../src` 裸源码入口：`.../src/**` 要求 `src` 后至少一段，拦不到裸的 `/src`，须单列。
+  //   - `..` 穿越：例外的 `**` 会吃掉 `..` 段（如 `@deepseek-ai/dsh-client-x/../../dsh-storage`），
+  //     故遍历禁令必须排在例外**之后**。
+  //   - 裸 Node 内建：`node:*` / `node:*/*` 拦不到 `fs`、`fs/promises`、`path` 等裸名，
+  //     客户端覆盖项里按 `node:module` 的 builtinModules 逐个列出（54 个）。
+  //   - 例外只对**消费方**生效：`soloips-core/contracts` 对 web Client 放行，
+  //     对 core 自己不放行（core 引自身应用相对路径）。
+  //
+  // 检查层分工：本文件覆盖**模块说明符**层次。相对路径逃逸到**邻包**（`../**/<包名>/**`）
+  // 在此拦截；逃逸到邻包**源码**且不经过包名目录时由 `tsc -b` 的 rootDir/项目边界拒绝
+  // （TS6059/TS6307，前提是各包声明 rootDir，由回归测试固定）。运行时边界（Client 打包
+  // 产物是否实际拉入 Host 实现、凭据与存储句柄是否真的未进浏览器）静态检查无法判定，
+  // 仍由 DEV-04 的打包验证与评审承担。
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": [],
   "categories": {
@@ -68,20 +97,287 @@
       }
     },
     {
+      // 默认拒绝：未显式声明依赖面的包（含尚未创建的 packages/*）一律不得引入官方包
+      // 或其他包源码。新增包必须补上自己的覆盖项才会放行。
       "files": ["packages/*/src/**/*.{ts,tsx}"],
-      "excludeFiles": ["packages/adapter-dsh/**"],
+      "excludeFiles": [
+        "packages/core/**",
+        "packages/bundle/**",
+        "packages/web/**",
+        "packages/adapter-dsh/**"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
               {
-                "group": ["@deepseek-ai/*"],
-                "message": "官方 DSH 依赖必须经 soloips-adapter-dsh 暴露的接口使用（DEV-04），不得在本包直接 import"
-              },
+                "group": [
+                  "@deepseek-ai/**",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "soloips-web",
+                  "soloips-web/**",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "@deepseek-ai/**/..",
+                  "@deepseek-ai/**/../**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**",
+                  "../**/{bundle,core,adapter-dsh,web,tools-pv}/**"
+                ],
+                "message": "本包未在 .oxlintrc.json 声明依赖面，默认禁止官方包与其他包实现（DEV-04）。按包职责补充显式覆盖项后再引用。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/core/src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
               {
-                "group": ["**/packages/core/**", "soloips-core", "soloips-core/*"],
-                "message": "跨包只能经公开 exports 与服务契约（DEV-04）"
+                "group": [
+                  "@deepseek-ai/**",
+                  "!@deepseek-ai/cordis",
+                  "!@deepseek-ai/cordis/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "@deepseek-ai/**/..",
+                  "@deepseek-ai/**/../**",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "!soloips-adapter-dsh/contracts",
+                  "soloips-web",
+                  "soloips-web/**",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**",
+                  "../**/{bundle,core,adapter-dsh,web,tools-pv}/**"
+                ],
+                "message": "core 的宿主依赖面只有 @deepseek-ai/cordis（公开注册接口及类型）＋ adapter 的类型专用 ./contracts；不得经包名或相对路径依赖其他包实现（DEV-04）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/bundle/src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@deepseek-ai/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "@deepseek-ai/**/..",
+                  "@deepseek-ai/**/../**",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "soloips-web",
+                  "soloips-web/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**",
+                  "../**/{bundle,core,adapter-dsh,web,tools-pv}/**"
+                ],
+                "message": "bundle 只承载装配声明（cordis.patch.yml），无业务运行时 import；能力集合由 profile 安装并由 patch 引用（DEV-04、SOLO-C01）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/web/src/**/*.{ts,tsx}"],
+      "excludeFiles": ["packages/web/src/client/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@deepseek-ai/**",
+                  "!@deepseek-ai/cordis",
+                  "!@deepseek-ai/cordis/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "@deepseek-ai/**/..",
+                  "@deepseek-ai/**/../**",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**",
+                  "../**/{bundle,core,adapter-dsh,web,tools-pv}/**"
+                ],
+                "message": "web Host 作为插件入口可用官方公开注册接口与类型（cordis），其余能力经 core 命令契约取得；不直接依赖 adapter、装配层或工具层（DEV-04）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/web/src/client/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@deepseek-ai/**",
+                  "!@deepseek-ai/cordis",
+                  "!@deepseek-ai/cordis/**",
+                  "!@deepseek-ai/dsh-client-*",
+                  "!@deepseek-ai/dsh-client-*/**",
+                  "!@deepseek-ai/dsh-api-*",
+                  "!@deepseek-ai/dsh-api-*/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "@deepseek-ai/**/..",
+                  "@deepseek-ai/**/../**",
+                  "node:*",
+                  "node:*/*",
+                  "assert",
+                  "assert/strict",
+                  "async_hooks",
+                  "buffer",
+                  "child_process",
+                  "cluster",
+                  "console",
+                  "constants",
+                  "crypto",
+                  "dgram",
+                  "diagnostics_channel",
+                  "dns",
+                  "dns/promises",
+                  "domain",
+                  "events",
+                  "fs",
+                  "fs/promises",
+                  "http",
+                  "http2",
+                  "https",
+                  "inspector",
+                  "inspector/promises",
+                  "module",
+                  "net",
+                  "os",
+                  "path",
+                  "path/posix",
+                  "path/win32",
+                  "perf_hooks",
+                  "process",
+                  "punycode",
+                  "querystring",
+                  "readline",
+                  "readline/promises",
+                  "repl",
+                  "stream",
+                  "stream/consumers",
+                  "stream/promises",
+                  "stream/web",
+                  "string_decoder",
+                  "sys",
+                  "timers",
+                  "timers/promises",
+                  "tls",
+                  "trace_events",
+                  "tty",
+                  "url",
+                  "util",
+                  "util/types",
+                  "v8",
+                  "vm",
+                  "wasi",
+                  "worker_threads",
+                  "zlib",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "!soloips-core/contracts",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**",
+                  "../**/{bundle,core,adapter-dsh,web,tools-pv}/**"
+                ],
+                "message": "Client 只可使用官方公开 Client API（dsh-client-*、dsh-api-*）、cordis 注册接口与 core 的浏览器安全 ./contracts；不得引入 Host 能力包、Node 模块或 adapter（DEV-04）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/adapter-dsh/src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "@deepseek-ai/**/..",
+                  "@deepseek-ai/**/../**",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "soloips-web",
+                  "soloips-web/**",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**",
+                  "../**/{bundle,core,adapter-dsh,web,tools-pv}/**"
+                ],
+                "message": "adapter 是唯一可依赖 @deepseek-ai/* 能力包的包，但只经公开 exports 入口；不得 import core（业务契约由 core 拥有，反向 import 成环），也不依赖界面/装配/工具层（DEV-04、契约 §7.3）。"
               }
             ]
           }

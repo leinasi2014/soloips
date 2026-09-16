@@ -210,6 +210,21 @@ function Assert-Installation {
   }
   $hasLock = $covered.Contains((Join-Path $script:runtimePath 'package-lock.json')) -or $covered.Contains((Join-Path $script:runtimePath 'pnpm-lock.yaml'))
   if (-not $hasLock -or $tarballs -eq 0) { throw 'Integrity must cover the runtime lock and at least one artifact tarball.' }
+  # The official loader applies $DSH_HOME/cordis.patch.yml AFTER the profile patch
+  # (dsh/profile-boot: allPatches = bundles, profile, homePatches, overlays), so a
+  # home patch outranks the managed profile layer. It is not part of the profile
+  # manifest, so an unregistered home patch could change the effective composition
+  # while every other check still passes. Registered entries are already verified
+  # above (presence plus hash); this rejects the remaining gap: a home patch that
+  # exists on disk but is absent from the manifest.
+  #
+  # Absent is allowed: a version that does not use a home patch needs no entry.
+  if (Test-Path -LiteralPath $script:homePatchPath) {
+    Assert-NoReparsePoint $script:homePatchPath
+    if (-not $covered.Contains($script:homePatchPath)) {
+      throw "A home-level patch is present but has no integrity entry: $($script:homePatchPath). Add it to release.json integrity with its SHA-256, or remove the file; the launcher does not register it automatically and does not print its content."
+    }
+  }
   $profileManifest = Read-Json (Join-Path $script:profilePath 'package.json')
   $dshProfile = Get-Field (Get-Field $profileManifest 'dsh' ([pscustomobject]@{})) 'profile' ([pscustomobject]@{})
   if ((Get-Field $dshProfile 'patchReload') -cne 'startup') { throw 'The managed profile must use patchReload: startup.' }
@@ -251,6 +266,8 @@ try {
   $expectedEntry = Join-Path $script:runtimePath 'node_modules\@deepseek-ai\dsh\lib\bin.js'
   if ($script:entryPath -ine $expectedEntry) { throw 'The entry must be the official installed dsh CLI under runtime.' }
   $script:profilePath = Join-Path $script:homePath 'profiles\soloips'
+  # Same home the launch passes as DSH_HOME, so verify and start share one rule.
+  $script:homePatchPath = Join-Path $script:homePath 'cordis.patch.yml'
   Assert-NoReparsePoint $script:profilePath
   $script:settingsPath = Join-Path $script:homePath 'settings.yaml'
   Assert-NoReparsePoint $script:settingsPath

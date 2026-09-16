@@ -341,24 +341,18 @@ if (settings === undefined) {
 
 ### 6.1 仓库既有门禁已经覆盖 DEV-04（补充证据）
 
-〔源码事实〕根 `.oxlintrc.json` 已配置一条 `no-restricted-imports` 规则，对 `packages/*/src/**`（**排除** `packages/adapter-dsh/**`）禁止 `@deepseek-ai/*`：
+〔源码事实〕根 `.oxlintrc.json` 配置了 `no-restricted-imports`，按**包**声明依赖面（core / bundle / web Host / web Client / adapter 各一个覆盖项，另加一个「默认拒绝」兜底项覆盖未声明的包）。
 
-```json
-{
-  "files": ["packages/*/src/**/*.{ts,tsx}"],
-  "excludeFiles": ["packages/adapter-dsh/**"],
-  "rules": {
-    "no-restricted-imports": ["error", { "patterns": [
-      { "group": ["@deepseek-ai/*"], "message": "官方 DSH 依赖必须经 soloips-adapter-dsh 暴露的接口使用（DEV-04）…" },
-      { "group": ["**/packages/core/**", "soloips-core", "soloips-core/*"], "message": "跨包只能经公开 exports 与服务契约（DEV-04）" }
-    ]}]
-  }
-}
-```
+**2026-09-16 修正**：本节原先记录的规则是对 `packages/*/src/**`（排除 adapter）一律禁止 `@deepseek-ai/*`。该写法把 DEV-04 **明确允许**的公开插件注册接口、官方 Client API 与 core 浏览器安全契约一并拦下，已改为按包收窄。修正过程中实测到两个必须记住的语义事实：
 
-**含义**：DEV-04「core 不直接 import 任何 `@deepseek-ai/*`」在**仓库层面已有机械强制**，不是仅靠本契约的自觉。`.oxlintrc.json` 的 `ignorePatterns` 含 `.artifacts/**`，故本设计目录内的探针文件（含 `host-surface.ts` 的真实 import）不参与 lint。
+- **`*` 不跨越 `/`**：`@deepseek-ai/*` 匹配不到 `@deepseek-ai/pkg`；`node:*` 匹配不到 `node:fs/promises`。拦截子路径须用 `@deepseek-ai/**`，Node 须并列 `node:*/*`。
+- **一个 patterns 对象产生白名单（`!`）命中，会抑制同一数组内其他对象已累积的诊断**。故每个覆盖项只用一个 patterns 对象、一个 group 数组，并在数组内排序：宽禁令 → `!` 例外 → 必须压过例外的深层/私有路径禁令。
 
-**验证**：`pnpm run lint` 在当前工作树为 **exit 0**（0 warning / 0 error，7 文件）。**边界**：该规则是**静态**检查，只覆盖 `packages/*/src/**`；它不检查 `tests/**`、不检查类型层是否真的可编译（那由 P1–P9 探针覆盖）。两者互补。
+两点均由回归测试固定（`packages/core/tests/dependency-boundary.spec.ts`），含「多对象即失败」的结构检查。
+
+**含义**：DEV-04「core 不直接 import 任何 `@deepseek-ai/*` 能力包」在**仓库层面已有机械强制**，不是仅靠本契约的自觉。`.oxlintrc.json` 的 `ignorePatterns` 含 `.artifacts/**`，故本设计目录内的探针文件（含 `host-surface.ts` 的真实 import）不参与 lint。
+
+**验证**：`pnpm run lint` 在当前工作树为 **exit 0**（0 warning / 0 error）。**边界**：该规则是**静态**检查，只覆盖 `packages/*/src/**`；不检查 `tests/**`、不判定类型层是否真的可编译（那由 P1–P9 探针覆盖），也不判定运行时边界（Client 打包产物是否真的未拉入 Host 实现与凭据，属 DEV-04 的打包验证）。相对路径逃逸到**邻包源码**由 `tsc -b` 的 `rootDir` 边界拒绝；逃逸到**邻包构建产物**由 lint 拦截。三者互补。
 
 ---
 
