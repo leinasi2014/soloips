@@ -1,0 +1,16 @@
+
+断言：
+  ✓ G1 entry id 唯一性
+  ✓ G2 期望行存在: soloips-adapter-dsh
+  ✓ G2 期望行存在: soloips-core
+  ✓ G2 期望行存在: soloips-web
+  ✓ G3 name 指向: soloips-adapter-dsh
+  ✓ G3 name 指向: soloips-core
+  ✓ G3 name 指向: soloips-web
+  ✓ G4 patchReload 显式 startup
+  ✓ G5a L1 stderr 为空
+  ✓ G5b L2 stderr 为空
+  ✓ G6 dump 行数 == 去重 id 数
+
+【门禁边界】本门禁只证明配置组合。已知盲区 M1–M6（design.md §6.6）；
+pending 检测须另跑 G9（启动真实进程），dump 不能替代。

@@ -1,0 +1,14 @@
+file:///$SOLOIPS_ROOT/.artifacts/operations/r002-assembly-20260916/drafts/tools/check-composition.mjs:144
+      current.name = nameMatch[2].replace(/^['"]|['"]$/g, "");
+                                  ^
+
+TypeError: Cannot read properties of undefined (reading 'replace')
+    at parseEntries (file:///$SOLOIPS_ROOT/.artifacts/operations/r002-assembly-20260916/drafts/tools/check-composition.mjs:144:35)
+    at runAssertions (file:///$SOLOIPS_ROOT/.artifacts/operations/r002-assembly-20260916/drafts/tools/check-composition.mjs:174:21)
+    at main (file:///$SOLOIPS_ROOT/.artifacts/operations/r002-assembly-20260916/drafts/tools/check-composition.mjs:268:60)
+    at file:///$SOLOIPS_ROOT/.artifacts/operations/r002-assembly-20260916/drafts/tools/check-composition.mjs:316:81
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:643:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.18.0

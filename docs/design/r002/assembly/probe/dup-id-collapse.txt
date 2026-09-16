@@ -1,0 +1,6 @@
+composed 行数: 3
+composed: [{"id":"dup-row","name":"pkg-a"},{"id":"dup-row","name":"pkg-b"},{"id":"dup-row","name":"pkg-c"}]
+实际会创建的 entry id 数: 1
+胜出者: {"id":"dup-row","name":"pkg-c"}
+
+结论：composed（dump 可见）与运行时实际挂载的 entry 数不一致 —— dump 3 行，运行时 1 个 entry。

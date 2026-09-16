@@ -1,0 +1,11 @@
+=== 草案形状校验 ===
+校验 patch 文件: 5
+insert 的 soloips-* 行 id: 3
+  soloips-adapter-dsh  <- drafts\packages\adapter-dsh\cordis.patch.yml
+  soloips-core  <- drafts\packages\core\cordis.patch.yml
+  soloips-web  <- drafts\packages\web\cordis.patch.yml
+覆写的官方行目标: 2
+  llm-retry  <- drafts\packages\bundle\cordis.patch.yml
+  session-telemetry-otel  <- drafts\packages\bundle\cordis.patch.yml
+
+✓ 全部检查通过

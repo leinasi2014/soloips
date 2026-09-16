@@ -1,0 +1,14 @@
+门禁前置失败：L1 dump 退出码 1
+file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1057
+		if (template === void 0) throw new Error(`${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`);
+		                               ^
+
+Error: dsh: profile "soloips-ref" does not exist; create it with 'dsh plugin --profile soloips-ref add <package>'
+    at loadProfile (file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1057:34)
+    at prepareProfile (file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh/lib/profile-boot-CuwbWsnH.js:208:18)
+    at runDumpConfig (file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh/lib/dump-config-CpQgpJa2.js:25:17)
+    at runCli (file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js:162:4)
+    at async file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js:168:23
+
+Node.js v24.18.0
+

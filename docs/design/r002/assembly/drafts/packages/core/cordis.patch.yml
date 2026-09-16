@@ -1,0 +1,30 @@
+# SoloIPs core 层 patch —— 草案（目标路径 packages/core/cordis.patch.yml）
+#
+# 本文件是 T01 交付的**草案副本**，不是产品文件。落地须先获得 A3 授权。
+#
+# 职责（ARCH-D02 / TERM-17）：SoloIPs 公司、作品、IP、业务绑定与验收的**唯一状态包**，
+# 持有业务 domain 的唯一 opener 与写入口。
+#
+# 本包在 SOLO-C01 顺序中位于 adapter-dsh **之后**、web 之前：
+# 它消费 adapter 暴露的内部接口，并被 web 读取投影。
+
+- insert:
+    - id: soloips-core
+      name: 'soloips-core'
+      # inject 只声明**必需且由目标组合保证存在**的服务：
+      #   storageDomain —— dsh-base 的 `storage-domain` 行提供（dsh-storage-domain），
+      #   它是 domain opener 的唯一来源；core 是 SoloIPs 业务 opener 包（3.2 表）。
+      #
+      # 不把 `storage` 一并写入：storageDomain 的提供者已 inject storage，
+      # 传递依赖由 DSH 的就绪机制处理；重复声明只会扩大 pending 面。
+      inject: [storageDomain]
+      config:
+        # 统一开关位；false 时必须在打开任何 domain 之前早退（DEV-06/DEV-08）。
+        enabled: true
+        # 业务 domain 名。**唯一 opener 的命名必须显式**，便于
+        # SOLO-FENCE-01 的跨进程独占核对与 already-open 诊断。
+        # 具体域名在 T03 冻结；此处给初值占位，不与 adapter 的 settings namespace 冲突。
+        domain: soloips
+        # 持久化路由沿用 dsh-base 的 storage-domain 行（backend: json）。
+        # 若切片需要独立后端，必须在本层覆写 storage-domain 行并**完整重述**
+        # backend（以及将来新增的 routes），见 design.md §4。
