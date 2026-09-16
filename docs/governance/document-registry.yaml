@@ -6,6 +6,8 @@
 # sourceAuthority 为直接来源的 documentId 列表；来源变化时由维护者复核投影，本表不提供自动刷新程序。
 # relatedPaths 与该条目共用角色、负责人和变更权；每个路径只登记一次。
 # validation 描述适用检查，不是通过回执；none-yet 表示尚未指定入口。实际结果按运维交接保留候选与命令证据。
+# 范围：本表只登记承载规则、设计或证据的 Markdown 正文。脚本、构建配置、CI 模板与 GitHub 原生模板
+# （如 scripts/**、profiles/development/*.mjs、.github/**）由各自主题的登记正文引用，不单独取得 documentId。
 
 schemaVersion: 1
 project: soloips
@@ -49,7 +51,7 @@ documents:
     mutationAuthority: same-candidate-as-source-authority
     updateTriggers: binding-or-referenced-rule-or-project-red-line-change
     validation: source-authority-and-local-reference-consistency
-    sourceAuthority: [project-binding, document-registry, agent-readable-documentation, product-architecture, technical-architecture, official-team-and-dsh-fork, code-development-standard, environment-handoff, development-iterations, development-profile, dsh-plugin-development-index, team-delivery-soloips-context]
+    sourceAuthority: [project-binding, document-registry, agent-readable-documentation, product-architecture, technical-architecture, official-team-and-dsh-fork, code-development-standard, environment-handoff, development-iterations, development-profile, dsh-plugin-development-index, team-delivery-soloips-context, source-reference-index, team-delivery-leadership]
     refreshPolicy: same-candidate-as-source-change
     expiryPolicy: invalid-on-source-authority-change
   - documentId: environment-handoff
@@ -79,7 +81,7 @@ documents:
     mutationAuthority: same-candidate-as-source-authority
     updateTriggers: official-team-or-preset-contract-or-development-runtime-change
     validation: pinned-source-and-real-preset-team-tool-verification
-    sourceAuthority: [development-iterations, official-team-and-dsh-fork, code-development-standard]
+    sourceAuthority: [development-iterations, official-team-and-dsh-fork, code-development-standard, dsh-plugin-development-index]
     refreshPolicy: same-candidate-as-source-change
     expiryPolicy: invalid-on-source-authority-change
   - documentId: dsh-plugin-development-index
@@ -126,7 +128,7 @@ documents:
     mutationAuthority: same-candidate-as-source-authority
     updateTriggers: project-authority-or-team-boundary-or-development-iteration-or-implementation-state-change
     validation: frontmatter-and-relative-links-and-authority-consistency-review
-    sourceAuthority: [project-binding, document-registry, product-architecture, technical-architecture, official-team-and-dsh-fork, code-development-standard, development-iterations, development-profile, environment-handoff, dsh-plugin-development-index]
+    sourceAuthority: [project-binding, document-registry, product-architecture, technical-architecture, official-team-and-dsh-fork, code-development-standard, development-iterations, development-profile, environment-handoff, dsh-plugin-development-index, project-instructions]
     refreshPolicy: same-candidate-as-source-change
     expiryPolicy: invalid-on-source-authority-change
   - documentId: product-architecture
@@ -225,3 +227,20 @@ documents:
     mutationAuthority: user-authorized-reviewed-candidate
     updateTriggers: r002-design-candidate-or-evidence-boundary-change
     validation: design-candidate-scope-and-evidence-boundary-check
+  - documentId: refactoring-source-authority
+    path: docs/refactoring/README.md
+    relatedPaths:
+      - docs/refactoring/01-departments.md
+      - docs/refactoring/02-company-contract.md
+      - docs/refactoring/03-delivery-and-acceptance.md
+      - docs/refactoring/04-avatar-64.md
+      - docs/refactoring/SNAPSHOT.md
+    role: stable-authority
+    subject: refactoring-requirement-baseline
+    authorityScope: DEPT/LIB/DEP/ORG/AVATAR 需求正文与定稿设计；来源 README.md 记录用户 2026-09-15 裁决「当前开发、修复和验收一切以重构文档为准」。各条仍按自身标签判定，显式建议与待决项不因入仓变为已批准需求
+    writeMode: human
+    accountableOwner: product-owner
+    mutationAuthority: user-authorized
+    updateTriggers: refactoring-requirement-or-source-snapshot-change
+    validation: source-and-blob-hash-plus-lf-normalized-byte-identity-check-per-SNAPSHOT
+    note: 本组为外部来源的**保留来源指纹的 LF 规范化快照**（非"原始字节逐字节"），无阅读契约表（SNAPSHOT.md §5 已记录格式豁免依据）；保真口径、两套指纹与漂移处置见 docs/refactoring/SNAPSHOT.md §2/§4
