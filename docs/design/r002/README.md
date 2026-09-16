@@ -49,7 +49,7 @@ r002 批 1 的六名成员各自产出了设计候选。它们原先位于本机
 | --- | --- | --- |
 | 1 | `AGENTS.md` §2 授权边界全节在注册表中**无已登记的来源权威**（doc-reviewer B-05） | **未解决**。原拟以 `AGENTS.authorization-review.md` 登记解决，该文件经用户 2026-09-16 指示删除，路径消失。可选解法是在 [项目绑定](../../governance/project-binding.yaml) 增 `authorization` 段，但属组织规则变更，不在本次授权内 |
 | 2 | doc-reviewer 的其余 9 条阻断项（B-01–B-04、B-06–B-10） | **未处理**。本候选只入库正文，未修改被审查的文档结论；处置须单独授权 |
-| 3 | `assembly/probe/home/` 临时 home 的 `node_modules/` 部分未入库 | **已按配方重建**。64 个 stub 文件被根 `.gitignore` 的 `node_modules/` 规则排除，直接入库会产生残缺 fixture。现改为：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`，64 个 stub 由 `assembly/evidence/fixture/stubs.manifest.json` 逐字节还原，重建后与原始 fixture **100/100 文件、0 哈希差异**（见 `assembly/evidence/fixture/README.md` §3） |
+| 3 | `assembly/probe/home/` 临时 home 的 `node_modules/` 部分未入库 | **已按配方重建**。64 个 stub 文件被根 `.gitignore` 的 `node_modules/` 规则排除，直接入库会产生残缺 fixture。现改为：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`，64 个 stub 由 `assembly/evidence/fixture/stubs.manifest.json` 还原，重建后文件集合 100/100 一致（洁净检出上 18 个文本文件仅行尾差异，见 `assembly/evidence/fixture/README.md` §3） |
 | 4 | 各册内部的探针结论**未在本次集成中复跑** | **未验证**。本候选是原样入库 + 机器路径脱敏；探针结果的真实性由各册自述与 DEV-13 复核承担，未由集成者重新执行 |
 | 5 | `assembly/evidence/fixture/` 重建后**未实跑门禁** | **未验证**。fixture 保真度已证（逐字节），但「重建后 `check-composition.mjs` 输出与 `gate-*.txt` 一致」未执行，属基线 §6 未授权的运行验证 |
 
@@ -67,7 +67,7 @@ r002 批 1 的六名成员各自产出了设计候选。它们原先位于本机
 
 **目录重排说明**：原始 `r002-*/` 平级目录改为 `docs/design/r002/<短名>/`，以符合仓库既有 `docs/<类别>/` 布局（`docs/decisions/`、`docs/operations/`、`docs/reference/`）。
 
-**fixture 拆分说明**：`assembly/probe/home/` 含 100 个文件，其中 64 个位于 `node_modules/` 而被根 `.gitignore` 排除。若直接入库会得到**残缺且误导**的 fixture。现拆为两部分：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`；64 个 stub 由 `stubs.manifest.json`（**由原始 fixture 直接生成，非按形状猜测**）经 `rebuild-stubs.mjs` 还原。实测重建结果与原始 fixture **100/100 文件、0 缺失、0 多余、0 哈希差异**。`assembly/evidence/probe-log.md` 与 `assembly/evidence/fixture/README.md` 已就地记录该安排。
+**fixture 拆分说明**：`assembly/probe/home/` 含 100 个文件，其中 64 个位于 `node_modules/` 而被根 `.gitignore` 排除。若直接入库会得到**残缺且误导**的 fixture。现拆为两部分：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`；64 个 stub 由 `stubs.manifest.json`（**由原始 fixture 直接生成，非按形状猜测**）经 `rebuild-stubs.mjs` 还原。实测重建结果：**文件集合 100/100 完全一致、0 缺失、0 多余**；工作树内逐字节相同，**洁净检出**上 18 个文本文件因 `.gitattributes` 的 `eol=lf` 归一而仅有行尾差异（内容一致）。`assembly/evidence/probe-log.md` 与 `assembly/evidence/fixture/README.md` 已就地记录该安排与保真度边界。
 
 **符号名的可执行写法修正说明**（独立复核 `verifier` 发现的**阻断级回归**）：集成者的脱敏脚本把机器路径一律替换为 `$SYMBOL` 形式，但**符号名只在文档叙述中有效**，在被执行的语言里必须用该语言的取法：
 
