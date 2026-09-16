@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -315,21 +315,45 @@ export type B = A;
 
 let workDir: string;
 
-/** 解析 oxlint 输出为「文件 → 违规条数」。 */
+/**
+ * 解析 oxlint 输出为「文件 → 违规条数」。
+ *
+ * 用 `--format=json` 而不是解析默认的彩色诊断块：默认版的排版（分隔符、
+ * 换行、是否绝对路径）随平台与终端能力变化，曾经在本机 Windows 通过、
+ * 在 Linux CI 上解析出 0 条诊断，从而把整套断言变成假通过/假失败。
+ * 结构化输出的字段与平台无关。
+ */
 function runOxlint(target: string[] = ["packages"]) {
   const result = spawnSync(
     process.execPath,
-    [oxlintMain, "--config", join(workDir, ".oxlintrc.json"), ...target],
+    [oxlintMain, "--config", join(workDir, ".oxlintrc.json"), "--format=json", ...target],
     { cwd: workDir, encoding: "utf8" },
   );
-  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
   const byFile = new Map<string, number>();
-  // 诊断块形如: ,-[packages/core/src/x.ts:1:1]
-  for (const match of output.matchAll(/,-\[(?<file>[^\]:]+\.tsx?):\d+:\d+\]/g)) {
-    const file = (match.groups?.file ?? "").replace(/\\/g, "/");
-    byFile.set(file, (byFile.get(file) ?? 0) + 1);
+  let parsed: { diagnostics?: { filename?: string; code?: string; message?: string }[] } | null =
+    null;
+  try {
+    parsed = JSON.parse(stdout) as typeof parsed;
+  } catch {
+    parsed = null;
   }
-  return { byFile, status: result.status, output };
+  if (parsed?.diagnostics) {
+    for (const diagnostic of parsed.diagnostics) {
+      if (!diagnostic.filename) continue;
+      // `filename` 可能是相对 cwd（即 workDir）的路径，也可能是绝对路径（平台相关）。
+      // 直接对相对路径调用 path.relative(dir, p) 会先按 process.cwd() 解析出错误结果，
+      // 所以先判断再折算；再去掉可能的 "./" 前缀，使键与 fixture 的写法一致。
+      const normalized = (
+        isAbsolute(diagnostic.filename)
+          ? relative(workDir, diagnostic.filename).replace(/\\/g, "/")
+          : diagnostic.filename.replace(/\\/g, "/")
+      ).replace(/^\.\//, "");
+      byFile.set(normalized, (byFile.get(normalized) ?? 0) + 1);
+    }
+  }
+  return { byFile, status: result.status, output: `${stdout}${stderr}`, parsed };
 }
 
 beforeAll(() => {
@@ -339,8 +363,8 @@ beforeAll(() => {
   // 配置启用了 type-aware lint，oxlint 需从 cwd 解析 oxlint-tsgolint。用 junction 复用
   // 仓库依赖，而不是复制配置或关掉真实选项。
   symlinkSync(join(repoRoot, "node_modules"), join(workDir, "node_modules"), "junction");
-  for (const [relative, fixture] of Object.entries(fixtures)) {
-    const target = join(workDir, relative);
+  for (const [file, fixture] of Object.entries(fixtures)) {
+    const target = join(workDir, file);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, fixture.source);
   }
@@ -352,8 +376,11 @@ afterAll(() => {
 
 describe("DEV-04 dependency boundary (real .oxlintrc.json)", () => {
   it("actually applies the rule (so the fixtures below cannot pass vacuously)", () => {
-    const { byFile, output } = runOxlint();
-    expect(output).toContain("no-restricted-imports");
+    const { byFile, parsed } = runOxlint();
+    // 必须能从结构化输出里读到诊断，且这些诊断确实来自依赖边界规则本身。
+    expect(parsed, "oxlint 应输出可解析的 JSON").not.toBeNull();
+    const codes = new Set((parsed?.diagnostics ?? []).map((d) => d.code ?? ""));
+    expect([...codes]).toContain("eslint(no-restricted-imports)");
     expect(byFile.size).toBeGreaterThan(0);
   });
 
@@ -399,15 +426,15 @@ describe("DEV-04 dependency boundary (real .oxlintrc.json)", () => {
     ];
     const wrong: string[] = [];
     for (const [index, [file, specifier, allowed]] of expectations.entries()) {
-      const relative = file.replace(/\.ts$/, `-${index}.ts`);
-      const target = join(workDir, relative);
+      const casePath = file.replace(/\.ts$/, `-${index}.ts`);
+      const target = join(workDir, casePath);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, `import type { A } from "${specifier}";\nexport type B = A;\n`);
-      const { byFile } = runOxlint([relative]);
-      const hits = byFile.get(relative) ?? 0;
+      const { byFile } = runOxlint([casePath]);
+      const hits = byFile.get(casePath) ?? 0;
       if ((hits === 0) !== allowed) {
         wrong.push(
-          `${relative} importing "${specifier}": expected ${allowed ? "ALLOW" : "BLOCK"}, got ${hits === 0 ? "ALLOW" : "BLOCK"}`,
+          `${casePath} importing "${specifier}": expected ${allowed ? "ALLOW" : "BLOCK"}, got ${hits === 0 ? "ALLOW" : "BLOCK"}`,
         );
       }
       rmSync(target);
@@ -416,15 +443,16 @@ describe("DEV-04 dependency boundary (real .oxlintrc.json)", () => {
   });
 
   it("rejects every disallowed import by the dependency-boundary rule itself", () => {
-    const { byFile, output } = runOxlint();
+    const { byFile, parsed } = runOxlint();
     // 拒绝必须来自依赖边界规则，而不是「模块不存在」之类的解析失败。
-    expect(output).not.toMatch(/Cannot find module/i);
+    const messages = (parsed?.diagnostics ?? []).map((d) => d.message ?? "").join("\n");
+    expect(messages).not.toMatch(/Cannot find module/i);
     const wrong: string[] = [];
-    for (const [relative, fixture] of Object.entries(fixtures)) {
+    for (const [file, fixture] of Object.entries(fixtures)) {
       if (fixture.violations === 0) continue;
-      const actual = byFile.get(relative) ?? 0;
+      const actual = byFile.get(file) ?? 0;
       if (actual !== fixture.violations) {
-        wrong.push(`${relative}: expected ${fixture.violations} violations, got ${actual}`);
+        wrong.push(`${file}: expected ${fixture.violations} violations, got ${actual}`);
       }
     }
     expect(wrong).toEqual([]);
@@ -433,11 +461,11 @@ describe("DEV-04 dependency boundary (real .oxlintrc.json)", () => {
   it("allows every fixture that DEV-04 permits", () => {
     const { byFile } = runOxlint();
     const wronglyBlocked: string[] = [];
-    for (const [relative, fixture] of Object.entries(fixtures)) {
+    for (const [file, fixture] of Object.entries(fixtures)) {
       if (fixture.violations !== 0) continue;
-      const actual = byFile.get(relative) ?? 0;
+      const actual = byFile.get(file) ?? 0;
       if (actual !== 0) {
-        wronglyBlocked.push(`${relative}: blocked ${actual}x — ${fixture.reason}`);
+        wronglyBlocked.push(`${file}: blocked ${actual}x — ${fixture.reason}`);
       }
     }
     expect(wronglyBlocked).toEqual([]);
