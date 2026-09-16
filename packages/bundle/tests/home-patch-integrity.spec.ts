@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -137,12 +137,13 @@ beforeAll(() => {
   const probe = spawnSync("node", ["-e", "process.stdout.write(process.execPath)"], {
     encoding: "utf8",
   });
-  nodeExe = (probe.stdout ?? "").trim();
+  // process.execPath 在 CI 运行器上也可能带短名成分（如 RUNNER~1），启动器同样会拒绝。
+  nodeExe = longFormPath((probe.stdout ?? "").trim());
   const version = spawnSync(nodeExe, ["--version"], { encoding: "utf8" });
   if (!/^v24\./.test((version.stdout ?? "").trim())) {
     throw new Error(`The launcher requires Node 24.x; found ${(version.stdout ?? "").trim()}`);
   }
-  workRoot = mkdtempSync(join(tmpdir(), "soloips-homepatch-"));
+  workRoot = longFormPath(mkdtempSync(join(tmpdir(), "soloips-homepatch-")));
 });
 
 afterAll(() => {
@@ -151,12 +152,30 @@ afterAll(() => {
 
 /**
  * 平台前提：`runtime.ps1` 是 **Windows-only** 启动器（`Get-CimInstance`、
- * `Get-NetTCPConnection`、`WindowStyle`、`node.exe` 路径校验）。CI 在 ubuntu-latest
- * 上运行，无法执行该入口，故本套件在非 Windows 平台上跳过，而不是失败或假通过。
- * 跳过是**如实声明未验证**：Windows 上的本地运行才是这些用例的证据来源。
+ * `Get-NetTCPConnection`、`WindowStyle`、`node.exe` 路径校验）。在 Windows 以外的平台
+ * 跳过，而不是失败或假通过；跳过是**如实声明未验证**。
+ *
+ * CI 上用 windows-latest 作业专门跑这套（见 `.github/workflows/verify.yml`）——
+ * 该作业首次运行就抓到了下面这个真实缺陷，正是它存在的理由。
  */
 const isWindows = process.platform === "win32";
 const suite = isWindows ? describe : describe.skip;
+
+/**
+ * 取长格式绝对路径。
+ *
+ * 启动器**有意**拒绝 Windows 8.3 短名（`RUNNER~1` 之类），因为同一目录的两种拼写
+ * 会绕过它的路径比较。而 CI 运行器的 `os.tmpdir()` 本身就可能返回短名形态，
+ * 于是 fixture 会因**与用例无关**的原因失败（本机开发机返回长名，所以本地看不出来）。
+ * 这里统一折算成长名，让被测规则收到它要求的输入。
+ */
+function longFormPath(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
 
 suite("runtime.ps1 home patch integrity (production verify path)", () => {
   it("accepts a version that has no home patch", () => {
