@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
-const RUNTIME = "$SOLOIPS_DEVS_ROOT/versions/r001/runtime";
+const RUNTIME = process.env.SOLOIPS_DEVS_ROOT + "/versions/r001/runtime";
 const require = createRequire(RUNTIME + "/package.json");
 const YAML = require("yaml");
 

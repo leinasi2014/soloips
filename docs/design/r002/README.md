@@ -49,23 +49,38 @@ r002 批 1 的六名成员各自产出了设计候选。它们原先位于本机
 | --- | --- | --- |
 | 1 | `AGENTS.md` §2 授权边界全节在注册表中**无已登记的来源权威**（doc-reviewer B-05） | **未解决**。原拟以 `AGENTS.authorization-review.md` 登记解决，该文件经用户 2026-09-16 指示删除，路径消失。可选解法是在 [项目绑定](../../governance/project-binding.yaml) 增 `authorization` 段，但属组织规则变更，不在本次授权内 |
 | 2 | doc-reviewer 的其余 9 条阻断项（B-01–B-04、B-06–B-10） | **未处理**。本候选只入库正文，未修改被审查的文档结论；处置须单独授权 |
-| 3 | `assembly/probe/home/` 临时 home 目录树未入库 | **有意排除**。按 DEV-02 临时 home 应隔离，且其中 `node_modules/` 被根 `.gitignore` 排除；golden 基线已复制到 `assembly/evidence/baselines/`。原始完整目录保留在本机 `.artifacts/operations/`（被忽略） |
+| 3 | `assembly/probe/home/` 临时 home 的 `node_modules/` 部分未入库 | **已按配方重建**。64 个 stub 文件被根 `.gitignore` 的 `node_modules/` 规则排除，直接入库会产生残缺 fixture。现改为：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`，64 个 stub 由 `assembly/evidence/fixture/stubs.manifest.json` 逐字节还原，重建后与原始 fixture **100/100 文件、0 哈希差异**（见 `assembly/evidence/fixture/README.md` §3） |
 | 4 | 各册内部的探针结论**未在本次集成中复跑** | **未验证**。本候选是原样入库 + 机器路径脱敏；探针结果的真实性由各册自述与 DEV-13 复核承担，未由集成者重新执行 |
+| 5 | `assembly/evidence/fixture/` 重建后**未实跑门禁** | **未验证**。fixture 保真度已证（逐字节），但「重建后 `check-composition.mjs` 输出与 `gate-*.txt` 一致」未执行，属基线 §6 未授权的运行验证 |
 
 ## 5. 入库时的集成者改动（逐项可核对）
 
-入库不是逐字节复制，改动**限于以下四类**，均不改变任何结论、数字或裁决：
+入库不是逐字节复制，改动**限于以下五类**，均不改变任何结论、数字或裁决：
 
 | 类别 | 范围 | 说明 |
 | --- | --- | --- |
-| 机器绝对路径 → 符号环境名 | 28 个文件 | 开发机绝对路径改为 ENV-02 符号环境名（`$SOLOIPS_ROOT`、`$DSH_FORK_CHECKOUT`、`$SOLOIPS_DEVS_ROOT/versions/r001`）。依据 [文档格式规范 §6](../../governance/agent-readable-documentation.md)「机器本地绝对路径写入本机记录，不进正文」 |
+| 机器绝对路径 → 符号环境名 | 28 个文件 | 开发机绝对路径改为 ENV-02 符号环境名。依据 [文档格式规范 §6](../../governance/agent-readable-documentation.md)「机器本地绝对路径写入本机记录，不进正文」 |
 | 私有网络地址 → 占位符 | 2 个文件 | 本机私有内网与虚拟网卡地址（IPv4 私网段）改为 `<…地址>` 占位，**不在本正文复述具体值**。仓库 `visibility: public` |
-| 相对链接层级修正 | 4 个文件 / 8 行 | 见下 |
-| 目录重排 | `assembly/` | 见下 |
+| 符号名的可执行写法修正 | 4 个文件 | 见下 |
+| 相对链接层级修正 | 5 个文件 / 10 行 | 见下 |
+| 目录重排 + fixture 拆分 | `assembly/` | 见下 |
 
-**目录重排说明**：原始 `r002-*/` 平级目录改为 `docs/design/r002/<短名>/`，以符合仓库既有 `docs/<类别>/` 布局（`docs/decisions/`、`docs/operations/`、`docs/reference/`）。`assembly/probe/home/` 未入库（见 §4 第 3 项），其 `baselines/*.golden.txt` 移至 `assembly/evidence/baselines/` 以保留门禁基线。`assembly/evidence/probe-log.md` 已就地加入一条**明确标注为集成者注**的说明，记录该排除及其理由。
+**目录重排说明**：原始 `r002-*/` 平级目录改为 `docs/design/r002/<短名>/`，以符合仓库既有 `docs/<类别>/` 布局（`docs/decisions/`、`docs/operations/`、`docs/reference/`）。
 
-**相对链接层级修正说明**：目录重排改变了部分正文与仓库根的距离，原有相对链接因此失效。已按目标文件的真实位置重算相对路径并修正 8 行（`README.md` 5 处、`adapter/contracts-design.md` 2 处、`adapter/probe/compile-receipt.md` 1 处），另修正 `baseline-intake/intake.md` 3 处指向 Skill `assets/` 的链接（该 3 处**在原 `.artifacts` 源目录中即为断链**，属原作者笔误，本次一并修正）。**只改链接目标字符串，未改动任何链接文字、结论或数据。** 修正后全仓库本地 Markdown 链接 116 条**断链 0**。
+**fixture 拆分说明**：`assembly/probe/home/` 含 100 个文件，其中 64 个位于 `node_modules/` 而被根 `.gitignore` 排除。若直接入库会得到**残缺且误导**的 fixture。现拆为两部分：36 个非 `node_modules` 文件入库于 `assembly/evidence/fixture/home/`；64 个 stub 由 `stubs.manifest.json`（**由原始 fixture 直接生成，非按形状猜测**）经 `rebuild-stubs.mjs` 还原。实测重建结果与原始 fixture **100/100 文件、0 缺失、0 多余、0 哈希差异**。`assembly/evidence/probe-log.md` 与 `assembly/evidence/fixture/README.md` 已就地记录该安排。
+
+**符号名的可执行写法修正说明**（独立复核 `verifier` 发现的**阻断级回归**）：集成者的脱敏脚本把机器路径一律替换为 `$SYMBOL` 形式，但**符号名只在文档叙述中有效**，在被执行的语言里必须用该语言的取法：
+
+| 位置 | 语言 | 修正 |
+| --- | --- | --- |
+| `qa/acceptance-plan.md:264` | PowerShell | 裸 `$SOLOIPS_ROOT` → `$env:SOLOIPS_ROOT`。裸写法是**未定义的 PowerShell 变量**，展开为空串，导致 §4.2 的隔离断言**静默通过**（r001 越界检查不触发、session 计数返回 0 —— 恰好等于期望值） |
+| `qa/acceptance-plan.md:111` | PowerShell（命令记录） | 裸 `$DSH_FORK_CHECKOUT` → `$env:DSH_FORK_CHECKOUT`。裸写法使 `git -C … rev-parse HEAD` 变成 `git -C rev-parse HEAD`，退出码 128 |
+| `assembly/tools/{dup-id-collapse,extract-official-rows,extract-restatement-inventory,validate-drafts}.mjs` | JavaScript | 字面量 `"$SOLOIPS_DEVS_ROOT/…"` → `process.env.SOLOIPS_DEVS_ROOT + "/…"`。原写法是**字面字符串**，脚本会指向名为 `$SOLOIPS_DEVS_ROOT` 的目录 |
+| `operations/development-iterations.md:76-78`（本 PR C2 入库，**缺陷为既有正文自带**，非本次脱敏引入） | PowerShell | 裸 `$SOLOIPS_ROOT`/`$SOLOIPS_DEVS_ROOT` → `$env:` 形式，并补一句说明。**同机理，属同批修复** |
+
+修正后：`docs/design/` 全部**可执行**代码块（`powershell`/`bash`/`console` 围栏）与 `.mjs`/`.ts` 源文件中**无裸符号**；4 个 `.mjs` 经 `node --check` 全部退出码 0。文档叙述中的 `$SYMBOL` 作为**符号名**保留（该处按 ENV-02 解析，非可执行上下文）。
+
+**相对链接层级修正说明**：目录重排改变了部分正文与仓库根的距离，原有相对链接因此失效。已按目标文件的真实位置重算相对路径并修正（`README.md` 5 处、`adapter/contracts-design.md` 2 处、`adapter/probe/compile-receipt.md` 1 处、`baseline-intake/intake.md` 3 处指向 Skill `assets/` 的链接——该 3 处**在原 `.artifacts` 源目录中即为断链**，属原作者笔误）。**只改链接目标字符串，未改动任何链接文字、结论或数据。** 修正后全仓库本地 Markdown 链接 119 条**断链 0**。
 
 **未改动**：所有裁决、数字、行号、哈希、ID、结论、待决项，以及各册自述的证据边界。凭据扫描在 `docs/design/` 全树为 0 命中。
 

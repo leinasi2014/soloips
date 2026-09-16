@@ -1,0 +1,6 @@
+{
+  "name": "dsh-profile-soloips-inject",
+  "private": true,
+  "dependencies": {},
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "soloips-core", "soloips-bundle"], "patchReload": "startup" } }
+}

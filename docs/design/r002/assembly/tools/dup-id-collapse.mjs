@@ -5,10 +5,10 @@
  */
 import { createRequire } from "node:module";
 
-const RUNTIME = "$SOLOIPS_DEVS_ROOT/versions/r001/runtime";
+const RUNTIME = process.env.SOLOIPS_DEVS_ROOT + "/versions/r001/runtime";
 const require = createRequire(RUNTIME + "/package.json");
 const { composeEntries } = await import(
-  "file:///$SOLOIPS_DEVS_ROOT/versions/r001/runtime/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js"
+  "file:///" + process.env.SOLOIPS_DEVS_ROOT + "/versions/r001/runtime/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js"
 );
 
 // 两层 patch：第一层 insert 两行相同 id；第二层再 insert 一行相同 id。

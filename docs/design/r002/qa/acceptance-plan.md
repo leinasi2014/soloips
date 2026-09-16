@@ -55,6 +55,8 @@
 
 工作目录 `$SOLOIPS_ROOT`，时间 2026-09-16。方法：`Get-FileHash -Algorithm SHA256`。
 
+> 〔集成者注，**非作者结论**〕下表哈希对应**本机原始文件**。入库副本因机器路径与私有地址脱敏，部分文件字节数已不同（例如 `baseline.md` 本机 9276 B / `676cd962…`，入库副本 9262 B / `3015d3ed…`），故洁净检出者**无法用下表核验入库副本**。需要核验入库副本时，请以本提交内的实际文件重算 SHA-256。原始未脱敏文件保留在本机 `.artifacts/operations/`（被忽略）。
+
 | 输入 | 字节 | SHA-256 |
 | --- | ---: | --- |
 | `docs/technical-architecture.md` | 153318 | `f42d204203012c81139773cf5a4a5d6d7a9a67e57b2418c26f66a7f3dea0bd50` |
@@ -73,7 +75,7 @@
 
 ### 2.2 机制行号独立复核（DSH 0.1.6-alpha.1）
 
-方法：直接读取 `DSH_FORK_CHECKOUT` 源码（`$DSH_FORK_CHECKOUT`，根包 0.1.6-alpha.1）。**行号为本方案实测**，与技术架构正文所引 0.1.5-rc.2 行号可能有偏移，执行时以本节为准。
+方法：直接读取 `DSH_FORK_CHECKOUT` 源码（根包 0.1.6-alpha.1；符号名按 ENV-02 解析）。**行号为本方案实测**，与技术架构正文所引 0.1.5-rc.2 行号可能有偏移，执行时以本节为准。
 
 | 机制 | 本方案实测位置 | 技术架构所引 | 裁决 |
 | --- | --- | --- | --- |
@@ -108,7 +110,7 @@
 **Q1〔已变化〕DSH fork 主检出 HEAD 已前移，与 r002 基线/task-1 的记录不一致。**
 
 ```
-命令: git -C $DSH_FORK_CHECKOUT rev-parse HEAD
+命令: git -C $env:DSH_FORK_CHECKOUT rev-parse HEAD
 输出: abdfeb4831e163462ea4dd17ca5bb4e581d40d1c        (exit 0)
 命令: git -C ... branch --show-current
 输出: codex/team-roster-model                          (exit 0)
@@ -261,7 +263,7 @@ SOLOIPS_ROOT/.artifacts/operations/r002-qa-20260916/
 
 ```powershell
 # 隔离断言（工作目录 = SOLOIPS_ROOT）
-$qa = "$SOLOIPS_ROOT\.artifacts\operations\r002-qa-20260916\run"
+$qa = "$env:SOLOIPS_ROOT\.artifacts\operations\r002-qa-20260916\run"
 if ((Resolve-Path $qa).Path -like "*\versions\r001*") { throw "QA root must not be under r001" }
 Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 55201,55120 } |
   Select-Object LocalPort, OwningProcess | ConvertTo-Json    # 前后 PID 必须一致

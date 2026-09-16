@@ -73,10 +73,12 @@ Profile 使用 `patchReload: startup`。关闭官方 `llm-retry` 自动重试入
 日常启动、状态与停止通过 [runtime.ps1](../../scripts/development/runtime.ps1) 执行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SOLOIPS_ROOT/scripts/development/runtime.ps1" -Action verify -VersionRoot "$SOLOIPS_DEVS_ROOT/versions/<version>"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SOLOIPS_ROOT/scripts/development/runtime.ps1" -Action start -VersionRoot "$SOLOIPS_DEVS_ROOT/versions/<version>"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SOLOIPS_ROOT/scripts/development/runtime.ps1" -Action status -VersionRoot "$SOLOIPS_DEVS_ROOT/versions/<version>"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:SOLOIPS_ROOT/scripts/development/runtime.ps1" -Action verify -VersionRoot "$env:SOLOIPS_DEVS_ROOT/versions/<version>"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:SOLOIPS_ROOT/scripts/development/runtime.ps1" -Action start -VersionRoot "$env:SOLOIPS_DEVS_ROOT/versions/<version>"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:SOLOIPS_ROOT/scripts/development/runtime.ps1" -Action status -VersionRoot "$env:SOLOIPS_DEVS_ROOT/versions/<version>"
 ```
+
+上述命令中的 `$env:SOLOIPS_ROOT` 与 `$env:SOLOIPS_DEVS_ROOT` 是 PowerShell **环境变量**引用；若写成裸 `$SOLOIPS_ROOT`，PowerShell 会按未定义的 PowerShell 变量展开为空串，命令将指向错误路径（甚至静默通过）。符号名按 [ENV-02](environment-handoff.md) 解析。
 
 上述执行策略参数只作用于本次 PowerShell 进程，不修改系统策略。脚本只管理自己登记的进程，并校验路径、入口、PID 与创建时间；这不是覆盖任意启动器的跨进程 fencing。`stop` 使用 Windows 终止进程，执行前必须结束在途工作，不将其称为已验证的优雅排空。脚本拒绝占用端口与受保护端口；端口冲突须重新分配，不杀死未知进程。
 

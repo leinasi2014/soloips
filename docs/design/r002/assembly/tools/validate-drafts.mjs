@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DRAFTS = join(HERE, "..", "drafts");
-const RUNTIME = "$SOLOIPS_DEVS_ROOT/versions/r001/runtime";
+const RUNTIME = process.env.SOLOIPS_DEVS_ROOT + "/versions/r001/runtime";
 const YAML = createRequire(RUNTIME + "/package.json")("yaml");
 
 const problems = [];
