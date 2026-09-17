@@ -29,9 +29,9 @@ pnpm run build          # 构建
 packages/
 ├── soloips-bundle/          # 装配声明，无运行时代码
 ├── soloips-adapter-dsh/     # DSH 适配，无业务状态
-├── soloips-core/            # 唯一业务状态包（公司、作品、IP）
+├── soloips-core/            # 通用业务状态包（组织结构、文档模型）
 ├── soloips-web/             # 界面层
-└── soloips-tools-pv/        # S1 加入
+└── soloips-tools-pv/        # 业务插件（PV 制作，用户/SoloIPS开发团队维护）
 ```
 
 **依赖方向**：
@@ -42,7 +42,8 @@ tools-pv → adapter + core
 ```
 
 **包边界规则**：
-- `core` 是唯一业务写权威
+- `core` 是通用业务状态包（组织结构、文档模型）
+- 业务插件（如 tools-pv）是独立业务领域的写权威
 - 其他包只能读投影或经服务请求
 - 禁止跨包相对导入，用 `exports` 和服务契约
 - 禁止 `any` 绕过类型检查
@@ -88,7 +89,7 @@ tools-pv → adapter + core
 
 ### 写入规则
 
-- 业务写权威归 `core`
+- 业务写权威按领域划分：core 管理通用状态，业务插件管理各自领域状态
 - 写前验证身份、权限、状态
 - 状态转换检查旧状态/revision
 - 不把客户端对象直接覆盖权威记录

@@ -19,7 +19,8 @@
     "build": "tsc -b",
     "pack-artifacts": "node scripts/development/pack-delivery-artifacts.mjs",
     "delivery-lock": "node scripts/development/generate-delivery-lock.mjs",
-    "check:delivery-load": "node scripts/development/check-delivery-load.mjs"
+    "check:delivery-load": "node scripts/development/check-delivery-load.mjs",
+    "verify": "node scripts/development/verify-s0.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

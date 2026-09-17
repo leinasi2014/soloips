@@ -70,7 +70,10 @@ technical:
   runtime: DSH
   architectureAuthority: docs/technical-architecture.md
   developmentAuthority: docs/governance/code-development-standard.md
-  note: 技术裁定与验收设计见技术架构；具体依赖锁定与运行兼容证据在获授权的实现切片补齐
+  completeArchitecture: docs/architecture-complete.md
+  multiCompanyDesign: docs/design/multi-company-organization.md
+  multiCompanyImpl: docs/design/multi-company-implementation.md
+  note: 技术裁定与验收设计见技术架构；具体依赖锁定与运行兼容证据在获授权的实现切片补齐；UI双版本、多公司模型、总助理、日志系统设计见 architecture-complete.md
 
 redLines:
   - user-is-sole-business-decision-authority

@@ -35,7 +35,7 @@ flowchart TB
 
 | 事实 / 能力 | 唯一权威与接入方式 |
 | --- | --- |
-| 公司、部门、Employee、Appointment、准入与授权代际，IP 与作品版本，业务审核 / 用户验收 | `soloips-core` 持有 SoloIPs 业务事实；延续既有业务要求，不依赖提示词自报 |
+| 公司、部门、Employee、Appointment、准入与授权代际，文档版本，业务审核 / 用户验收 | `soloips-core` 持有 SoloIPs 通用业务事实（组织结构、文档模型）；IP 与作品版本归属业务插件 |
 | Team 成员 roster、原生任务状态与 revision、分配 / 领取 / 依赖、Team 消息 | fork 中的官方 Agent Team 服务持有原生协作事实；SoloIPs 经 adapter 调用公开接口，界面和统计消费投影 |
 | 子智能体启动、继续消息、中断与运行句柄 | 官方 subagent 提供执行能力；Team 管理协作关系，不另建 Agent Loop |
 | 执行历史与官方 Team 的持久化记录 | DSH Session 及官方 Team 的持久化机制；SoloIPs 不直接改写其日志或另存可写任务副本 |

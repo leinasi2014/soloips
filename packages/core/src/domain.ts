@@ -70,14 +70,24 @@ const operationIdSchema = constrainedStringSchema<SoloipsOperationId>(
 );
 
 /**
- * company：SOLO-ACC-05 前置「已建立至少一个公司」。
- * - id：读回核对的身份（「核对公司」）。
- * - name：创建时写入、重启后可比对的业务可观察值。
+ * company：公司层级架构的核心实体
+ * - id：读回核对的身份（「核对公司」）
+ * - accountId：归属账户（隔离条件）
+ * - parentCompanyId：父公司（无则为顶层公司）
+ * - type：公司类型（platform/operation/enterprise/subsidiary）
+ * - name：创建时写入、重启后可比对的业务可观察值
+ * - status：活跃/归档
+ * - createdAt：创建时间
  */
 const companyRecordSchema: SoloipsSchema<SoloipsCompanyRecord> = objectSchema<SoloipsCompanyRecord>(
   {
     id: companyIdSchema,
+    accountId: nonEmptyStringSchema(),
+    parentCompanyId: optionalSchema(companyIdSchema),
+    type: literalUnionSchema(["platform", "operation", "enterprise", "subsidiary"] as const),
     name: nonEmptyStringSchema(),
+    status: literalUnionSchema(["active", "archived"] as const),
+    createdAt: nonEmptyStringSchema(),
   },
 );
 

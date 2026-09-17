@@ -50,6 +50,7 @@ export function fakeLeaseAssertCount(): number {
 }
 
 export function resetFakeAdapter(): void {
+  // 清理所有 root 的媒体数据（确保 schema 变更后测试隔离）
   media.clear();
   leaseGenerations.clear();
   events.length = 0;

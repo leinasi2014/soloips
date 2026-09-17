@@ -1,12 +1,13 @@
 # 状态归属
 
-> 技术架构 §7。业务事实的唯一写权威与持久化规则。
+> 技术架构 §7。业务事实的写权威与持久化规则。
 
 ## 核心原则
 
 **一个状态只有一个写权威**。
 
-- `soloips-core` 是 SoloIPs 业务事实的唯一写权威
+- `soloips-core` 是组织结构和文档模型的写权威
+- 业务插件（如 tools-pv）各自持有领域状态的写权威
 - 其他包只能读投影或经服务请求
 - 投影不回写，不是第二事实来源
 
@@ -14,10 +15,22 @@
 
 | 状态类型 | 归属包 | 说明 |
 |---|---|---|
-| 公司/部门/员工 | soloips-core | 唯一写权威 |
-| 作品/IP | soloips-core | 唯一写权威 |
+| 公司层级树（platform/operation/enterprise/subsidiary） | soloips-core | 公司树结构与层级关系 |
+| 部门/员工/文档 | soloips-core | 组织结构和文档模型的写权威 |
+| PV 任务/分镜 | soloips-tools-pv | PV 领域的写权威（业务插件） |
 | 会话/任务 | DSH（经 adapter） | 由 DSH 管理 |
 | 工具/资源 | DSH（经 adapter） | 由 DSH 管理 |
+
+## 公司层级规则
+
+| 规则 | 说明 |
+|------|------|
+| **SoloIPs 平台公司** | `type='platform'`，accountId='soloips_official'，SoloIPS 官方持有 |
+| **SoloIPs 运营子公司** | `type='operation'`，parentCompanyId=平台公司ID，SoloIPS 官方持有 |
+| **用户公司** | `type='enterprise'`，无 parentCompanyId，用户持有 |
+| **用户子公司** | `type='subsidiary'`，parentCompanyId=用户公司ID，用户持有 |
+| **权益配额** | 按顶层公司计算，控制子公司总数 |
+| **SoloIPs 平台公司初始化** | 系统启动时自动创建平台公司和各运营子公司 |
 
 ## 写入规则
 

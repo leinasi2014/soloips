@@ -12,7 +12,7 @@
 | 依据 | [产品架构](../architecture.md)、[代码规范](../governance/code-development-standard.md) |
 | 变更权 | architecture-owner；重大变更须用户确认 |
 
-## 架构决策（ARCH-D01–07）
+## 架构决策（ARCH-D01–08）
 
 | ID | 决定 |
 |---|---|
@@ -23,6 +23,7 @@
 | ARCH-D05 | 上游 API 失败停线（ORG-13） |
 | ARCH-D06 | 用原生任务系统登记工作 |
 | ARCH-D07 | S0 优先：真实安装候选 + 写保护验证 |
+| ARCH-D08 | Web/3D 双界面架构，共享 Zustand 状态，通过 DSH Client Slots 扩展 |
 
 ## 包结构
 
@@ -30,12 +31,22 @@
 packages/
 ├── soloips-bundle/          # 装配声明
 ├── soloips-adapter-dsh/    # DSH 适配（8 端口）
-├── soloips-core/            # 唯一业务状态包
-├── soloips-web/             # 可替换界面层
-└── soloips-tools-pv/        # S1 加入
+├── soloips-core/            # 通用业务状态包（组织结构、文档模型）
+├── soloips-web/             # 可替换界面层（Web + 3D 双版本）
+└── soloips-tools-pv/        # 业务插件（PV 制作，用户/SoloIPS开发团队维护）
 ```
 
 详细：见 [packages.md](technical/packages.md)
+
+### UI 双版本架构（ARCH-D08）
+
+| 组件 | 技术栈 | 说明 |
+|---|---|---|
+| **Web 版本** | React + Zustand | 主界面，创建/管理公司、部门、团队 |
+| **3D 版本** | React Three Fiber + Three.js | 科幻风格可视化，增强沉浸感 |
+| **状态共享** | Zustand + DSH Slots | 双版本共享同一业务状态 |
+
+详细：见 [docs/architecture-complete.md](../architecture-complete.md)
 
 ## 装配机制
 
@@ -49,8 +60,9 @@ bundle patches → profile patch → home patch → launcher patch
 
 | 包 | 职责 |
 |---|---|
-| soloips-core | 公司、作品、IP（唯一写权威） |
+| soloips-core | 通用业务状态（组织结构、文档模型） |
 | soloips-adapter-dsh | DSH 能力适配（无业务状态） |
+| soloips-tools-pv | 业务插件状态（PV 任务等，由插件自行管理） |
 | soloips-web | 只读投影 |
 
 详细：见 [state.md](technical/state.md)

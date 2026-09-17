@@ -15,10 +15,12 @@
 
 | 任务类型 | 读这个 | 得到什么 |
 |---|---|---|
-| 任何开工 | `docs/architecture.md` + `docs/technical-architecture.md` | 做什么、怎么做 |
-| 写代码 | `docs/governance/code-development-standard.md` | 怎么写、怎么验证 |
+| **任何开工** | `docs/architecture-summary.md` | **快速参考：包职责、关键决策、开发里程碑** |
+| **写代码前必读** | `docs/design/data-contract.md` | **权威数据模型、权限链路、配额原子操作** |
+| **写代码** | `docs/governance/code-development-standard.md` | 怎么写、怎么验证 |
+| **多智能体开发** | `docs/governance/multi-agent-development.md` | **团队配置、任务拆分、Agent 派发、开发流程** |
 | 写文档 | `docs/governance/doc-format.md` | 怎么标注、怎么引用 |
-| 查包边界 | `docs/technical-architecture.md` §5 | 哪个包负责什么 |
+| 完整架构 | `docs/architecture-complete.md` | UI双版本、多公司模型、总助理、日志系统 |
 | 查装配规则 | `docs/technical-architecture.md` §6 | bundle/patch/profile 怎么组合 |
 | 查架构决策 | `docs/decisions/` | 哪些是已确认决定 |
 | 环境与工具 | `docs/operations/environment-handoff.md` | 本机路径、版本、命令 |
@@ -54,15 +56,35 @@
 packages/
 ├── soloips-bundle/          # 装配声明，patch 覆写顺序
 ├── soloips-adapter-dsh/     # DSH 适配层
-├── soloips-core/            # 唯一业务状态包（公司、作品、IP）
-├── soloips-web/             # 界面层（可替换）
-└── soloips-tools-pv/        # S1 加入（制作工具）
+├── soloips-core/            # 通用业务状态包（组织结构、文档模型、公司层级）
+├── soloips-web/             # 界面层（Web + 3D 双版本，共享 Zustand）
+└── soloips-tools-pv/        # 业务插件（PV 制作，由用户/SoloIPS开发团队维护）
 ```
 
 **包职责规则**：
-- `core` 是唯一业务写权威，其他包只能读投影或经服务请求
+- `core` 是组织结构和文档模型的写权威；业务插件（如 tools-pv）各自持有领域写权威
 - 禁止跨包相对导入（用 `exports` 和服务契约）
 - 新增持久状态包需满足：自有 schema、独立写权威、独立升级节奏
+- **UI 双版本**：Web + 3D 通过 DSH Client Slots 扩展，共享状态
+
+## 公司生态架构
+
+SoloIPs 采用**三层公司层级**：
+
+| 层级 | 类型 | 说明 | 持有者 |
+|------|------|------|--------|
+| **第一层** | 平台公司 | SoloIPs 品牌方，拥有所有运营子公司 | SoloIPS 官方 |
+| **第二层** | 运营子公司 | 漫画网站、视频网站、音乐网站等业务平台 | SoloIPS 官方 |
+| **第三层** | 用户公司/子公司 | 用户创建的 AI 公司及其子公司 | 用户 |
+
+**公司类型**：`platform` | `operation` | `enterprise` | `subsidiary`
+
+**权益配额**：按顶层公司计算，控制子公司总数
+- Free：1个用户公司 + 0个子公司
+- Pro：1个用户公司 + 3个子公司
+- Enterprise：无限制
+
+**内容发布**：用户 IP 作品 → 投稿到 SoloIPs 运营子公司 → 面向观众发布
 
 ## 代码规范
 
@@ -145,6 +167,7 @@ type: feat | fix | docs | test | refactor | chore
 
 ## 变更历史
 
-| 日期 | 变更 |
+| 日期 | 变更 | 变更者 |
 |---|---|
-| 2026-09-17 | 重构精简版：合并多文档、减少标注维度、简化元数据 |
+| 2026-09-17 | 重构精简版：合并多文档、减少标注维度、简化元数据 | 主会话 |
+| 2026-09-17 | 新增多智能体开发入口 | 主会话 |

@@ -95,3 +95,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:SOLOIPS_ROOT/scrip
 - 独立复核版本清单、路径隔离、配置差异与剩余限制；缺密钥、远端主机、实际任务或外部目标时明确相应验证未执行。
 
 〔约束〕切回上一版 runtime/home 才是该版运行环境的回退；切 Profile 只改变装配。下一版已经产生的新数据单独保留，不因回退删除，不自动灌入旧 schema。需要延续 Session 或业务状态时按 SOLO-DATA-01–04 与 SOLO-ACC-06 做一致备份及兼容验证。
+
+## 新增架构里程碑（ARCH-D08）
+
+### UI 双版本开发路线
+
+| 阶段 | 目标 | 验收 |
+|---|---|---|
+| **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 |
+| **M0.2** | 订阅限制：免费1公司、付费多公司 | 免费用户无法创建第二公司 |
+| **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 |
+| **M1** | 双版本联调：Zustand 状态共享 | Web 操作能同步到 3D 视图 |
+| **M2** | 总助理：AI 驱动的公司运营 | 能对话总助理完成日常事务 |
+| **M3** | 日志与监测：三层层日志系统 | 能查询业务审计、执行历史、系统监测 |
+
+详细设计见 [`docs/architecture-complete.md`](../architecture-complete.md)

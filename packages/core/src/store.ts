@@ -306,15 +306,39 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     this.#assertOpen();
     requireOperationIdShape(input.operationId);
     requireNonEmpty(input.name, "公司名");
+
+    // 验证父公司存在（如有提供）
+    if (input.parentCompanyId !== undefined) {
+      if (!isCompanyId(input.parentCompanyId)) {
+        throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "parentCompanyId 形状不合法");
+      }
+      this.#readCompany(input.parentCompanyId);
+    }
+
+    const companyType = input.type ?? "enterprise";
     return this.#gate.commit(
       {
         operationId: asOperationId(input.operationId),
         kind: "company.create",
-        intent: { name: input.name },
+        intent: {
+          name: input.name,
+          type: companyType,
+          ...(input.parentCompanyId !== undefined ? { parentCompanyId: input.parentCompanyId } : {}),
+        },
       },
       async (publish) => {
         const id = newCompanyId();
-        await publish.put("company", id, { id, name: input.name });
+        await publish.put("company", id, {
+          id,
+          // accountId 由 Host 层注入（SoloipsCoreService 接口契约）
+          // 测试场景使用 "seed" 占位
+          accountId: "seed",
+          ...(input.parentCompanyId !== undefined ? { parentCompanyId: input.parentCompanyId } : {}),
+          type: companyType,
+          name: input.name,
+          status: "active",
+          createdAt: new Date().toISOString(),
+        });
         return { companyId: id };
       },
     );
@@ -698,6 +722,44 @@ class SoloipsCompanyStore implements SoloipsCoreService {
   getCompany(id: SoloipsCompanyId): SoloipsCompanyRecord | undefined {
     this.#assertOpen();
     return this.#domain.table("company").get(id);
+  }
+
+  /** 获取指定公司的所有直接子公司 */
+  listSubsidiaries(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[] {
+    this.#assertOpen();
+    if (!isCompanyId(companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
+    const found: SoloipsCompanyRecord[] = [];
+    for (const [, record] of this.#domain.table("company").entries()) {
+      if (record.parentCompanyId === companyId) found.push(record);
+    }
+    return found;
+  }
+
+  /** 获取公司树（顶层公司及所有下级公司） */
+  getCompanyTree(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[] {
+    this.#assertOpen();
+    if (!isCompanyId(companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
+    const result: SoloipsCompanyRecord[] = [];
+    const stack = [companyId];
+    const visited = new Set<string>();
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const company = this.#domain.table("company").get(current);
+      if (company === undefined) continue;
+      result.push(company);
+      for (const [, record] of this.#domain.table("company").entries()) {
+        if (record.parentCompanyId === current && !visited.has(record.id)) {
+          stack.push(record.id);
+        }
+      }
+    }
+    return result;
   }
 
   listDepartments(companyId: SoloipsCompanyId): readonly SoloipsDepartmentRecord[] {

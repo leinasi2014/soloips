@@ -62,6 +62,13 @@ export type SoloipsRequiredDocumentType = "profile" | "avatar" | "soul" | "opera
 /** 文档类型：四类必需个人文档 + 作品版本（SOLO-ACC-05 的「已保存作品版本」）。 */
 export type SoloipsDocumentType = SoloipsRequiredDocumentType | "work";
 
+/** 公司类型：区分 SoloIPS 平台/运营公司与用户公司/子公司 */
+export type SoloipsCompanyType =
+  | "platform"    // SoloIPS 平台公司（SoloIPS 官方）
+  | "operation"   // SoloIPS 运营子公司（SoloIPS 官方，业务平台如漫画/视频网站）
+  | "enterprise"  // 用户企业公司（用户创建）
+  | "subsidiary";  // 用户子公司（用户创建，属于用户企业公司）
+
 /**
  * SOLO-ACC-04 要求三条工作路径共用同一准入判定：
  * (a) 经理显式派单；(b) 员工自领；(c) 自动调度器分配。
@@ -115,7 +122,15 @@ export type SoloipsCommandResult = Readonly<Record<string, SoloipsJsonValue>>;
 
 export type SoloipsCompanyRecord = {
   readonly id: SoloipsCompanyId;
+  /** 直接归属账户（隔离条件） */
+  readonly accountId: string;
+  /** 父公司（无则为顶层公司） */
+  readonly parentCompanyId?: SoloipsCompanyId;
+  /** 公司类型 */
+  readonly type: SoloipsCompanyType;
   readonly name: string;
+  readonly status: "active" | "archived";
+  readonly createdAt: string;
 };
 
 export type SoloipsDepartmentRecord = {
@@ -235,6 +250,10 @@ export type SoloipsOnboardingStatus =
 export interface SoloipsCreateCompanyInput {
   readonly operationId: SoloipsOperationId;
   readonly name: string;
+  /** 公司类型（默认 enterprise） */
+  readonly type?: SoloipsCompanyType;
+  /** 父公司 ID（创建子公司时填） */
+  readonly parentCompanyId?: SoloipsCompanyId;
 }
 
 export interface SoloipsCreateDepartmentInput {
@@ -445,6 +464,10 @@ export interface SoloipsCoreService {
   checkOnboarding(employeeId: SoloipsEmployeeId): SoloipsOnboardingStatus;
 
   getCompany(id: SoloipsCompanyId): SoloipsCompanyRecord | undefined;
+  /** 获取指定公司的所有直接子公司 */
+  listSubsidiaries(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[];
+  /** 获取公司树（顶层公司及所有下级公司） */
+  getCompanyTree(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[];
   listDepartments(companyId: SoloipsCompanyId): readonly SoloipsDepartmentRecord[];
   getEmployee(id: SoloipsEmployeeId): SoloipsEmployeeRecord | undefined;
   getAppointment(id: SoloipsAppointmentId): SoloipsAppointmentRecord | undefined;

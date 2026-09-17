@@ -12,6 +12,8 @@
 | 代码规范 | `docs/governance/code-development-standard.md` | 代码编写、验证、交付规则 | engineering-owner |
 | 文档格式 | `docs/governance/doc-format.md` | 标注系统、引用规范、文档结构 | product-owner |
 | 项目绑定 | `docs/governance/project-binding.yaml` | 团队成员、交付目标、验收标准 | product-owner |
+| 开发流程 | `docs/governance/development-plan.md` | 里程碑规划、PR 流程、风险管控 | architecture-owner |
+| **多智能体开发规范** | `docs/governance/multi-agent-development.md` | **团队配置、Agent 派发、任务拆分、通用开发流程** | product-owner |
 
 ## 专题决策
 
@@ -36,9 +38,17 @@
 
 ## 设计文档
 
-| 文档 | 路径 | 用途 |
-|---|---|---|
-| r002 设计候选 | `docs/design/r002/README.md` | 当前开发批次的设计文档 |
+| 文档 | 路径 | 用途 | 负责人 |
+|---|---|---|---|
+| **架构概览** | `docs/architecture-summary.md` | 快速参考：包职责、关键决策、里程碑 | architecture-owner |
+| **完整架构设计** | `docs/architecture-complete.md` | UI双版本、多公司模型、总助理、日志系统 | architecture-owner |
+| **权威数据契约** | `docs/design/data-contract.md` | **唯一权威数据模型（含修正后的 DSH 接口示例）** | architecture-owner |
+| **多公司架构** | `docs/design/multi-company-organization.md` | 多租户数据模型、权限体系、订阅限制（待废弃） | architecture-owner |
+| **多公司实现** | `docs/design/multi-company-implementation.md` | 技术实现指南、核心接口、权益策略 | architecture-owner |
+| **弊端与优化** | `docs/design/tradeoffs-and-optimizations.md` | 每个设计的潜在弊端+优化方案对照表 | architecture-owner |
+| **运营服务接口（预留）** | `docs/design/operation-services.md` | 用户认证、订阅财务、模型计费接口契约（后期实现） | architecture-owner |
+
+> **注**：`multi-company-organization.md` 和 `multi-company-implementation.md` 中的冲突内容已被 `data-contract.md` 取代，实现时应以 `data-contract.md` 为准。
 
 ## 变更规则
 
