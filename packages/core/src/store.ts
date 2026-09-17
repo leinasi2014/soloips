@@ -91,6 +91,9 @@ export interface SoloipsStoreOpenOptions {
   readonly backend?: string;
 }
 
+/** 公司树最大深度（防止过度嵌套） */
+const MAX_TREE_DEPTH = 10;
+
 /** POSIX 或 Windows 盘符绝对路径的形状判定（不引入 node:path，保持可移植）。 */
 function isAbsoluteLikePath(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
@@ -300,6 +303,28 @@ class SoloipsCompanyStore implements SoloipsCoreService {
 
   // ── 组织命令 ──────────────────────────────────────────────────────────────
 
+  /**
+   * 计算公司树的深度（从根到目标公司的边数，根深度为 0）
+   * @throws 祖先链断裂时抛出错误
+   */
+  #computeDepth(companyId: SoloipsCompanyId): number {
+    let depth = 0;
+    let current: SoloipsCompanyRecord | undefined = this.#domain.table("company").get(companyId);
+    while (current?.parentCompanyId !== undefined && depth < MAX_TREE_DEPTH) {
+      depth++;
+      const parent = this.#domain.table("company").get(current.parentCompanyId);
+      if (parent === undefined) {
+        // 祖先链断裂：父公司 ID 存在但记录缺失
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_VALIDATION",
+          `祖先链断裂：父公司 ${current.parentCompanyId} 不存在`,
+        );
+      }
+      current = parent;
+    }
+    return depth;
+  }
+
   async createCompany(
     input: SoloipsCreateCompanyInput,
   ): Promise<SoloipsCommitOutcome<SoloipsCreateCompanyResult>> {
@@ -312,7 +337,19 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       if (!isCompanyId(input.parentCompanyId)) {
         throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "parentCompanyId 形状不合法");
       }
-      this.#readCompany(input.parentCompanyId);
+      const parent = this.#readCompany(input.parentCompanyId);
+      // 检查父公司类型：operation 类型不能有子级（平台公司和用户公司可以有）
+      if (parent.type === "operation") {
+        throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "运营子公司不能创建子级公司");
+      }
+      // 检查深度限制（根深度为 0，到根的边数）
+      const parentDepth = this.#computeDepth(input.parentCompanyId);
+      if (parentDepth >= MAX_TREE_DEPTH - 1) {
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_VALIDATION",
+          `公司树深度不能超过 ${MAX_TREE_DEPTH} 层`,
+        );
+      }
     }
 
     const companyType = input.type ?? "enterprise";
@@ -737,28 +774,50 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     return found;
   }
 
-  /** 获取公司树（顶层公司及所有下级公司） */
+  /** 获取公司树（顶层公司及所有下级公司，使用 DFS 保持原有遍历顺序） */
   getCompanyTree(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[] {
     this.#assertOpen();
     if (!isCompanyId(companyId)) {
       throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
     }
+
+    // O(n) 算法：一次性构建 id→record 和 parent→children 映射
+    const idMap = new Map<string, SoloipsCompanyRecord>();
+    const childrenMap = new Map<string, string[]>();
+
+    for (const [, record] of this.#domain.table("company").entries()) {
+      idMap.set(record.id, record);
+      const parentId = record.parentCompanyId ?? "ROOT";
+      if (!childrenMap.has(parentId)) childrenMap.set(parentId, []);
+      childrenMap.get(parentId)!.push(record.id);
+    }
+
+    // 检查根公司是否存在
+    if (!idMap.has(companyId)) return [];
+
+    // DFS 遍历（保持原有顺序）
     const result: SoloipsCompanyRecord[] = [];
-    const stack = [companyId];
+    const stack: string[] = [companyId];
     const visited = new Set<string>();
+
     while (stack.length > 0) {
       const current = stack.pop()!;
       if (visited.has(current)) continue;
       visited.add(current);
-      const company = this.#domain.table("company").get(current);
-      if (company === undefined) continue;
-      result.push(company);
-      for (const [, record] of this.#domain.table("company").entries()) {
-        if (record.parentCompanyId === current && !visited.has(record.id)) {
-          stack.push(record.id);
+
+      const company = idMap.get(current);
+      if (company) result.push(company);
+
+      const children = childrenMap.get(current) ?? [];
+      // 逆序入栈以保持原有顺序
+      for (let i = children.length - 1; i >= 0; i--) {
+        const childId = children[i];
+        if (childId !== undefined && !visited.has(childId)) {
+          stack.push(childId);
         }
       }
     }
+
     return result;
   }
 
