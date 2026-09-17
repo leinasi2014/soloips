@@ -1,0 +1,140 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off"
+  },
+  "options": {
+    "reportUnusedDisableDirectives": "warn",
+    "typeAware": true
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "**/lib/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.config.ts",
+    "docs/**",
+    ".artifacts/**"
+  ],
+  "overrides": [
+    {
+      "files": ["packages/*/src/**/*.{ts,tsx}", "packages/*/tests/**/*.{ts,tsx}"],
+      "rules": {
+        "no-var": "error",
+        "prefer-const": "error",
+        "prefer-rest-params": "error",
+        "prefer-spread": "error",
+        "no-array-constructor": "error",
+        "no-unused-expressions": "error",
+        "no-useless-constructor": "error",
+        "no-unused-vars": [
+          "error",
+          {
+            "argsIgnorePattern": "^_",
+            "varsIgnorePattern": "^_",
+            "caughtErrorsIgnorePattern": "^_"
+          }
+        ],
+        "typescript/await-thenable": "error",
+        "typescript/ban-ts-comment": ["error", { "minimumDescriptionLength": 10 }],
+        "typescript/no-base-to-string": "error",
+        "typescript/no-confusing-void-expression": "error",
+        "typescript/no-deprecated": "error",
+        "typescript/no-duplicate-type-constituents": "error",
+        "typescript/no-explicit-any": "error",
+        "typescript/no-extra-non-null-assertion": "error",
+        "typescript/no-floating-promises": "error",
+        "typescript/no-for-in-array": "error",
+        "typescript/no-implied-eval": "error",
+        "typescript/no-misused-new": "error",
+        "typescript/no-misused-promises": "error",
+        "typescript/no-misused-spread": "error",
+        "typescript/no-non-null-asserted-optional-chain": "error",
+        "typescript/no-unsafe-argument": "error",
+        "typescript/no-unsafe-assignment": "error",
+        "typescript/no-unsafe-call": "error",
+        "typescript/no-unsafe-member-access": "error",
+        "typescript/no-unsafe-return": "error",
+        "typescript/only-throw-error": "error",
+        "typescript/prefer-promise-reject-errors": "error",
+        "typescript/require-await": "error",
+        "typescript/restrict-plus-operands": "error",
+        "typescript/use-unknown-in-catch-callback-variable": "error"
+      }
+    },
+    {
+      "files": ["packages/*/src/**/*.{ts,tsx}"],
+      "excludeFiles": ["packages/adapter-dsh/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@deepseek-ai/*"],
+                "message": "官方 DSH 依赖必须经 soloips-adapter-dsh 暴露的接口使用（DEV-04），不得在本包直接 import"
+              },
+              {
+                "group": ["**/packages/core/**", "soloips-core", "soloips-core/*"],
+                "message": "跨包只能经公开 exports 与服务契约（DEV-04）"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // core 的宿主依赖面**恰好**是 `{@deepseek-ai/cordis}`（已冻结设计
+      // `adapter/contracts-design.md` §0 第 2 条，经探针 P8/P9 机械证明：
+      // 把其余能力包全部指坏仍编译通过，只把 cordis 指坏则失败）。
+      // cordis 是插件框架本身、不是能力包，DEV-04 允许插件入口使用其公开注册接口与类型。
+      //
+      // 刻意**不**手抄宿主签名：手写一套结构化接口绕过这条规则会引入签名漂移
+      // （已实际发生：自写的 `effect` 返回类型被放宽为 void，使真实 `Context` 无法赋值）。
+      //
+      // 〔约束〕只用**一个** patterns 对象、一个 group：oxlint 中只要有一个对象产生白名单
+      // 命中，就会抑制同一数组内其他对象已累积的诊断（实测）。数组内顺序即优先级，
+      // 后匹配者胜，故先把例外写在前面、把深层/私有路径禁令压在后面。
+      "files": ["packages/core/src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@deepseek-ai/**",
+                  "!@deepseek-ai/cordis",
+                  "!@deepseek-ai/cordis/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "!soloips-adapter-dsh/contracts",
+                  "soloips-web",
+                  "soloips-web/**",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**"
+                ],
+                "message": "core 的宿主依赖面只有 @deepseek-ai/cordis（公开注册接口及类型）＋ adapter 的类型专用 ./contracts；不得经包名或相对路径依赖其他包实现（DEV-04）。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

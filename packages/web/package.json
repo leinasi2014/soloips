@@ -1,0 +1,25 @@
+{
+  "name": "soloips-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "界面层：消费 Host 只读投影，零可写业务状态",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

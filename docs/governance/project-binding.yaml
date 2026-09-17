@@ -1,0 +1,84 @@
+# SoloIPs 项目绑定
+#
+# 本文件是 SoloIPs 的方法、权威、交付与文档契约绑定。
+# 结构参照 dsh-agent-swarm 的 project-binding.yaml，按 SoloIPs 现状裁剪。
+# capability: NOT_CONFIGURED 表示该能力尚未配置，不得当作已就绪。
+
+bindingVersion: 1
+project:
+  identity: soloips
+  integrationRef: refs/heads/main
+
+method:
+  name: manage-agile-software-development
+  skillResolution: session-catalog-by-name-then-local-handoff
+  locationAuthority: docs/operations/environment-handoff.md
+  instructionAdapter: AGENTS.md
+  candidateSelfActivation: forbidden
+
+authority:
+  repository:
+    kind: github
+    alias: origin
+    role: development-and-integration-authority
+    branch: main
+    url: https://github.com/leinasi2014/soloips
+    visibility: public
+    baselineCommit: 3f30ebaf3788f9a1a4c7bda63ad54135deadec31
+    integrationPolicy:
+      requirePullRequest: true
+      requiredStatusChecks: [verify]
+      requireUpToDateBranch: true
+      enforceAdmins: true
+      allowForcePushes: false
+      allowDeletions: false
+      requiredApprovingReviewCount: 0
+      reviewEvidence: independent-review-before-merge
+    note: 上述为 DEV-15 的集成约束；实际保护设置及执行证据从 GitHub 读取。审批数为 0 不取消独立复核要求，也不声称 GitHub 已强制独立账号批准；baselineCommit 只标识初始治理基线
+  workSource:
+    kind: github-issues
+    url: https://github.com/leinasi2014/soloips/issues
+    templates: .github/ISSUE_TEMPLATE/{bug,feature,task}.md
+    workflowAuthority: docs/governance/code-development-standard.md#dev-15
+    note: Issue 承载工作意图、验收条件与交付结论；队长可登记用户已授权的需求，具体执行关联实际 Task 和 PR
+  dynamicStatus:
+    kind: execution-provider
+    selection: explicit-per-work-item
+    issueTaskMapping: manual
+    automaticIssueSync: NOT_CONFIGURED
+    committedMarkdownAuthority: false
+    note: DSH 承接时由其原生 Task 维护领取、attempt 与执行状态；会话直接执行时在 Issue/PR 记录实际执行者及证据，标明未使用 DSH Task。规则见 DEV-15，不据此声称自动同步或 DSH 运行验证已完成
+
+deliveryTarget:
+  runtime: DSH
+  webProfilePort: 55120
+  note: 用户指定的目标服务；本文件不改变其部署
+  currentProductEntry: NOT_CONFIGURED
+
+documentation:
+  schemaVersion: 1
+  registry: docs/governance/document-registry.yaml
+  formatAuthority: docs/governance/agent-readable-documentation.md
+  layoutPolicy: adapt-existing
+  primaryReader: agent
+  humanReadable: secondary-by-structure
+  productPrecedence: latest-user-requirement-then-approved-documents
+  sharedAuthorityWriterCount: 1
+  liveStatusInCommittedMarkdown: forbidden
+
+technical:
+  runtime: DSH
+  architectureAuthority: docs/technical-architecture.md
+  developmentAuthority: docs/governance/code-development-standard.md
+  completeArchitecture: docs/architecture-complete.md
+  multiCompanyDesign: docs/design/multi-company-organization.md
+  multiCompanyImpl: docs/design/multi-company-implementation.md
+  note: 技术裁定与验收设计见技术架构；具体依赖锁定与运行兼容证据在获授权的实现切片补齐；UI双版本、多公司模型、总助理、日志系统设计见 architecture-complete.md
+
+redLines:
+  - user-is-sole-business-decision-authority
+  - upstream-api-failure-stops-affected-work-and-notifies-user
+  - no-credential-or-service-config-change-without-authorization
+  - no-native-windows-dialogs-or-terminals
+  - activation-is-not-invocation
+  - build-success-is-not-product-acceptance

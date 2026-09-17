@@ -1,0 +1,17 @@
+# Append to the version's profile patch after the official Web + Team bundles.
+# settings.yaml must select the same preset; a saved default may override this.
+- id: agent-presets
+  config:
+    default: soloips-development
+    roots: []
+    includeShippedRoot: false
+    includeUserRoot: true
+
+# Always use the browser directory chooser, including on a local Windows host.
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: soloips-directory-browse
+      name: "@deepseek-ai/dsh-host-directory-picker-browse"
+    - id: soloips-directory-browse-ui
+      name: "@deepseek-ai/dsh-client-ui-directory-picker-browse"

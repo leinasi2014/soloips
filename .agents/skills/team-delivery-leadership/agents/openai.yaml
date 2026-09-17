@@ -1,0 +1,4 @@
+interface:
+  display_name: "团队管理思维与认知判断"
+  short_description: "以目标、证据、系统瓶颈和反馈学习，改善团队决策、授权协作与可验证交付"
+  default_prompt: "使用 $team-delivery-leadership 审视当前团队的目标、证据、关键假设与协作瓶颈，选择有效干预并给出验证和改判条件。"

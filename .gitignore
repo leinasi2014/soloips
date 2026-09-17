@@ -1,0 +1,51 @@
+# SoloIPs — 生成物、临时文件与本地数据不入源码
+
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建输出（编译产物不入版本控制；DEV-13：交付位置须可区分候选与生成物）
+dist/
+build/
+out/
+lib/
+*.tsbuildinfo
+
+# 临时执行产物与隔离工作区
+.worktrees/
+.tmp/
+*.tmp
+
+# 本地运行数据（与源码分离；密钥、会话备份不得入库）
+data/
+runs/
+logs/
+*.log
+
+# 凭据与本地配置
+.env
+.env.*
+*.credentials.yaml
+.credentials.yaml
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 智能体临时探针（不应提交）
+.probe-*.cjs
+.validate.cjs
+
+# 本机环境交接、只读核验记录与过程材料（规程在 docs/operations/）
+#
+# 覆盖整个 `.artifacts/`，而不只是 `operations/`：该目录按定义存放本机观察与过程材料
+# （含机器绝对路径、内网地址、瞬时进程与工作树状态），`agent-readable-documentation.md`
+# §6 要求这类内容留在本机记录、不进正文；仓库为 public。规则只列子目录时，
+# 新增子目录（如 analysis/、local-records/）会默认进入未跟踪状态并被误提交。
+.artifacts/
+
+# 本机智能体记忆与工作日志（ENV-01：本机记录不入库；含机器路径、内网地址与瞬时进程细节）
+.workbuddy-ai/
+.workbuddy/

@@ -1,0 +1,46 @@
+# SoloIPs 装配层 patch
+#
+# 顺序契约：完整 bundles 顺序的唯一正文是技术架构 SOLO-C01（§6.2）；本文件只声明
+# 本包在装配中的职责，不维护第二份顺序清单。
+#
+# 硬约束（SOLO-C03/C04）：
+#   - patch 是整行替换，不是深合并；覆写任何已存在的行必须完整重述该行全部 config；
+#   - 每个 row id 只允许一个写者；能力包只 insert 自身前缀（soloips-*）的 id；
+#   - 覆写官方行的权力只归本装配层（SOLO-LAYER-03）；
+#   - 本层**不新增业务行**（SOLO-C04）：soloips-adapter-dsh / soloips-core / soloips-web
+#     三行由各自能力包 insert，本层只负责顺序与开关。
+#
+# 0.1.6-alpha.1 机制约束（本机实测，见 evidence/probe-log.md）：
+#   - `insert` 必须是顶层 YAML **数组**，与 `id` 同级。写成映射会在 parsePatchList 阶段抛
+#     `TypeError: patch.insert?.forEach is not a function`，整个 profile 加载失败（探针 P1）。
+#   - 未命中目标的 patch 只 warn 后跳过（stderr），退出码仍为 0（探针 P2）。
+#   - 省略 `config` 键时目标行原 config 完整保留；给出 `config` 时整体替换（探针 P4/P0）。
+#   - 重复 entry id 不再抛错，`Object.fromEntries` 静默取后者（W0 SOLO-C04 + 探针 P5）。
+
+# ── 本层拥有的官方行覆写 ──────────────────────────────────────────────────────
+
+# `llm-retry` 在 0.1.6 base 层无 config；只给 disabled 即可，原 config（无）自动保留。
+# 依据：项目红线「真实上游首错停线、不自动重试」（AGENTS.md §4、DEV-07、ORG-13）。
+# 注意：关闭该行只关闭一层显式重试入口，**不证明**全团队自动停线（基线 §5 反面声明）。
+- id: llm-retry
+  disabled: true
+
+# `session-telemetry-otel` 有 config（mode / shutdownTimeoutMillis / exporter / processor）。
+# 本层只给 disabled，**不提供 config** —— 原 config 因此完整保留（探针 P4 已验证该语义）。
+# 若将来需要同时改 config，必须按 design.md §4 的完整键清单重述，否则 exporter/processor 静默丢失。
+- id: session-telemetry-otel
+  disabled: true
+# ── 预留：后续切片按同一规则追加官方行覆写 ─────────────────────────────────────
+# 可能的目标（每个都必须完整重述 config，键清单见 design.md §4）：
+#   webserver      -> host, port, compression, compressionLevel, compressionThresholdBytes
+#   web-runtime    -> openBrowser, printUrl, surfaceContext, trustedHosts
+#   connection     -> trustedHosts
+#   agent-presets  -> default
+#   session-query-sqlite -> path, openAt
+#   tool-ralph     -> subagentProvider, maxRounds（另需 disabled: false 才启用）
+#   storage-domain -> backend
+#   storage-json   -> root
+#   system-prompt  -> personaSuffix, personaPrefix
+#   tools          -> mode
+# 环境相关值（host/port/信任域）**不放**本文件：产品定义必须与环境无关，
+# 这类值放实例 profile 或 $DSH_HOME/cordis.patch.yml（见 design.md §5.4）。

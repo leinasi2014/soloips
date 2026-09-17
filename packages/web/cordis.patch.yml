@@ -1,0 +1,36 @@
+# SoloIPs web 层 patch
+#
+# 职责（ARCH-D02 / DEV-10）：可替换视图层；消费 Host 只读投影，零可写业务状态。
+#
+# 本包在 SOLO-C01 顺序中位于 core **之后**、soloips-bundle 之前。
+#
+# 【重要】客户端注册不通过本 patch 完成。
+# `dsh.client` 是 **package.json 字段**，不是 patch 行字段：client-modules 扫描
+# **Loader entries 的包清单**（dsh-client-modules/lib/index.js:104-124 的模块注释），
+# 用行名解析到包目录后读其 package.json 的 `dsh.client`。
+# 本 patch 只负责让这一行**进入 entry 树**。
+#
+# **T01 阶段刻意不声明 `dsh.client`**：0.1.6 的实现中，未声明该字段的包会被
+# client-modules **安全跳过**（`parseDshClient` 返回 undefined → 记 null 返回）；
+# 而声明了却没有 `exports["./client"]` 会**抛错**
+# （`declares dsh.client but exports no "./client" bundle`）。
+# 客户端实现属 T07，现在声明会指向不存在的文件。T07 交付
+# `src/client/index.ts` 时，连同 `exports["./client"]` 与 `dsh.client` 一并加入。
+
+- insert:
+    - id: soloips-web
+      name: "soloips-web"
+      # 无 inject：
+      #   - Host 半边是纯投影消费者，通过 ctx.inject([...], cb) 在服务就绪后注册，
+      #     不阻塞本行挂载；
+      #   - 客户端半边在浏览器内按 dsh.client.inject 排序（该字段在 package.json）。
+      # 在 0.1.6 下把非必需服务写进 inject 只会让本行 pending 并静默不工作
+      # （W0 MECH-06 / SOLO-F04），不会报错 —— 因此这里刻意留空。
+      config:
+        # 统一开关位；false 时 Host 桥不注册任何路由/投影。
+        enabled: true
+        # 是否注册客户端 UI 扩展点。**当前为 false**：客户端实现（`src/client/index.ts`
+        # 与 `dsh.client`）属 T07 交付，现在没有可注册的客户端半边。
+        # 显式写 false 而不删键：删键会让 apply() 读默认值，等于靠默认值赌行为。
+        # T07 交付真实客户端后改为 true。
+        registerClient: false

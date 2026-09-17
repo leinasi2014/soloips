@@ -1,0 +1,42 @@
+{
+  "name": "soloips-adapter-dsh",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 官方 seam 适配层：收敛全部 @deepseek-ai/* 依赖，向 core 暴露内部接口",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./contracts": {
+      "types": "./lib/contracts.d.ts",
+      "default": "./lib/contracts.js"
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "@deepseek-ai/dsh-storage": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-storage-domain": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-storage-json": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-atomic-write": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-session-persistence": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-subagent": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-tools": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-agent": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-settings": "0.1.6-alpha.1"
+  }
+}

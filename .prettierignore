@@ -1,0 +1,19 @@
+# 依赖与生成物
+node_modules/
+lib/
+dist/
+*.tsbuildinfo
+
+# 锁文件由包管理器维护
+pnpm-lock.yaml
+
+# 本机记录（Git 忽略）
+.artifacts/
+
+# 文档由 docs/governance/agent-readable-documentation.md 治理，不由 Prettier 排版。
+# DEV-02：修复命令不得顺手重排无关历史文档。
+docs/
+.agents/
+AGENTS.md
+
+# 第三方保留文件按来源约定
