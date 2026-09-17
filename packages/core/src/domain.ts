@@ -9,7 +9,11 @@
  * core 不建第二份任务状态机；core 持有组织事实、个人文档版本与操作台账。
  */
 
-import type { SoloipsDomainSpec, SoloipsDomainTableSpec } from "soloips-adapter-dsh/contracts";
+import type {
+  SoloipsDomainGlobalSpec,
+  SoloipsDomainSpec,
+  SoloipsDomainTableSpec,
+} from "soloips-adapter-dsh/contracts";
 
 import type {
   SoloipsAppointmentId,
@@ -24,6 +28,7 @@ import type {
   SoloipsEmployeeRecord,
   SoloipsOperationId,
   SoloipsOperationRecord,
+  SoloipsRootBindingRecord,
 } from "./contracts.js";
 import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_COMPANY_DOMAIN_VERSION } from "./contracts.js";
 import {
@@ -37,6 +42,7 @@ import {
   optionalSchema,
   positiveIntegerSchema,
   stringSchema,
+  unionSchema,
   type SoloipsSchema,
 } from "./schema.js";
 import {
@@ -213,6 +219,46 @@ const operationRecordSchema: SoloipsSchema<SoloipsOperationRecord> =
     result: optionalSchema(jsonRecordSchema()),
   });
 
+/**
+ * 根级绑定元数据（data-contract §3.1）：放在 domain 的 **global 单例槽**。
+ *
+ * 为什么是 global 槽而不是第七张表：
+ *  - 语义匹配：一个业务存储根只绑定**一个**账户——单例语义正是 global 的定义；
+ *  - 读取时机匹配：绑定必须**先于业务读**（打开时先读绑定、再校验公司记录），
+ *    global 在 open 时即由介质载入内存，无需建表/遍历；
+ *  - 不占业务表：绑定是根的属性，不是业务实体；放进表会让「表集合」多出一个
+ *    与组织模型无关的条目，并被查询投影/迁移路径当作业务数据对待。
+ *
+ * 〔约束〕schema **不得接受 `null`**：DSH `defineDomain`（storage-domain
+ * `src/spec.ts`）与 adapter 的 `validateSpecFields`（`ports/storage.ts:121-125`）
+ * 都会在 open 前抛错——介质用 `null` 作「从未写入」哨兵，可接受 `null` 的
+ * schema 与「未写入」不可区分。「未绑定」因此由 `state: "unbound"` 显式承载。
+ *
+ * 〔约束〕`initial` 是 `unbound`：介质上无绑定记录（首次打开、或升级自 BE-1 之前
+ * 的存量根）即「未绑定」，首次成功打开时写入当前账户。
+ */
+const rootBindingSchema: SoloipsSchema<SoloipsRootBindingRecord> = unionSchema([
+  objectSchema<{ readonly state: "unbound" }>({
+    state: literalUnionSchema(["unbound"] as const),
+  }),
+  objectSchema<{
+    readonly state: "bound";
+    readonly accountId: string;
+    readonly generation: number;
+    readonly boundAt: string;
+  }>({
+    state: literalUnionSchema(["bound"] as const),
+    accountId: nonEmptyStringSchema(),
+    generation: positiveIntegerSchema(),
+    boundAt: nonEmptyStringSchema(),
+  }),
+]);
+
+const ROOT_BINDING_GLOBAL: SoloipsDomainGlobalSpec<SoloipsRootBindingRecord> = {
+  schema: rootBindingSchema,
+  initial: { state: "unbound" },
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // domain spec（单 domain、单 opener；core 是唯一业务 opener 包，ARCH-D02）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,6 +287,7 @@ export const SOLOIPS_COMPANY_DOMAIN_SPEC = {
   name: SOLOIPS_COMPANY_DOMAIN_NAME,
   version: SOLOIPS_COMPANY_DOMAIN_VERSION,
   tables: SOLOIPS_COMPANY_TABLES,
+  global: ROOT_BINDING_GLOBAL,
 } as const satisfies SoloipsDomainSpec;
 
 /** 表名联合（供提交门与读路径共用）。 */

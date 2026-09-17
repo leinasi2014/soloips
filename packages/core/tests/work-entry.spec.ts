@@ -10,7 +10,7 @@ import type { SoloipsCoreService } from "../src/contracts";
 import { asOperationId } from "../src/ids";
 import { openSoloipsCompanyStore } from "../src/store";
 import { fakeMediumTable, fakeStoragePort, resetFakeAdapter } from "./adapter-fakes";
-import { nextSeedOperationId, seedOnboardedEmployee } from "./seed";
+import { nextSeedOperationId, seedOnboardedEmployee, TEST_ACCOUNT_ID } from "./seed";
 
 const ROOT = "/tmp/soloips-work-entry-root";
 const ORIGINS = ["manager-dispatch", "self-claim", "scheduler-assign"] as const;
@@ -19,7 +19,11 @@ let service: SoloipsCoreService;
 
 beforeEach(async () => {
   resetFakeAdapter();
-  service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+  service = await openSoloipsCompanyStore({
+    storage: fakeStoragePort(),
+    root: ROOT,
+    accountId: TEST_ACCOUNT_ID,
+  });
 });
 
 function snapshotMedium(): Record<string, readonly unknown[]> {

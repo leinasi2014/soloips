@@ -33,6 +33,11 @@ const { openSoloipsCompanyStore } = await import(pathToFileURL(storePath));
 // 模拟 adapter 介质（同模块级 Map，close 后保留）
 const media = new Map();
 const leaseGenerations = new Map();
+// root → global 单例（介质上的「已写入」值）；缺省即「从未写入」。
+// 用 Map 的「键存在与否」区分「未写入」与「写入的值」——core 的绑定 schema
+// 不接受 null（null 是介质层的「从未写入」哨兵，DSH defineDomain 与 adapter
+// validateSpecFields 都拒绝可空 global schema）。
+const globalMedia = new Map();
 
 function fakeMediumTable(table) {
   let map = media.get(table);
@@ -100,9 +105,22 @@ function fakeStoragePort() {
     async createStack({ root }) {
       return {
         facility: {
-          async open() {
+          async open(spec) {
             return {
               name: "soloips_company",
+              // global 单例句柄：core 的 spec 声明了根级绑定元数据槽（BE-1 账户绑定，
+              // data-contract §3.1），storage 端口必须转发该句柄——否则 core 以
+              // SOLOIPS_CORE_ADAPTER_INVALID 拒绝打开（fail-closed，不降级为跳过绑定校验）。
+              // 语义镜像真实宿主：介质无值即 spec.initial（「从未写入」），有值即读回。
+              global: {
+                get() {
+                  const stored = globalMedia.get(root);
+                  return stored === undefined ? spec.global.initial : stored;
+                },
+                async set(value) {
+                  globalMedia.set(root, value);
+                },
+              },
               table(name) {
                 return createFakeTable(name);
               },

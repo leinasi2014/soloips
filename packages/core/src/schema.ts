@@ -190,6 +190,46 @@ export function arraySchema<T>(inner: SoloipsSchema<T>): SoloipsSchema<readonly 
   };
 }
 
+/** 从一个 schema 类型取出它校验出的数据形状（T 只在返回位置，故协变）。 */
+type SoloipsSchemaValue<S> = S extends SoloipsSchema<infer T> ? T : never;
+
+/**
+ * 判别联合的通用形式：按顺序试各变体，首个成功者胜（与 zod 的 union 语义一致）。
+ *
+ * 用途：根级绑定元数据的「未绑定 / 已绑定」判别——两者是**不同事实**，
+ * 不是同一字段的可空值（见 contracts.ts `SoloipsRootBindingRecord`）。
+ * 全部变体失败时合并各变体的 issue，使「介质上的值两边都不像」这类损坏
+ * 能被诊断文本指出来。
+ *
+ * 泛型收在**变体元组**上（`const V`）：结果形状是各变体数据类型的并集，
+ * 而不是首个变体的类型——写成 `readonly SoloipsSchema<T>[]` 会让 TS 从
+ * 第一个元素推断 T，使后续变体因形状不同而报错。
+ */
+export function unionSchema<const V extends readonly SoloipsSchema<unknown>[]>(
+  variants: V,
+): SoloipsSchema<SoloipsSchemaValue<V[number]>> {
+  type Value = SoloipsSchemaValue<V[number]>;
+  const safeParse = (value: unknown): SoloipsSchemaResult<Value> => {
+    const issues: SoloipsSchemaIssue[] = [];
+    for (const variant of variants) {
+      const result = variant.safeParse(value);
+      if (result.success) {
+        // 受控单次断言：命中的变体已证明该值属于 V 中某一支校验出的形状，
+        // 而 Value 正是这些形状的并集，故收窄不绕过任何校验。
+        return { success: true, data: result.data as Value };
+      }
+      issues.push(...result.error);
+    }
+    return fail(issues.length > 0 ? issues : [{ path: "", message: "不匹配任何声明的变体" }]);
+  };
+  return {
+    safeParse,
+    parse(value) {
+      return parsed(safeParse(value));
+    },
+  };
+}
+
 /**
  * 对象：字段逐个校验；可选字段缺省即省略（exactOptionalPropertyTypes 语义），
  * 未知字段剥离（与 zod 默认一致，durable 边界只保留声明字段）。

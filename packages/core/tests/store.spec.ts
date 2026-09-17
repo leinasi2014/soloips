@@ -21,7 +21,7 @@ import {
   fakeTakeoverLease,
   resetFakeAdapter,
 } from "./adapter-fakes";
-import { nextSeedOperationId, seedOnboardedEmployee } from "./seed";
+import { nextSeedOperationId, seedOnboardedEmployee, TEST_ACCOUNT_ID } from "./seed";
 
 const ROOT = "/tmp/soloips-store-root";
 
@@ -31,7 +31,11 @@ beforeEach(() => {
 
 describe("open path order (SEAM-12/13/14, SOLO-FENCE-01)", () => {
   it("lease → stack → open：租约在装载任何可写 domain 之前取得", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const events = fakeAdapterEvents().slice(0, 3);
     expect(events[0]).toBe(`lease-acquire:${ROOT}`);
     expect(events[1]).toBe(`stack-create:${ROOT}`);
@@ -40,7 +44,11 @@ describe("open path order (SEAM-12/13/14, SOLO-FENCE-01)", () => {
   });
 
   it("binding 暴露介质身份、域名与租约代际（启动绑定清单核对面）", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     expect(service.binding).toMatchObject({
       root: ROOT,
       backend: "json",
@@ -53,7 +61,11 @@ describe("open path order (SEAM-12/13/14, SOLO-FENCE-01)", () => {
 
   it("open 失败时逆序释放 stack 与 lease 并抛出（fail-closed）", async () => {
     await expect(
-      openSoloipsCompanyStore({ storage: fakeFailingOpenStoragePort(), root: ROOT }),
+      openSoloipsCompanyStore({
+        storage: fakeFailingOpenStoragePort(),
+        root: ROOT,
+        accountId: TEST_ACCOUNT_ID,
+      }),
     ).rejects.toThrow(FakeAdapterError);
     const events = fakeAdapterEvents();
     expect(events.indexOf(`stack-create:${ROOT}`)).toBeLessThan(
@@ -67,7 +79,21 @@ describe("open path order (SEAM-12/13/14, SOLO-FENCE-01)", () => {
   it("相对路径/带首尾空白的 root 被拒绝（CONFIG_INVALID）", async () => {
     for (const bad of ["relative/path", " /tmp/abs", "/tmp/abs "]) {
       await expect(
-        openSoloipsCompanyStore({ storage: fakeStoragePort(), root: bad }),
+        openSoloipsCompanyStore({
+          storage: fakeStoragePort(),
+          root: bad,
+          accountId: TEST_ACCOUNT_ID,
+        }),
+      ).rejects.toMatchObject({ code: "SOLOIPS_CORE_CONFIG_INVALID" });
+    }
+  });
+
+  it("accountId 空白或占位（seed）被拒绝（CONFIG_INVALID）", async () => {
+    // 账户是根级绑定事实的比对基准：空白或填占位值都会让绑定校验失去意义，
+    // 故一律 fail-closed（不打开 domain、不发布服务）。
+    for (const bad of ["", " acct-x", "acct-x ", "seed"]) {
+      await expect(
+        openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT, accountId: bad }),
       ).rejects.toMatchObject({ code: "SOLOIPS_CORE_CONFIG_INVALID" });
     }
   });
@@ -90,7 +116,11 @@ describe("single opener (SOLO-ACC-02 mechanism face)", () => {
 
 describe("persistence round-trip (SOLO-ACC-05)", () => {
   it("写入 → 关闭 → 同一 root 重开 → 读回一致，且 operationId 可核对", async () => {
-    const first = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const first = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const seeded = await seedOnboardedEmployee(first, { requiredCapabilities: ["draw"] });
     const workOperationId = asOperationId("roundtrip-work-1");
     const work = await first.saveEmployeeDocument({
@@ -104,7 +134,11 @@ describe("persistence round-trip (SOLO-ACC-05)", () => {
     await first.close();
 
     // 「停止」后重开：取得唯一写权（代际递增）、恢复后核对。
-    const second = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const second = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     expect(second.binding.leaseGeneration).toBe(2);
     expect(second.getCompany(seeded.companyId)).toMatchObject({
       id: seeded.companyId,
@@ -151,7 +185,11 @@ describe("persistence round-trip (SOLO-ACC-05)", () => {
   });
 
   it("同一 operationId 重放返回原结果，不重建身份（跨重开亦然）", async () => {
-    const first = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const first = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const operationId = nextSeedOperationId("employee");
     const created = await first.createEmployee({ operationId, displayName: "幂等员工" });
     if (created.status !== "committed") throw new Error("种子失败");
@@ -162,7 +200,11 @@ describe("persistence round-trip (SOLO-ACC-05)", () => {
     );
     await first.close();
 
-    const second = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const second = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const acrossRestart = await second.createEmployee({ operationId, displayName: "幂等员工" });
     expect(acrossRestart).toMatchObject({ status: "replayed" });
     let employees = 0;
@@ -175,7 +217,11 @@ describe("persistence round-trip (SOLO-ACC-05)", () => {
   });
 
   it("operationId 被不同种类操作复用时拒绝（CONFLICT）", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const operationId = nextSeedOperationId("shared");
     const created = await service.createCompany({ operationId, name: "A" });
     expect(created.status).toBe("committed");
@@ -186,7 +232,11 @@ describe("persistence round-trip (SOLO-ACC-05)", () => {
   });
 
   it("未决操作返回 unknown：意图已落、无结果，且阻塞同员工新准入（ORG-05）", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const seeded = await seedOnboardedEmployee(service);
     // 直达介质注入一条未决操作（模拟崩溃在意图与提交标记之间）。
     const pendingId = asOperationId("seed-pending-block-1");
@@ -213,10 +263,23 @@ describe("persistence round-trip (SOLO-ACC-05)", () => {
 
 describe("lease discipline (ORG-06 / SOLO-FENCE-01 §2)", () => {
   it("每次持久发布前都有新的 assertHeld：任意两次相邻写之间 assert 计数递增", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     await seedOnboardedEmployee(service);
-    const writes = fakeAdapterEvents().filter((event) => event.startsWith("write"));
+    // 过滤必须同时覆盖 `write…`（表写）与 `global-write…`（global 单例写，
+    // 即 BE-1 的根级绑定元数据写入）。只匹配 `write` 前缀会漏掉 global 写，
+    // 使「绑定写入也受写权纪律约束」这条断言**静默失效**（M6 盲区：
+    // 事件已被替身产出，却无人消费）。两类的格式一致（`…@assert=N`）。
+    const writes = fakeAdapterEvents().filter(
+      (event) => event.startsWith("write") || event.startsWith("global-write"),
+    );
     expect(writes.length).toBeGreaterThan(5);
+    // 反向断言：global 写确实在序列中。否则前缀写错时本用例仍会全绿——
+    // 那正是上面那条盲区的成因，故在这里显式钉住「它被覆盖到了」。
+    expect(writes.some((event) => event.startsWith("global-write"))).toBe(true);
     // 事件串格式由测试替身产出（`write…@assert=N`）；解析失败即用例自身的格式假设破了，
     // 显式抛出而不是让 NaN / undefined 流进断言（noUncheckedIndexedAccess 也要求先取窄）。
     const counts = writes.map((event) => {
@@ -239,7 +302,11 @@ describe("lease discipline (ORG-06 / SOLO-FENCE-01 §2)", () => {
   });
 
   it("失权（代际被接管）后发布被拒，业务状态不变", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const before = snapshotMedium();
     fakeTakeoverLease(ROOT); // 第二个 writer 取得新代际
     await expect(
@@ -252,7 +319,11 @@ describe("lease discipline (ORG-06 / SOLO-FENCE-01 §2)", () => {
 
 describe("closed store and no-bypass surface", () => {
   it("close 逆序释放（domain → stack → lease），关闭后命令拒绝", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     await service.close();
     const tail = fakeAdapterEvents().slice(-3);
     expect(tail[0]).toBe(`close:${SOLOIPS_COMPANY_DOMAIN_SPEC.name}`);
@@ -266,7 +337,11 @@ describe("closed store and no-bypass surface", () => {
   });
 
   it("服务对象不暴露 domain/表句柄：无旁路写路径", async () => {
-    const service = await openSoloipsCompanyStore({ storage: fakeStoragePort(), root: ROOT });
+    const service = await openSoloipsCompanyStore({
+      storage: fakeStoragePort(),
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
     const ownKeys = Object.keys(service);
     expect(ownKeys).toEqual([]);
     const protoKeys = Object.getOwnPropertyNames(Object.getPrototypeOf(service));

@@ -12,6 +12,7 @@ import type { SoloipsCoreHostContext, SoloipsCoreLogger } from "../src/index";
 import soloipsCoreEntry from "../src/index";
 import { SOLOIPS_CORE_SERVICE_NAME } from "../src/contracts";
 import { fakeAdapterEvents, fakeStoragePort, resetFakeAdapter } from "./adapter-fakes";
+import { TEST_ACCOUNT_ID, TEST_OTHER_ACCOUNT_ID } from "./seed";
 
 const ROOT = "/tmp/soloips-plugin-root";
 
@@ -157,9 +158,19 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
   it("缺少 storageRoot 配置：不发布", () => {
     const ctx = new FakeHostContext();
     ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
-    soloipsCoreEntry(ctx, { enabled: true });
+    soloipsCoreEntry(ctx, { enabled: true, accountId: TEST_ACCOUNT_ID });
     expect(ctx.provided.size).toBe(0);
     expect(ctx.warnings.join("\n")).toContain("storageRoot");
+  });
+
+  it("缺少 accountId 配置：不发布（绑定校验的比对基准缺失即 fail-closed）", () => {
+    const ctx = new FakeHostContext();
+    ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
+    soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT });
+    expect(ctx.provided.size).toBe(0);
+    expect(ctx.warnings.join("\n")).toContain("accountId");
+    // 早退发生在打开之前：没有任何 lease/stack/open 副作用。
+    expect(fakeAdapterEvents()).toEqual([]);
   });
 
   it("打开失败（lease 获取即失败）：不发布且保留诊断", async () => {
@@ -171,7 +182,7 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
       },
     };
     ctx.setService("soloipsAdapter", broken);
-    soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT });
+    soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
     await vi.waitFor(() => expect(ctx.warnings.length).toBe(1));
     expect(ctx.provided.size).toBe(0);
   });
@@ -179,7 +190,7 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
   it("正常路径：发布 soloipsCore；宿主卸载后逆序释放并停写", async () => {
     const ctx = new FakeHostContext();
     ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
-    soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT });
+    soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
     await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
     const service = ctx.provided.get(SOLOIPS_CORE_SERVICE_NAME);
     expect(service).toBeDefined();
@@ -196,5 +207,25 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
         name: "X",
       }),
     ).rejects.toMatchObject({ code: "SOLOIPS_CORE_STORE_CLOSED" });
+  });
+
+  it("绑定不符：打开被拒且不发布服务（fail-closed 传播到插件层）", async () => {
+    const ctx = new FakeHostContext();
+    ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
+    // 先以账户 A 打开并建公司，再以账户 B 打开同一根。
+    const first = new FakeHostContext();
+    first.setService("soloipsAdapter", { storage: fakeStoragePort() });
+    soloipsCoreEntry(first, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
+    await vi.waitFor(() => expect(first.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await first.unload();
+
+    soloipsCoreEntry(ctx, {
+      enabled: true,
+      storageRoot: ROOT,
+      accountId: TEST_OTHER_ACCOUNT_ID,
+    });
+    await vi.waitFor(() => expect(ctx.warnings.length).toBe(1));
+    expect(ctx.provided.size).toBe(0);
+    expect(ctx.warnings.join("\n")).toContain("SOLOIPS_CORE_ACCOUNT_MISMATCH");
   });
 });

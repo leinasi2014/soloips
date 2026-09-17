@@ -29,5 +29,12 @@
         # $DSH_HOME/cordis.patch.yml）覆写为本机实际数据根，见 design.md §5.4/§5.6。
         # 覆写本行时必须**完整重述** config 的全部键（SOLO-C03）。
         storageRoot: ""
+        # 部署层注入的账户（S0 过渡例外：config 注入而非 Session 派生，
+        # data-contract §3.1）。缺失、空白或为占位值 "seed" 时 core 不发布服务
+        # （fail-closed）——账户是根级绑定事实的比对基准，缺省一个「安全默认账户」
+        # 会让绑定校验退化成无校验。
+        # 〔约束〕环境相关值：与 storageRoot 同规则，由部署层覆写为真实账户标识；
+        # 业务命令面**不**承载该值（`SoloipsCreateCompanyInput` 无此字段）。
+        accountId: ""
         # backend 名；缺省 json（与 adapter 的 defaultBackend 一致）。
         backend: "json"
