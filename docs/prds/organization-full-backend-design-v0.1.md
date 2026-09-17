@@ -193,7 +193,9 @@ document.save | work-entry.request
 
 **契约登记预告**：`SoloipsOperationKind` 的新增项属 `data-contract.md` §2 范围的**契约扩展**——**权威归属：待登记进 `data-contract.md` §2（P2 落实）**。
 
-**与 BE-6 工具名的衔接**：本节新增的 kind 对应首任 §4.1 **BE-6** 的工具名清单（`soloips_team_create` / `soloips_team_update_function` / `soloips_team_close`）——**工具名用下划线、kind 用点号**，两者刻意不同形（理由与完整清单见首任 BE-6 的「系统助理工具名建议清单」）。
+**与 BE-6 工具名的衔接**：本节新增的 kind 对应**模型工具名**（下划线形态）与 **`@Remote` 方法**（点号形态）——**两套命名面刻意不同形，禁止混用**，完整清单见 [`data-contract.md`](../design/data-contract.md) **§2.5「工具名（模型工具面，2026-09-18 登记）」的 20 项表**。
+
+〔**D-T1 边界维持**〕该 20 项表的登记范围**不含任何 `team.*` 工具名**：`SoloipsOperationKind` 当前无 `team.*`（实证见上文），故 `soloips_team_create` / `soloips_team_update_function` / `soloips_team_close` 属**待 BE-3 新增 kind 后才成立**的**〔待决〕**项——**不得在本切片定稿**（与 `data-contract.md` §2.5 边界 2 逐字一致）。
 
 ### 1.5 任职 `scope` 的迁移路径（裁定 5 落地：先可选 + 默认值补齐）
 
@@ -629,7 +631,7 @@ interface SoloipsAssemblyEvidenceRecord {
 | 3 | **scope 迁移细化（裁定 5）** | 本文 §1.5（新增） | **采纳**。给出 `scope?` 可选期的默认推断规则 3 条（含「无 scope 且有 departmentId → department 级」「首个 `general_assistant` → company 级」），并**如实标注规则 2 的不可判定性**（存量记录无信息可区分，给出两个方案并要求切片内二选一）；列收紧为必填的 4 项前置条件，**P1（unit version 戳）当前不满足** ⇒ 结论：P1 满足前 `scope` 必须保持可选 |
 | 4 | **6 新实体登记预告** | 本文 §1.1（总表）+ §2.1/§2.2/§2.3(×2)/§2.4 | **采纳**。6 实体逐一加「**权威归属：待登记进 `data-contract.md` §2（P2 落实）**」，并在 §1.1 加汇总表（含 §2 现状与 P2 待办） |
 | 5a | **QA B5 强化补进 R3** | 本文 §6 R-3（改写）+ R-3b（分出） | **采纳并强化**。核实三层事实：`invalidRecords` 默认拒绝且 core spec 未声明（`domain.ts:240-244`）；**即便声明也是空操作**——`backupRecord` 只在 JSON 后端 per-record unit 实现（`storage-json/src/per-record-unit.ts:238`，`single-unit.ts` 与 `SqliteKvUnit` 均无），`defaultBackend=sqlite`（`contracts.ts:777`）⇒ 宿主回退到拒绝默认；原 R-3（subsidiary 无父）拆为 **R-3b**，引用同步更新 |
-| 5b | **A4 工具名清单** | 首任 §4.1 BE-6（新增小节） | **采纳，但形态修正**〔读源〕。**点号不能用于工具名**：DeepSeek 函数名称约定只允许 `[A-Za-z0-9_-]`（`mcp-client/src/tools.ts:50-51`），且全仓原生工具名**零个**含点号、官方 Team 工具全用下划线。故建议形态改为 **`soloips_<域>_<动作>`**（如 `soloips_company_create`、`soloips_team_update_function`），给 16 行清单与 kind 逐行对应；**刻意与 Remote 端点的点号形态不同形**，并标〔未验证〕待 UI 侧 QA 对齐 |
+| 5b | **工具名清单** | 首任 §4.1 BE-6（新增小节）→ 现**收敛至 `data-contract.md` §2.5** | **采纳，形态修正；清单已收敛**〔读源〕。**点号不能用于工具名**：DeepSeek 函数名称约定只允许 `[A-Za-z0-9_-]`（`mcp-client/src/tools.ts:50-51`），且全仓原生工具名**零个**含点号、官方 Team 工具全用下划线 ⇒ 形态为 **`soloips_<域>_<动作>`**，**刻意与 Remote 端点的点号形态不同形**。第三任曾据 M0.1 必需面给出 **16 行**建议清单（落盘于首任 BE-6 小节）；该清单**已被 `data-contract.md` §2.5 的 20 项表取代**（后者从权威命令面导出、覆盖面更全），本文档**不再维护第二份清单**，一律引用 §2.5。**命名差异已消解**：16 行版的 `soloips_company_tree`→§2.5 作 `soloips_company_get_tree`、`soloips_onboarding_check`→`soloips_employee_check_onboarding`、`soloips_grouping_suggest`→§2.5 无此项（编组建议暂无 kind，属〔待决〕） |
 
 **新增/变更的既有引用**：R-3 → R-3b（§3.2 内引用同步）；`team.create` 引用统一改为「BE-3 待新增 kind」（§1.2 已加注）。
 
