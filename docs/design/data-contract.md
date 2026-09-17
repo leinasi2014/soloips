@@ -6,6 +6,12 @@
 > **决策状态**：〔约束〕2026-09-17 Codex 审查要求统一数据契约
 > **变更权**：architecture-owner
 
+**〔约束〕目标与实现的优先级声明（2026-09-18）**：
+
+> **代码定义「当前实现事实」；本文档定义「未来实现要求」。**
+>
+> 两者冲突时：**描述现状**的断言以代码为准（`packages/core/src/contracts.ts` 等）；**规定目标**的条目以本文档为准。§0 的实现状态表是二者的**对照**——它不把本文档降级为「建议」，也不把未实现的目标说成已有能力。
+
 ---
 
 ## 0. 实现状态（对照代码事实，2026-09-17）
@@ -21,7 +27,7 @@
 |---|---|---|
 | `SoloipsCompanyRecord`（`accountId`/`parentCompanyId`/`type`/`name`/`status`/`createdAt`） | **已实现** | `contracts.ts` §3 |
 | `SoloipsDepartmentRecord` | **已实现（部分字段）** | 只有 `id`/`companyId`/`name`；`description`/`leaderAppointmentId`/`parentDepartmentId`/`status` 见 §2 设计稿 |
-| `SoloipsEmployeeRecord` | **已实现（与 §2 目标不同形）** | `id`/`displayName`/`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/`verifiedCapabilities`。**除 `id`/`displayName` 外，§2 目标字段（`email`/`modelConfig`/`status`/`createdAt`）与实现字段不重叠**；以 `contracts.ts` 为准，§2.1 已补注（C-3） |
+| `SoloipsEmployeeRecord` | **已实现（部分字段）** | 已实现：`id`/`displayName`/`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/`verifiedCapabilities`。**未实现**：`email`/`modelConfig`/`status`/`createdAt`（目标新增）。**既有判定字段属目标契约，不得移出**（§2.1 C-3 注）；确切形状以 `contracts.ts` 为准 |
 | `SoloipsAppointmentRecord` | **已实现（部分字段）** | `id`/`employeeId`/`departmentId`/`requiredCapabilities`/`generation`/`status`；`scope`(判别联合) 与 `role` 见 §2 设计稿（`scope` 先可选，见 §2.3） |
 | `SoloipsDocumentVersionRecord` | **已实现** | `versionId`/`ownerId`/`documentType`/`content`/`digest`/`previousVersionId?`/`appointmentId?` |
 | `SoloipsOperationRecord` | **已实现** | `id`/`kind`/`status`/`employeeId?`/`intent`/`result?` |
@@ -39,8 +45,8 @@
 > **M0.1 内做 Free 1/0 的提交门计数校验——不建 `entitlement`/`quota` 表，不用 `quotaVersion` 乐观锁。完整的 Entitlement 记录与 quota 表形态属 M0.2。**
 >
 > - **M0.1 形态**：`planCode` 由部署配置注入（缺省 `free`，不建表）；`createCompany` 在**提交门 `mutate` 回调内、`put` 之前**按 `accountId + type` 计数复查；三层配额表内联为常量；失败返回稳定码且**不产生任何业务写**。
-> - **M0.2 形态**：§2 的 `SoloipsEntitlementRecord` + §4.2 的 `quota` 计数器表 + `quotaVersion` 乐观锁。乐观锁针对「并发 Host / 多账户共享数据面」；在 M0.1「一个业务存储根只绑定一个账户」+ 单 writer 下，计数即权威。
-> - **与 §4 的关系**：§4.2 的 `quota` 表代码示例标〔待实现〕（C-7），**不得**被读成 M0.1 的实现要求；M0.1 的校验点与一致性依据见 §4.3。
+> - **M0.2 形态**：§2 的 `SoloipsEntitlementRecord` + `quota` 计数器表 + `quotaVersion` 乐观锁。乐观锁针对「并发 Host / 多账户共享数据面」；在 M0.1「一个业务存储根只绑定一个账户」+ 单 writer 下，计数即权威。**注意**：M0.2 的计数器形态其**恢复协议尚未裁定**（§4.3 Q-1…Q-3），且它是**已知候选之一**、非唯一安全算法。
+> - **与 §4 的关系**：§4.2 已**删除**含一致性错误的完整示例（现为「待设计伪代码」占位），**不得**被读成 M0.1 的实现要求；M0.1 的校验点、K-1…K-6 条件与验收要求见 §4.3。
 
 - 术语以本文档为准：持久记录一律用 `Soloips*` 前缀（如 `SoloipsCompanyRecord`），架构概览里的短名（`CompanyRecord`）只是示意。
 - 与 `multi-company-organization.md` / `multi-company-implementation.md` 的冲突已由本文档取代（见文档注册表）。
@@ -252,15 +258,24 @@ export type SoloipsTeamId = SoloipsCoreId<'team'>;
 /**
  * 团队绑定（SoloIPs Team → DSH Team）
  * SoloIPs 的团队概念通过 DSH Team 执行
+ *
+ * 〔2026-09-18 codex 终审〕**重复字段登记为派生快照**：
+ * 本记录的 `companyId`/`departmentId`/`name`/`leadAppointmentId` 与
+ * `SoloipsTeamRecord` **同名字段重复**。它们**不是第二写权威**，而是绑定时刻的
+ * **派生快照**（便于 DSH Team 侧独立读回，无需回查 core）。
+ *
+ * **T08 前置同步义务**〔约束〕：Team 侧上述字段变更时，绑定快照**必须同步更新**；
+ * 若无法保证同步，则**应删除**这些重复字段、改为读时关联 Team。二者择一，
+ * 不得让快照与 Team 长期分叉。**该选择留 T08 裁定**〔待决〕。
  */
 export interface SoloipsTeamBindingRecord {
   readonly id: SoloipsTeamBindingId;
-  readonly teamId: SoloipsTeamId;              // 绑定的 SoloIPs 团队
-  readonly companyId: SoloipsCompanyId;
-  readonly departmentId?: SoloipsDepartmentId;  // 可选归属部门
-  readonly name: string;
-  readonly dshTeamRef: string;                 // DSH Team Session ID
-  readonly leadAppointmentId: SoloipsAppointmentId;  // 团队负责人任职
+  readonly teamId: SoloipsTeamId;              // 绑定的 SoloIPs 团队（权威引用）
+  readonly companyId: SoloipsCompanyId;        // 〔派生快照〕来自 Team
+  readonly departmentId?: SoloipsDepartmentId; // 〔派生快照〕来自 Team
+  readonly name: string;                       // 〔派生快照〕来自 Team
+  readonly dshTeamRef: string;                 // DSH Team Session ID（本记录特有）
+  readonly leadAppointmentId: SoloipsAppointmentId;  // 〔派生快照〕来自 Team
   readonly status: 'active' | 'archived';
   readonly createdAt: string;
 }
@@ -318,17 +333,26 @@ export type SoloipsTeamSkillAssignmentId = SoloipsCoreId<'team-skill-assignment'
  * 团队 MCP 配置意图
  *
  * 〔待实现〕M0.1 目标实体。
- * **三条硬边界**：①`configRef` **不携带凭据**（凭据留受保护部署配置，红线 2 + ORG-13）；
- * ②「请求」≠「生效」——写一条意图**不会**让工具出现，故状态必须有 `unavailable`，
- * 且不得把 `requested` 呈现为「已配置」；③作用域粒度是 **agent 不是 team**。
+ * **本记录只表达「期望配置」，不表达「生效情况」**——逐 agent 生效情况由独立运行态查询提供。
+ * `configRef` 限**部署层可解析的受控标识**；`active` 只能由可信接入流程确认，模型不得自声明。
  */
 export interface SoloipsTeamMcpIntentRecord {
   readonly id: SoloipsTeamMcpIntentId;
   readonly teamId: SoloipsTeamId;
   /** 对齐 DSH 的 [A-Za-z0-9_-]{1,32} */
   readonly serverName: string;
-  /** 配置意图的内容引用：**不含凭据本体**，只引用受保护的配置位置（部署层） */
+  /**
+   * **部署层可解析的受控标识**（如部署配置中的键名/别名）。
+   * **禁止**：任意路径、含凭据的连接串（`url`/`token`/`Authorization`/`env` 值）。
+   * 凭据留在受保护的部署配置里（红线 2 + ORG-13）；core 只存**意图与引用**。
+   */
   readonly configRef: string;
+  /**
+   * - `requested`：已登记期望配置，**未**确认生效；
+   * - `active`：**仅由可信接入流程**确认后写入（见下「生效确认」）；
+   * - `revoked`：期望已撤回（不回溯已加载的工具/上下文）；
+   * - `unavailable`：当前无法生效（未接路径、缺 provider、作用域不匹配等）。
+   */
   readonly status: 'requested' | 'active' | 'revoked' | 'unavailable';
   readonly assignedByAppointmentId: SoloipsAppointmentId;
   readonly createdAt: string;
@@ -365,6 +389,7 @@ export type SoloipsTeamNormVersionId = SoloipsCoreId<'team-norm-version'>;
  * **★ 最关键的设计判断**：`method: 'model-reported'` **不能单独构成「已阅读」**。
  * ORG-03 明禁「模型自报独立形成 ready」——把「员工说它读了」直接记为合规即重犯该错误。
  * `method` 字段的作用就是让强/弱证据在数据上**可区分**。
+ * 命名纪律：本记录表达的是「**送达/确认**」，**不是**「已阅读理解」——见 §2.1.3。
  */
 export interface SoloipsNormAckRecord {
   readonly employeeId: SoloipsEmployeeId;
@@ -376,10 +401,17 @@ export interface SoloipsNormAckRecord {
   readonly acknowledgedAt: string;
   /**
    * 取证强度（必须显式）：
-   * - `host-delivered`：强证据——正文作为**实际请求装配**的一部分被装入该员工会话；
+   * - `host-delivered`：强证据——▸**仅由可信 Host 请求装配流程写入**◂；
    * - `model-reported`：弱证据——模型自报已阅读。**可记录、可展示、不足以形成资格判定**。
    */
   readonly method: 'host-delivered' | 'model-reported';
+  /**
+   * 执行上下文关联（强证据必填、弱证据可空）：写入强确认时的任职/会话/代际，
+   * 使「送达」可追溯到那次真实装配。
+   */
+  readonly appointmentId?: SoloipsAppointmentId;
+  readonly appointmentGeneration?: number;
+  readonly sessionRef?: string;
 }
 
 /**
@@ -419,15 +451,34 @@ export type SoloipsAssemblyEvidenceId = SoloipsCoreId<'assembly-evidence'>;
  * 员工记录
  * 员工身份独立于任职，任职才是权限来源
  *
- * 〔C-3 注 2026-09-18〕**本节为目标设计，与当前实现不同形**：
- * 除 `id`/`displayName` 外，下表的 `email`/`modelConfig`/`status`/`createdAt`
- * 与实现字段（`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/
- * `verifiedCapabilities`）**不重叠**。**以 `packages/core/src/contracts.ts` 为准**；
- * 本节保留为目标设计，不代表已实现字段。
+ * 〔C-3 注 + 2026-09-18 补全〕本记录是**完整的目标形状**——**既包含**已实现并服务
+ * ORG-03 准入判定的字段（`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/
+ * `verifiedCapabilities`），**也包含**目标新增字段（`email`/`modelConfig`/`status`/
+ * `createdAt`）。**既有判定字段属于目标契约的一部分，不得移出**（它们是准入判定的
+ * 权威输入，移出会使契约无法表达 ORG-03）。
+ *
+ * 与当前实现的关系（§0 C-3）：实现**已有** `id`/`displayName` + 上述四个判定字段；
+ * `email`/`modelConfig`/`status`/`createdAt` **尚未实现**。字段的**确切形状与校验**
+ * 以 `packages/core/src/contracts.ts` 的 `SoloipsEmployeeRecord` 为准（含
+ * `currentDocuments` 的类型为 `Partial<Record<SoloipsRequiredDocumentType, SoloipsDocumentVersionId>>`）。
  */
 export interface SoloipsEmployeeRecord {
   readonly id: SoloipsEmployeeId;
   readonly displayName: string;
+  // ── 已实现：服务 ORG-03 准入判定的字段（不得移出目标契约）──
+  /** 当前引用：员工只持各必需文档的当前版本（个人文档集边界） */
+  readonly currentDocuments: Readonly<
+    Partial<Record<SoloipsRequiredDocumentType, SoloipsDocumentVersionId>>
+  >;
+  /** Host 实际装配证据：被装入请求的版本（ORG-03「对当前版本的实际请求装配」） */
+  readonly assemblyEvidence: Readonly<
+    Partial<Record<SoloipsRequiredDocumentType, SoloipsDocumentVersionId>>
+  >;
+  /** 记忆初始化事实；初始记忆允许空集合（ORG-03），只记事实不存内容 */
+  readonly memoryInitialized: boolean;
+  /** 已通过最小验证的能力名（ORG-03「所需工具/能力的最小验证」） */
+  readonly verifiedCapabilities: readonly string[];
+  // ── 〔待实现〕目标新增字段 ──
   readonly email?: string;
   readonly modelConfig?: SoloipsModelConfig;
   readonly status: 'pending' | 'active' | 'inactive';
@@ -471,6 +522,84 @@ export interface SoloipsAuditRecord {
 
 export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 ```
+
+#### 2.1.1 组长唯一性协议（BE-3 前置，2026-09-18 裁定）〔约束〕
+
+`leadAppointmentId` 是**唯一组长引用**，其唯一性不能靠「先建 Team 再补任职」的天然顺序保证——两步之间崩溃会留下**无组长的 Team**。协议如下：
+
+| # | 要求 |
+|---|---|
+| P-1 | **预分配 ID**：`Team` 与组长 `Appointment` 的 ID 在**同一操作内预先分配**（写入前生成），使两步引用彼此可知，无需回读 |
+| P-2 | **经可恢复操作关联写入**：Team 与组长任职经**同一 `operationId`** 关联写入（提交门的意图先行 + 重放语义使其可恢复）；崩溃后按未决 `operationId` 核对并补齐，**不重新分配 ID** |
+| P-3 | **中间状态不得作为可用团队返回**：Team 已写、组长任职未写的中间态，**读面必须排除**（不出现在 `listTeams`/`getTeam` 结果中），不得被当作可用团队。判据是「`leadAppointmentId` 指向的任职不存在或不可用」 |
+| P-4 | **`leadAppointmentId` 约束**：必须满足**全部**四项——① 该任职**有效**（`status='active'`）；② **同公司**（`scope.companyId === team.companyId`）；③ **同团队**（`scope.kind='team'` 且 `scope.teamId === team.id`）；④ `role === 'team_lead'`。任一不满足即视为**无效引用**，按 P-3 排除 |
+| P-5 | **第二组长拒绝**：同一 Team 已有有效组长时，再建一条 `team_lead` 任职须返回**可判定的拒绝**，不得产生第二条 |
+| P-6 | **组长撤职后的语义（指挥裁定，三选一写死）**：组长任职被撤职时，**团队进入明确的不可用状态**——`Team` 的 `status` 转为不可用（或等效的显式标记），**不是**静默保留、也**不是**自动提升某成员继任。**换任须显式操作**（重新指定组长并建立新的 `team_lead` 任职），从而恢复可用 |
+
+**P-6 的理由**：自动继任需要一套「谁继任」的规则（资历？能力匹配？部长指定？），那等于在契约里埋一个未裁定的策略；而静默保留会让「有组长」这一事实失真。写死为「不可用 + 显式换任」使失效可见、恢复可控，且不引入新策略。
+
+**与 DSH Team roster 的分工**：本协议约束 **core 侧 `Team` 记录与任职**；DSH roster 的 `role: 'lead' | 'teammate'` 是**另一层**词表（见 §2.1 `SoloipsTeamRecord` 的两套词表不可混用）。M0.1 不接 DSH Team（§1.2 C-6），故本协议在 M0.1 内自成闭环。
+
+**〔待实现〕**：P-1…P-6 均为 M0.1 目标要求（`team` 表尚未建，见 §0）；BE-3 须逐条验收。
+
+#### 2.1.2 MCP：期望与生效的分工（2026-09-18 裁定）〔约束〕
+
+| 层 | 载体 | 谁写 | 说明 |
+|---|---|---|---|
+| **期望配置** | `SoloipsTeamMcpIntentRecord`（§2.1） | 部长的分配操作（经 Host） | 只表达「这个团队希望用哪些 MCP server」 |
+| **逐 agent 生效情况** | **独立运行态查询**（**不落在意图记录上**） | 运行态读取 | 查「某 agent/会话当前实际可用的 MCP 工具」；M0.1 未接该路径时**返回不可用**，而不是返回空集冒充「无工具」 |
+
+**为什么不把生效情况写进意图记录**：生效是**运行时作用域**事实（每 agent 一实例、随装配变化），不是可持久化的稳定业务事实。写进意图记录会制造「配置意图被读成加载事实」的错误——正是 ORG-08「保存、批准、分配、实际加载和有效使用是不同事实」要避免的。
+
+**生效确认规则**：
+
+1. **`active` 只能由可信接入流程写入**——Host 侧在**实际完成挂载并读取到可见性**后回写；**模型不得自声明** `active`。
+2. **无该流程时保持 `requested` 或 `unavailable`**。M0.1 **未接**逐 agent 挂载路径，故 M0.1 的意图记录**停留在这两个状态**，**不得**出现 `active`。
+3. **`requested` 不得呈现为「已配置/已生效」**；界面与工具输出须区分二者。
+
+**`configRef` 取值限制**：**部署层可解析的受控标识**（如部署配置中的键名/别名）。**禁止**任意路径、含凭据的连接串（`url`/`token`/`Authorization`/`env` 值）——凭据留受保护部署配置（红线 2 + ORG-13）。
+
+**作用域粒度**：**agent，不是 team**。DSH 的 `serverName` 唯一性以**注册作用域**为单位，而 teammate 继承父 preset 的 standing 组合——团队级隔离**必须**走 per-agent 挂载或自建 provider，**不能**写进 preset 行（R-1）。
+
+**〔未验证〕**：本节只登记意图形态与确认规则；**不声称**「团队级 MCP 已隔离」，也不声称逐 agent 挂载已可行（该路径未做挂载实验）。
+
+#### 2.1.3 规范确认（NormAck）强证据契约（2026-09-18 裁定）〔约束〕
+
+**命名纪律**：本记录表达「**送达/确认**」，**不是**「已阅读理解」。字段与界面文案**避免**「已阅读理解」「已掌握」等表述——送达是事实，理解不可由送达推出。
+
+**写入方分工（谁产生哪种证据）**：
+
+| 证据 | 写入方 | 触发条件 | `method` |
+|---|---|---|---|
+| **强确认** | **可信 Host 请求装配流程** | 规范正文**作为该次请求装配的一部分被实际装入**员工会话时，Host 侧写一条 | `host-delivered` |
+| **弱确认** | 模型自报 | 模型声称已阅读（工具调用或对话） | `model-reported` |
+
+**强确认必须关联**（写入时同步落库，缺项即为无效强证据）：**规范版本**（`normVersionId` + `digest`）、**员工**（`employeeId`）、**执行上下文**（`appointmentId` / `appointmentGeneration` / `sessionRef`——三者至少可追溯至那次装配）。
+
+**「送达」作为准入证据的语义**：
+
+1. **送达 ≠ 理解**。强确认证明的是「该版本正文进入了这次装配」，**不证明**模型已理解或遵循。任何晋级判定只能把送达当作**必要条件**，不能当作充分条件。
+2. **强确认是准入可用的取证**；**弱确认不足以形成资格判定**（ORG-03：模型自报不能独立形成 `ready`）。
+3. **弱确认不覆盖强确认**：已有 `host-delivered` 记录时，后来的 `model-reported` **不得**降级或替换它（两方法并存时以强为准）；反向亦然——弱记录不因后来出现强记录而被「补正」为强。
+
+**主键与唯一约束**〔约束〕：
+
+- **主键**：`(employeeId, teamId, normVersionId)`——同一员工对同一团队同一规范版本**只有一条**确认记录。
+- **强确认写入是幂等的**：同一 `(employeeId, teamId, normVersionId)` 重复装配**不新增行**，只更新 `acknowledgedAt` 与执行上下文（保持最新一次送达可追溯）。
+- **跨版本不合并**：新版本是**新行**（`normVersionId` 不同），旧行保留供追溯。
+
+**效力规则**〔约束〕：
+
+| 情形 | 效力 |
+|---|---|
+| 规范出新版本 | 旧版本的确认**不自动延续**到新版本。新版本需**新的**强确认；`normVersionId` 不同即另起一行 |
+| 旧版本确认 | 保留为历史事实（「当时送达过 v1」），**不**因新版本出现而失效或删除 |
+| 员工撤职后再入团 | 任职代际（`generation`）变化 → **旧确认不再作为当前代际的证据**（`appointmentGeneration` 不匹配即视为过期）；须重新送达并写新确认 |
+| 同一员工换团队 | 按 `teamId` 分开；不跨团队复用 |
+
+**`SoloipsTeamNormRecord` 的版本不可变性**〔约束〕：**已写入的规范版本不可修改**——内容变更即**新版本**（新的 `normVersionId` + 新 `digest`）。「当前版本」由**指向前一版本链的最新 `versionId`** 定位（或由团队记录持当前引用），不得原地覆盖历史版本的内容或摘要。理由：确认记录以 `(…, normVersionId)` 为键，若版本内容可变，历史确认就失去确定的所指。
+
+**〔待实现〕**：以上字段与规则均为 M0.1 目标；`SoloipsNormAckRecord` 尚未实现（§0），强确认的 Host 写入路径**依赖** §2.1 的 `SoloipsAssemblyEvidenceRecord`（装配动作的观测台账）作为落点。
 
 ### 2.2 新增实体登记（2026-09-18 裁定，全部〔待实现〕）
 
@@ -535,7 +664,38 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 | 递归终止 | 成立——不再需要「子公司总助理的招募者」先存在 |
 | 母公司总助理跨公司招募 | **〔待决〕**，属后续**权限增强**；本裁定不授权，也不排除。在裁定前**不得**假设母公司总助理可跨公司招募 |
 | 界面约束 | 引导需为每个子公司重复「招募总助理」步骤；权限差异视图（母公司/子公司）层数取决于跨公司招募裁定的结果 |
-| 与 (d) 候选的关系 | 「子公司不设总助理、母公司兼任」**被排除**——与「总助理是公司级任职」模型冲突（一个任职挂两家公司？），需 `scope` 支持多公司或新增层，本裁定不引入 |
+| 与 (d) 候选的关系 | 「子公司不设总助理、母公司兼任」**被排除**——见下方「排除理由的更正」 |
+
+#### 2.4.1 创建后「待招募」状态合法〔约束〕
+
+**`createCompany` 不创建任何总助理任职。** 公司创建后**无总助理**是**合法的中间状态**，不是数据缺陷：
+
+| 事实 | 语义 |
+|---|---|
+| 公司记录已存在、无 `general_assistant` 任职 | **合法**。公司处于「待招募总助理」状态 |
+| 该状态是否阻断其他操作 | **不阻断**组织事实本身（部门/员工/团队记录可建）；但依赖总助理职权（如跨部门编组、招募部长）的操作按授权规则拒绝——**拒绝的原因是没有相应任职**，不是「公司不完整」 |
+| 是否要求「必须有总助理」才能算公司建成 | **不要求**。M0.1 验收出口是「创建公司成功」（§6.1），不含「已有总助理」 |
+
+**⚠️ 已删除的旧示例**：本契约早前在 §4.2 的 `createCompany` 示例中含 `createDefaultGeneralAssistant(company.id)` 步骤（「创建默认总助理任职」）。该步骤**已删除**，理由：
+
+1. 与「总助理由**招募**产生」的产品决定**冲突**——自动创建会绕过招募流程（该冲突此前已由 [`system-assistant-ui-design-v0.1.md`](../prds/system-assistant-ui-design-v0.1.md) 与 [`system-assistant-m01-prd-v1.0.md`](../prds/system-assistant-m01-prd-v1.0.md) 登记为待澄清项，现按本裁定关闭）。
+2. 它从未实现（§0），故删除**不涉及数据迁移**。
+3. 它会与 §4.3 的配额计数、以及提交门的「一个 operationId 一个业务写」语义纠缠——创建公司与招募助理是**两个独立的可恢复操作**，不应合成一个。
+
+#### 2.4.2 可信用户入口：招募首个总助理〔约束〕
+
+**入口是可信的 Host 侧用户入口**，不是模型工具、也不是 `createCompany` 的副作用。语义如下：
+
+| 项 | 要求 |
+|---|---|
+| 入口形态 | 用户侧引导流程（系统助理引导段）经 **Host 半边**调用既有命令面，**不新增命令 kind**——落库路径 = `createEmployee` + `createAppointment(scope={kind:'company', companyId}, role='general_assistant')`（两条独立提交） |
+| 幂等 | 每个业务动作携带**稳定 `operationId`**；同 `operationId` 重放返回原结果（提交门 `replayed`），**不产生第二个员工或第二条任职** |
+| 部分完成 | 两步之间崩溃 → 公司处于「员工已建、任职未建」；**恢复时先读回**（该员工是否已有该公司的 `general_assistant` 有效任职）再决定是否补第 2 步，**不得**盲目重建员工 |
+| 结果未知 | 提交门返回 `unknown`（未决 operationId）时**停止并请求核对**，**不得**换 `operationId` 重试（ORG-05） |
+| 唯一性 | 一个公司**同一时刻至多一条**有效的公司级 `general_assistant` 任职；已有有效任职时重复招募应返回可判定的拒绝，而不是再建一条 |
+| 授权 | 招募者身份经 Host 侧上下文确认；M0.1 的授权自证边界见 §3.2「M0.1 实际授权规则」 |
+
+**反面声明**：本节不证明引导流程已实现、不证明幂等已验收。「待招募」是**契约层的合法状态**，不等于界面已能表达它。
 
 **〔未验证〕**：本裁定是产品+契约层面的决定，不证明引导旅程已实现、不证明子公司视图已具备招募入口。
 
@@ -543,11 +703,13 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 
 **〔约束〕模型工具名用下划线 `soloips_<域>_<动作>`；`@Remote` 调用面用点号 `ctx.remote.soloips.<method>`。两套命名面刻意不同形，禁止混用。**
 
-依据〔源码事实〕（fork `abdfeb4831` / `0.1.6-alpha.1`）：
+依据：**SoloIPs 命名规范**——依据是 DSH MCP 桥接的**名称约束**与**官方工具先例**（见下），不是「DSH 禁止点号」的通用规则。
 
-- DeepSeek 函数名约定**只允许 `[A-Za-z0-9_-]`**、≤64 字符；不允许的字符被替换为 `_`，有损时追加 12 位 SHA-256 hash（`packages/mcp/mcp-client/src/tools.ts:48,51,54,81-86` 的 `MAX_PUBLIC_NAME_LENGTH`/`INVALID_NAME_CHARS`/`HASH_LENGTH`/`publicToolName`）。**点号属「不允许」字符**。
-- 官方 Team 工具名**全部为下划线**形态（`spawn_teammate`/`send_message`/`list_agents`/`team_task_create`/`team_task_update` 等，`packages/experimental/tool-agent-team/src/index.ts`）。
+- DSH MCP 桥接对**它自己产生**的工具名有字符约束：只允许 `[A-Za-z0-9_-]`、≤64 字符；不允许的字符被替换为 `_`，有损时追加 12 位 SHA-256 hash（`packages/mcp/mcp-client/src/tools.ts:48,51,54,81-86` 的 `MAX_PUBLIC_NAME_LENGTH`/`INVALID_NAME_CHARS`/`HASH_LENGTH`/`publicToolName`）。**该约束的适用范围是 MCP 桥接的名称转换，不能外推为「所有注册路径都禁点号」**。
+- 官方 Team 工具名**全部为下划线**形态（`spawn_teammate`/`send_message`/`list_agents`/`team_task_create`/`team_task_update` 等，`packages/experimental/tool-agent-team/src/index.ts`）——作为**先例**支持下划线风格。
 - `@Remote` 方法名须是 Typert 严格分析下的**具名必填简单标识符**（不得解构/默认值/rest/可选），故用点号 namespace 面。
+
+> **〔未验证〕** 「DSH 工具名**禁止**点号」**未**在源码中找到通用校验；上述区分依据是**官方命名先例 + 各协议层分隔符语义 + MCP 桥接的局部约束**〔推断〕，属**本项目命名规范**，不是已核实的禁用规则。若后端能给出显式校验点，应回填并据此收紧或放宽。
 
 **20 项工具名清单**（源：`docs/prds/organization-full-ui-design-v0.1.md` §9b.2 推导表，**从权威命令面导出**）：
 
@@ -563,25 +725,57 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 | 8 | `employee.record-assembly` | `soloips_employee_record_assembly` | `ctx.remote.soloips.recordAssemblyEvidence` |
 | 9 | `document.save` | `soloips_document_save` | `ctx.remote.soloips.saveEmployeeDocument` |
 | 10 | `work-entry.request` | `soloips_work_entry_request` | `ctx.remote.soloips.requestWorkEntry` |
-| 11 | `checkOnboarding` | `soloips_employee_check_onboarding` | — |
-| 12 | `getCompany` | `soloips_company_get` | — |
-| 13 | `getCompanyTree` | `soloips_company_get_tree` | — |
-| 14 | `listSubsidiaries` | `soloips_company_list_subsidiaries` | — |
-| 15 | `listDepartments` | `soloips_department_list` | — |
-| 16 | `getEmployee` | `soloips_employee_get` | — |
-| 17 | `getAppointment` | `soloips_appointment_get` | — |
-| 18 | `getDocumentVersion` | `soloips_document_version_get` | — |
-| 19 | `getOperation` | `soloips_operation_get` | — |
-| 20 | `listPendingOperations` | `soloips_operation_list_pending` | — |
+| 11 | `checkOnboarding` | `soloips_employee_check_onboarding` | 不暴露（读面，经既有服务面） |
+| 12 | `getCompany` | `soloips_company_get` | 不暴露（读面，经既有服务面） |
+| 13 | `getCompanyTree` | `soloips_company_get_tree` | 不暴露（读面，经既有服务面） |
+| 14 | `listSubsidiaries` | `soloips_company_list_subsidiaries` | 不暴露（读面，经既有服务面） |
+| 15 | `listDepartments` | `soloips_department_list` | 不暴露（读面，经既有服务面） |
+| 16 | `getEmployee` | `soloips_employee_get` | 不暴露（读面，经既有服务面） |
+| 17 | `getAppointment` | `soloips_appointment_get` | 不暴露（读面，经既有服务面） |
+| 18 | `getDocumentVersion` | `soloips_document_version_get` | 不暴露（读面，经既有服务面） |
+| 19 | `getOperation` | `soloips_operation_get` | 不暴露（读面，经既有服务面） |
+| 20 | `listPendingOperations` | `soloips_operation_list_pending` | 不暴露（读面，经既有服务面） |
 
 **〔待实现〕** 本清单是**目标形状**，无任何一项已注册实现（§0：Host 半边与工具注册属 BE-6，未实现）。
 
 **两条边界**〔约束〕：
 
 1. `close()` **不暴露**为工具或 Remote（会把 domain 生命周期交给浏览器）。
-2. **每个工具必须对应一个已存在的命令 kind**；无 kind 的动作不得暴露为工具。`SoloipsOperationKind` 当前**无 `team.*` 项**，故编组/团队类工具名（如 `soloips_team_update_function`）**待 BE-3 新增 kind 后才成立**——在此之前不得定稿，属〔待决〕。
+2. **写读分开要求**：
+   - **每个「写」工具必须对应一个已登记的命令 `kind` 和服务方法**；无 `kind` 的动作不得暴露为写工具。`SoloipsOperationKind` 当前**无 `team.*` 项**，故编组/团队类写工具名（如 `soloips_team_update_function`）**待 BE-3 新增 kind 后才成立**——在此之前不得定稿，属〔待决〕。
+   - **每个「读」工具必须对应一个已登记的查询服务**；**查询不要求创建 `operation`**（读路径不写台账，见 §2.5 表内读面各行）。
 
-**〔未验证〕** 「DSH 工具名**禁止**点号」未在源码中找到显式校验；上述区分依据是**官方命名先例 + 各协议层分隔符语义**〔推断〕，不是已核实的禁用规则。
+**`@Remote` 列的「—」含义**〔约束〕：**不暴露**（该查询经**既有服务面**消费，不新增 Remote 方法）。上表第 11–20 行的读面因此只有模型工具名，没有 Remote 方法——**不是**「待补」。
+
+### 2.6 公司树规则（2026-09-18 codex 终审补录）〔约束〕
+
+`parentCompanyId` 的校验规则必须**完整**，否则会产生不可读回或跨账户的树。逐条如下：
+
+| # | 规则 | 现状（读源确认，2026-09-18） |
+|---|---|---|
+| T-1 | **父必须存在** | **已实现**：`#readCompany(parentCompanyId)` 不存在则抛 `SOLOIPS_CORE_PRECONDITION` |
+| T-2 | **父类型限制**：仅禁 `operation` 作父（`platform`/`enterprise`/`subsidiary` 均可作父） | **已实现** |
+| T-3 | **深度上限**：`MAX_TREE_DEPTH = 10` | **已实现** |
+| T-4 | **父状态**：`archived` 的父公司**不得**接收新子公司 | **未实现**——现有校验**不看** `parent.status`。须在 BE-5 补：父状态非 `active` 即拒绝 |
+| T-5 | **同账户**：父公司 `accountId` 必须等于当前账户 | **未实现**（`accountId` 硬编码 `"seed"`，§3.1 C-2）。由 **BE-1** 关闭 |
+| T-6 | **孤儿记录处置** | **须写死**，见下 |
+
+**孤儿记录（父缺失）的处置**〔约束〕——**写死为「不静默容忍」**：
+
+| 情形 | 处置 |
+|---|---|
+| 读树时遇到父缺失的子公司 | **不加入**结果集，并按数据不一致处理（报错或显式标记），**不得**静默把它当作顶层公司返回 |
+| 计数（§4.3）时遇到孤儿 | **照常计入** `subsidiary` 配额（按 `type` 计数**不遍历树**，故天然覆盖孤儿）。理由：孤儿仍是该公司账户持有的子公司，漏计会形成绕过；其读回问题由本表显式登记，而非靠计数宽容掩盖 |
+| 修复孤儿 | 须经**显式**操作（补父引用或归档），属独立切片；**不得**在读取路径自动修复 |
+
+**`enterprise` 带 `parentCompanyId` 的处置**〔约束〕——**写死为「拒绝」**：
+
+- `type === 'enterprise'`（顶层用户公司）**不得**携带 `parentCompanyId`。若携带 → **拒绝创建**（`SOLOIPS_CORE_VALIDATION`）。
+- 理由：三层语义中 `enterprise` 是用户顶层公司，`subsidiary` 才是带父的子级。允许 `enterprise` 带父会让「顶层公司计数」（§2.1 `companyLimit`）与树结构脱节——一个带父的 `enterprise` 既占 `companyLimit` 又出现在某棵子树里，使 §4.3 的 `type` 计数与组织树读回**对不上**。
+- 现状：**未实现**（现有代码不检查该组合）。须在 **BE-5** 补。
+- **迁移边界**：若存量数据已存在该组合，须按上表孤儿路径显式修复，**不得**靠读时宽容掩盖。
+
+**〔待实现〕**：T-4 / T-5 / T-6 与 `enterprise` 带父检查均未实现——T-5 由 BE-1 关闭，T-4 与 `enterprise` 检查由 BE-5 关闭，孤儿处置由读面与迁移切片分别处理。
 
 ---
 
@@ -629,6 +823,34 @@ adapter 的 session 端口只有会话持久化、没有账户身份面，core �
 - 平台公司（`platform`）/ 运营子公司（`operation`）的官方账户初始化**不在 S0 范围**，且不自动归属部署账户。
 - 存量占位数据（旧 `"seed"` 账户写下的记录）**不认领、不自动改归**部署账户；换绑后旧操作不得重放。
 
+**数据根绑定的持久事实（2026-09-18 裁定：根级绑定元数据）**〔约束〕：
+
+账户绑定**不是**「读时比对」，而是一个**持久事实**——否则无法回答「这个根换绑过吗」「旧操作能否重放」。
+
+| 项 | 要求 |
+|---|---|
+| 载体 | **根级绑定元数据**（存储根内的绑定记录，记 `accountId` 与其绑定代际/时间）。**不采用**「只做读时比对」或「把绑定塞进某条公司记录」的等效弱方案 |
+| 理由 | 绑定必须可**独立读取且先于业务读**：打开时先读绑定元数据再校验根内公司记录；绑定本身也必须可审计（何时绑到哪个账户） |
+| 与 §4.3 计数的关系 | 计数按 `accountId + type` 过滤，其 `accountId` 即取自该绑定元数据——绑定未落地则计数口径无据（BE-1 依赖） |
+
+**换绑后的重放校验规则**〔约束〕：
+
+| 情形 | 规则 |
+|---|---|
+| 换绑后重放**换绑前**的 `operationId` | **拒绝**。绑定代际不匹配即视为**跨代操作**，返回可判定的拒绝；**不得**把旧操作的意图作用于新账户的根 |
+| 换绑后重放**换绑后**的 `operationId` | 按 §4.1 常规语义（`replayed` 返回原结果） |
+| 判据的字段落点 | **属 BE-1 实现裁定**〔待决〕：可给 operation 加绑定代际字段，或在打开时按代际过滤未决操作——两者须**择一并在 BE-1 内写死** |
+
+**`seed` 数据根的处置路径（BE-1 验收项）**〔约束〕——三条里**必须选定一条**，不得含糊：
+
+| 路径 | 内容 | 适用 |
+|---|---|---|
+| **(a) 拒绝** | 打开时检测到根内存在 `accountId="seed"` 的记录 → **拒绝打开**（`SOLOIPS_CORE_ACCOUNT_MISMATCH` 类），要求人工处置 | 默认最安全；S0 若不必保留旧数据，选此 |
+| **(b) 迁移** | 在**独立切片**内、经显式声明的迁移脚本把 `seed` 记录改归目标账户，并留痕 | 需要保留旧数据时；须显式声明「开发数据根重置或迁移」 |
+| **(c) 隔离** | 把含 `seed` 数据的根**整体隔离**（不纳入新绑定），新根从空开始 | 旧数据仅供取证、不参与业务时 |
+
+**共同底线**：**不得**把 `seed` 记录**静默认领**为部署账户的数据（本节的「不认领、不自动改归」）。BE-1 须在验收中明确选了哪一条并验证。
+
 ```typescript
 /**
  * 权限校验结果
@@ -638,7 +860,11 @@ export type SoloipsPermissionResult =
   | { readonly allowed: false; readonly reason: string };
 ```
 
-### 3.2 正确的权限校验（修复 Promise || 问题）
+### 3.2 权限校验（示例已降级）
+
+> **⚠️〔约束〕下列代码是「修复 Promise `||` 反模式」的示意，<u>不可作为实现模板</u>**（2026-09-18 codex 终审裁定）。
+>
+> 它自身存在若干**演示性缺陷**（下节逐条列出），且依赖尚未落地的 `scope`/`role`/`ExecutionBinding`。**不得**把它当作 BE-6 的 API 依据或验收标准。M0.1 的实际授权规则见本节末「M0.1 实际授权规则」。
 
 ```typescript
 /**
@@ -794,6 +1020,37 @@ export class SoloipsPermissionService {
 }
 ```
 
+#### 上例的已登记缺陷〔约束〕
+
+以下 7 条是 codex 终审指出的示例自身缺陷。**登记为缺陷而非修正**——该示例已降级为示意，不在此重写；实现时须逐条处理：
+
+| # | 缺陷 | 说明 |
+|---|---|---|
+| D-1 | **未分支处理 `scope` 可选** | 示例直接读 `apt.scope.companyId`，而 `scope` 按 §2.3 是**可选**字段——存量记录缺 `scope` 时此处会**抛错**（读 `undefined.companyId`）。实现须先按 §2.3 的推断规则补齐或走分支 |
+| D-2 | **`executionBinding` 缺失未提前分支** | 示例在 `checkAppointmentWithRole` 里用 `ctx.executionBinding?.employeeId` 作为 filter——`executionBinding` 为 `undefined` 时该 filter 退化为「不按员工过滤」，**扫到任何员工的任职**。须在入口处**先判定 `executionBinding` 是否存在**，缺失即拒绝 |
+| D-3 | **未核对绑定的确切 `appointmentId`** | 示例用「扫出任一角色匹配的 active 任职」代替「**这次执行所绑定的那条**任职」。正确做法：以 `executionBinding.appointmentId` 精确定位，再校验该条的角色与作用域——否则同一员工在多部门的任职可互相冒充 |
+| D-4 | **代际相等 ≠ 同一任职** | 示例只比 `generation`。两条**不同**任职可能有相同代际值，故代际相等**不能**证明是绑定的那条。须与 D-3 合用，以 `appointmentId` 为主键、`generation` 只作失效校验 |
+| D-5 | **资源作用域未限定** | 示例对 `department:create`/`team:create` 只校验「公司内有该角色」，**未校验目标资源在该角色作用域内**。部门负责人**只能在本部门**操作（ORG-02）——须比对 `scope.kind='department'` 的 `departmentId` 与目标部门 |
+| D-6 | **未显式拒绝官方公司类型** | 示例的 `checkQuota` 对 `platform`/`operation` 直接放行（「不占配额」），但放行**不等于允许普通入口创建**。S0 普通入口须**显式拒绝** `platform`/`operation` 类型（官方公司初始化不属 S0，见 §3.1） |
+| D-7 | **`SoloipsPermissionService` 整体未实现** | 该服务依赖 `AuthContext`/`ExecutionBinding`/`Entitlement`，三者**均未实现**（§0）。因此本示例描述的是**目标形态**，不可作为 M0.1 的实现或验收依据 |
+
+#### M0.1 实际授权规则〔约束〕
+
+**M0.1 不建 `SoloipsPermissionService`**（见 D-7）。实际执行的授权规则如下——它们是**提交门内的数据比对**，不是独立权限服务：
+
+| 规则 | 内容 | 依据 |
+|---|---|---|
+| A-1 | **账户归属**：数据根只绑定一个账户；写入时业务命令**不接受**外部传入的 accountId（由 Host 注入） | §3.1；BE-1 |
+| A-2 | **公司归属**：目标资源的 `companyId` 所属公司，其 `accountId` 必须等于注入账户 | §3.1 |
+| A-3 | **官方公司拒绝**：普通入口**显式拒绝** `platform`/`operation` 类型的创建（D-6） | §3.1 |
+| A-4 | **禁止自证授权**：`actorAppointmentId`（如引入）由 Host 从真实执行上下文填入，**不接受模型文本**；且**不得**称其为 ORG-05 的可信身份链——`ExecutionBinding` 未落地前只是**部署面自证** | `system-assistant-backend-design-v0.1.md` §2.1 |
+| A-5 | **配额**：`createCompany` 在提交门内按 `accountId + type` 计数（不建表、不用乐观锁） | §4.3 |
+| A-6 | **树约束**：父公司存在、同账户、非 `operation`、深度 ≤ `MAX_TREE_DEPTH` | §2.6 |
+
+**这些规则不蕴含**：不构成多租户隔离证据（A-4 的自证边界）；不覆盖跨公司/跨部门越权的全部情形——`scope`/`role` 落地前，**角色级授权不在 M0.1 范围**，涉及角色的操作须按 A-4 自证并如实标注限制。
+
+**〔待实现〕**：A-1/A-2/A-3 依赖 BE-1（账户绑定）；A-6 的「同账户」与「非 operation」在现有代码中**部分未实现**（§2.6 已逐条标注）。
+
 ---
 
 ## 4. 原子配额操作
@@ -812,185 +1069,31 @@ export class SoloipsPermissionService {
 3. **崩溃恢复**：崩溃在「递增成功、公司未落」之间时，按未决 operationId 核对并回滚配额；
    不按文件年龄擅自清锁，也不把未决操作当作成功。
 
+> **与 §4.3 的分工**：本节描述**通用原则**（三件事共同保证一致性）与**原问题**（预检与创建分离导致超限）。
+> M0.1 的落地形态见 §4.3（扫表计数，**不建计数器表**，故「递增/回滚」在 M0.1 不适用）；
+> M0.2 的计数器形态其**具体恢复协议尚未裁定**（§4.3「部分成功与版本归属」Q-1…Q-3）——
+> 本节第 3 条的「回滚配额」**依赖**该裁定，不得径直实现。
+
 ### 4.2 实现〔待实现，M0.2 形态〕
 
-> **〔待实现〕C-7（2026-09-18）**：本节代码是 **M0.2 的目标形态**（`quota` 计数器表 + `quotaVersion` 乐观锁），**不是 M0.1 的实现要求**。M0.1 的配额口径见 §4.3，两者不得混引。
+> **〔待实现〕C-7（2026-09-18）**：本节描述 **M0.2 的目标形态**（`quota` 计数器表 + `quotaVersion` 乐观锁），**不是 M0.1 的实现要求**。M0.1 的配额口径见 §4.3，两者不得混引。
 >
-> 由此同时消除 §2 与 §4.2 的类型一致性缺口：`SoloipsQuotaCounter`（下图）是**持久记录**形态，属 M0.2 新增表；§2 的类型清单**有意不含**它——§2 的 `SoloipsEntitlementRecord` 是账户权益，本节的 `quota` 表是**按 `accountId+resourceType` 的计数器**，两者职责不同。M0.2 落地时须把 `SoloipsQuotaCounter` 的持久形态登记进 §2（P2 遗留项，见 §0 C-7）。
+> 由此同时消除 §2 与 §4.2 的类型一致性缺口：`SoloipsQuotaCounter` 是**持久记录**形态，属 M0.2 新增表；§2 的类型清单**有意不含**它——§2 的 `SoloipsEntitlementRecord` 是账户权益，本节的 `quota` 表是**按 `accountId+resourceType` 的计数器**，两者职责不同。M0.2 落地时须把 `SoloipsQuotaCounter` 的持久形态登记进 §2（P2 遗留项，见 §0 C-7）。
 
-```typescript
-/**
- * 配额计数器（用于原子操作）
- * 三层配额下按 resourceType 分开计数：'company'（顶层用户公司）/ 'subsidiary'（子公司）
- */
-export interface SoloipsQuotaCounter {
-  readonly resourceType: 'company' | 'subsidiary';
-  readonly accountId: string;
-  readonly currentCount: number;
-  readonly quotaVersion: number;
-}
+**〔待设计伪代码·占位〕** 原示例已删除（2026-09-18 codex 终审）——它含**一致性错误**：公司 `put` 成功后若 catch 中递减配额，**公司记录仍在**（不会消失），导致「配额说没占、事实说占了」的偏差；且未处理 `quotaVersion` 的**版本归属**与重放语义。
 
-/**
- * 创建公司（原子操作）
- * 在同一提交门内完成：选择配额 → 原子递增 → 创建公司（失败回滚）
- */
-export class SoloipsCompanyService {
-  constructor(
-    private readonly domain: StorageDomain,
-    private readonly entitlements: EntitlementResolver,
-  ) {}
+**删除的不是「实现要求」，而是「错误的实现示意」。** M0.2 形态的目标仍然存在（计数器表 + 乐观锁），但其**正确伪代码须在上述「部分成功与版本归属」（§4.3 Q-1…Q-3）裁定后补写**。
 
-  /**
-   * 原子创建公司
-   * 使用乐观锁确保并发安全；平台/运营公司不占用户配额
-   */
-  async createCompany(
-    ctx: SoloipsAuthContext,
-    name: string,
-    type: SoloipsCompanyType = 'enterprise',
-    parentCompanyId?: SoloipsCompanyId,
-  ): Promise<{ success: true; company: SoloipsCompanyRecord } | { success: false; reason: string }> {
-    // 0. 层级校验：子公司必须有父公司，且父公司同账户
-    if (type === 'subsidiary') {
-      if (parentCompanyId === undefined) {
-        return { success: false, reason: 'subsidiary_requires_parent' };
-      }
-      const parent = await this.domain.table('company').get(parentCompanyId);
-      if (!parent) return { success: false, reason: 'parent_not_found' };
-      if (parent.accountId !== ctx.accountId) {
-        return { success: false, reason: 'parent_account_mismatch' };
-      }
-    }
+届时伪代码至少须回答：
 
-    // 1. 获取权益快照（包含版本号）；官方公司不占配额
-    const countsAgainstQuota = type === 'enterprise' || type === 'subsidiary';
-    const snapshot = await this.entitlements.resolve(ctx.accountId);
-    const resourceType: 'company' | 'subsidiary' = type === 'subsidiary' ? 'subsidiary' : 'company';
-    const limit = resourceType === 'subsidiary' ? snapshot.subsidiaryLimit : snapshot.companyLimit;
+| 待答 | 说明 |
+|---|---|
+| 提交点 | 计数器递增与公司 `put` 的**顺序**，以及各自失败时的可见状态 |
+| 回滚语义 | 「公司已落、后续失败」与「计数器已增、公司未落」分别怎么处理——**不能**用一个 catch 笼统递减 |
+| 版本归属 | `quotaVersion` 由谁递增、何时递增；重放（`replayed`）时是否递增 |
+| 幂等键 | 恢复动作的幂等键，避免重复回滚 |
 
-    // 2. 原子递增配额（如果失败说明超限）
-    if (countsAgainstQuota && limit !== -1) {
-      const incrementResult = await this.atomicIncrement(
-        resourceType,
-        ctx.accountId,
-        snapshot.quotaVersion,
-        limit,
-      );
-
-      if (!incrementResult.success) {
-        return {
-          success: false,
-          reason: `${resourceType}_limit_exceeded: current=${incrementResult.currentCount}, limit=${limit}`,
-        };
-      }
-    }
-
-    // 3. 创建公司记录（type 与 parentCompanyId 必须落库，否则与 §2 数据模型不一致）
-    const company: SoloipsCompanyRecord = {
-      id: this.generateId('company'),
-      accountId: ctx.accountId,
-      type,
-      ...(parentCompanyId === undefined ? {} : { parentCompanyId }),
-      name,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-    };
-
-    try {
-      await this.domain.table('company').put(company.id, company);
-
-      // 4. 创建默认总助理任职
-      await this.createDefaultGeneralAssistant(company.id);
-
-      // 5. 记录审计
-      await this.audit({
-        companyId: company.id,
-        actorId: ctx.accountId,
-        action: 'company_created',
-        resourceType: 'company',
-        resourceId: company.id,
-        outcome: 'success',
-        details: { name, type },
-      });
-
-      return { success: true, company };
-    } catch (error) {
-      // 6. 失败时回滚配额（崩溃窗口由未决意图恢复核对兜底，见 §4.1）
-      if (countsAgainstQuota && limit !== -1) {
-        await this.atomicDecrement(resourceType, ctx.accountId);
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * 原子递增配额（使用乐观锁）
-   */
-  private async atomicIncrement(
-    resourceType: 'company' | 'subsidiary',
-    accountId: string,
-    expectedVersion: number,
-    limit: number,
-  ): Promise<{ success: boolean; currentCount: number }> {
-    const counterKey = `quota:${resourceType}:${accountId}`;
-
-    // 读取当前计数器
-    const counter = await this.domain.table('quota').get(counterKey);
-    const currentCount = counter?.currentCount ?? 0;
-
-    // 检查是否超限
-    if (currentCount >= limit) {
-      return { success: false, currentCount };
-    }
-
-    // 乐观锁更新
-    try {
-      await this.domain.table('quota').update(counterKey, (existing) => {
-        if (!existing) {
-          return { resourceType, accountId, currentCount: 1, quotaVersion: expectedVersion + 1 };
-        }
-        // 版本不匹配，说明有并发修改
-        if (existing.quotaVersion !== expectedVersion) {
-          throw new Error('CONCURRENT_MODIFICATION');
-        }
-        // 再次检查限额
-        if (existing.currentCount >= limit) {
-          throw new Error('LIMIT_EXCEEDED');
-        }
-        return {
-          ...existing,
-          currentCount: existing.currentCount + 1,
-          quotaVersion: existing.quotaVersion + 1,
-        };
-      });
-      return { success: true, currentCount: currentCount + 1 };
-    } catch (error) {
-      if ((error as Error).message === 'CONCURRENT_MODIFICATION' ||
-          (error as Error).message === 'LIMIT_EXCEEDED') {
-        return { success: false, currentCount };
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * 原子递减配额（用于回滚）
-   */
-  private async atomicDecrement(
-    resourceType: 'company' | 'subsidiary',
-    accountId: string,
-  ): Promise<void> {
-    const counterKey = `quota:${resourceType}:${accountId}`;
-    await this.domain.table('quota').update(counterKey, (existing) => {
-      if (!existing) return existing;
-      return {
-        ...existing,
-        currentCount: Math.max(0, existing.currentCount - 1),
-      };
-    });
-  }
-}
-```
+> **阅读提示**：本小节**有意不含可复制的实现代码**。若需要配额实现依据，M0.1 见 §4.3；M0.2 待上述待决项裁定。
 
 ### 4.3 M0.1 的配额形态（提交门计数，不建表）
 
@@ -1005,9 +1108,54 @@ export class SoloipsCompanyService {
 
 **一致性依据**（对齐 §4.1 的三件事，**不是**数据库事务）：因为「计数 → 写入」都在**同一 `mutate` 回调**内、且在门持有的串行槽位上，计数与插入之间**没有其他本地提交**可插入；跨进程由租约排除。
 
+#### 计数方案成立的 6 个条件〔约束〕（2026-09-18 codex 终审补录）
+
+写入该方案前须**逐条**满足；任一不满足即**方案不成立**，不得声称配额已生效：
+
+| # | 条件 | 具体要求 |
+|---|---|---|
+| K-1 | **互斥边界全覆盖** | 「计数 + 写入」必须完全落在**提交门的同一串行槽位**内。**不得**存在另一条绕过提交门的 `company` 写路径（如直接 `put`/`update`/迁移脚本批量插入），否则边界有洞 |
+| K-2 | **锁覆盖「计数 → 持久发布」全程** | 守卫（进程内串行 + 跨进程 writer lease）的持有时长必须**覆盖到 `put` 持久发布完成为止**，不能只覆盖计数读取。每次发布前的 `lease.assertHeld()` 复核即是此要求的落点 |
+| K-3 | **读当前权威数据** | 计数必须扫**当前存储的权威记录**，**不得**依赖缓存、内存镜像、或调用前算好的计数传入。基准是「提交那一刻的持久事实」 |
+| K-4 | **重放先识别「已成功创建」** | 同一 `operationId` 重放时，提交门须**先返回 `replayed` 结果**（`#commitLocked` 的既有语义），**不得**再走一次计数——否则重放会被误判为超限拒绝，破坏幂等 |
+| K-5 | **过滤口径写死** | 计数口径固定为 `accountId + type + status='active'`。**`archived` 公司不占配额**；改口径须改本节，不得在实现里静默调整 |
+| K-6 | **区分「配额拒绝」与「部分写失败」** | 配额超限是**可判定的业务拒绝**（返回稳定码、`current`/`limit`，**零业务写**）；而「配额通过但公司 `put` 失败」是**不同情形**（须走 §4.3 末的失败恢复，见下条）。二者**不得**共用一个错误码或同一种处理 |
+
+**本方案的失效条件**〔约束〕——出现任一即须重新设计，不得沿用：
+
+1. 出现**第二个公司写者**（第二 Host / 第二 opener 绕过租约）；
+2. **多账户共享同一数据根**（K-5 的 `accountId` 过滤将不再等价于「本根内全部用户公司」）；
+3. 公司记录**可被非提交门路径修改**（破坏 K-1）；
+4. 计数口径需要**跨根聚合**（如账户级配额跨多个存储根）。
+
+**验收要求**〔约束〕——K-1…K-6 的验证须覆盖以下四类，缺项不得声称通过：
+
+| 验收项 | 期望结果 |
+|---|---|
+| **同账户并发创建**（同根、并发提交） | 计数与写入串行化生效；不超过 limit；无「两个都成功」 |
+| **第二写者拒绝** | 第二 Host/opener 打开即被拒（租约）；**已持有者不受干扰**，无部分写 |
+| **失租停写** | 持有者失租后，后续每次发布被拒（`LEASE_NOT_HELD`/`LEASE_CHECK_FAILED`），业务状态不变 |
+| **重启重放** | 重启后按未决 `operationId` 核对：已提交的返回 `replayed`（不重复计数/不重复建公司）；未决的按 §4.1 第 3 条核对并回滚 |
+
 **失败语义**：返回**可判定的拒绝**（稳定码，附 `{resourceType, current, limit}`），且**不产生任何业务写**。
 
-**为什么 M0.1 不用乐观锁**〔约束〕：§4.2 的乐观锁针对「并发 Host / 多账户共享数据面」。M0.1 是「一个业务存储根只绑定一个账户」+ 单 writer（§3.1），计数即权威。**若后续要做多 Host 或多账户，必须回到 §4.2 的计数器形态**——这是显式登记的偏差，不得默认延续。
+#### 部分成功与版本归属（待设计）〔待决〕
+
+**已知未解问题**：K-6 区分出的第二类情形——「配额检查通过、公司 `put` 已成功、但后续步骤失败」——**当前没有完整方案**。§4.2 的 M0.2 示例曾试图用「catch 内递减配额」处理，但该示例**自身有缺陷**（公司记录不会随递减而消失，导致配额与事实不一致），故**已删除**（见 §4.2）。
+
+须在实现前裁定：
+
+| # | 待决问题 |
+|---|---|
+| Q-1 | **部分成功的恢复契约**：公司已落库但同操作后续步骤失败时，是「保留公司 + 回滚配额计数」还是「保留公司并接受计数已反映事实」？**注意**：M0.1 不建计数器表，计数由扫表得出——**扫表口径下「配额已扣」不是独立状态**，故 M0.1 天然不存在该不一致；Q-1 只对 **M0.2 的计数器形态**成立 |
+| Q-2 | **版本归属**：`quotaVersion`（M0.2）由谁递增、在哪一步递增、重放时是否递增——须与 K-4 的重放语义一致 |
+| Q-3 | 恢复动作本身的**幂等键**与崩溃窗口处理 |
+
+**〔约束〕在这三个问题裁定前，M0.2 的计数器实现不得开工**；M0.1 的扫表计数**不受此阻塞**。
+
+**为什么 M0.1 不用乐观锁**〔约束〕：§4.2 的乐观锁针对「并发 Host / 多账户共享数据面」。M0.1 是「一个业务存储根只绑定一个账户」+ 单 writer（§3.1），计数即权威。
+
+**演进约束（非唯一安全算法）**〔约束〕：M0.1 的扫表计数是**在当前条件下成立的实现选择**，**不是**唯一安全的配额算法。**若后续要做多 Host 或多账户**，须重新评估——§4.2 的计数器 + 乐观锁是**已知候选之一**，不是预设必选；届时应连同 Q-1…Q-3 一并裁定。
 
 **依赖**：本形态需要 `accountId` 真实落地（当前硬编码 `"seed"`，见 §3.1 C-2）——计数必须按 `accountId + type` 过滤。该依赖由 BE-1 关闭。
 
@@ -1086,7 +1234,13 @@ export const SOLOIPS_COMPANY_DOMAIN_SPEC = {
 契约中不存在 `ctx.storageDomain` 回退（SOLO-FENCE-01 / SEAM-X1）。上面的 `ctx.storageDomain`
 示例只说明 DSH 官方 API 形状，不代表本项目的写路径。
 
-### 5.2 Client Plugin 正确用法
+### 5.2 Client Plugin 参考结构（待核验）
+
+> **⚠️〔约束〕本节的 API 形状是<u>待核验参考结构</u>，不得作为 BE-6 的 API 依据**（2026-09-18 codex 终审裁定）。
+>
+> 理由：① 本节示例是**按 DSH 官方文档整理的参考结构**，**未**在目标版本上做实际类型/运行时核对；② `soloips-web` 的 V1 路线已改为**复制官方 Web 插件 fork 改造**（[`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)），客户端扩展点应以**fork 内实际源码**为准，而非本节示例；③ BE-6 的 Host 半边与工具注册的权威依据是 `system-assistant-backend-design-v0.1.md` §3.2（`@Remote` 事实清单）。
+>
+> 本节保留**仅作反例说明**：它指出两个不存在的方法名，避免后来者照抄旧设计。
 
 **错误示例（完整设计中）**：
 ```typescript
@@ -1094,7 +1248,7 @@ client.registerRoute('/soloips/*', { ... });     // ❌ 不存在此方法
 client.registerSlot('sidebar', { id: '...', ... });  // ❌ 不存在此方法
 ```
 
-**正确用法（基于 DSH 官方文档）**：
+**参考结构（待核验；<u>不得</u>作为 BE-6 API 依据）**：
 
 ```typescript
 import type { ClientModules } from '@deepseek-ai/dsh-client-modules';
@@ -1117,7 +1271,7 @@ export function register(client: ClientModules): void {
 }
 ```
 
-**注意**：具体 API 需要按实际安装的 DSH 版本验证，以上为参考结构。
+**注意**：上列 API **未在目标版本核对**，属待核验参考结构；V1 的客户端扩展点以 fork 内实际源码为准（见本节开头的降级声明）。
 
 ---
 
@@ -1125,7 +1279,9 @@ export function register(client: ClientModules): void {
 
 ### 6.1 修订后的里程碑
 
-| 切片 | 目标 | 最小验收出口 |
+**表格口径（2026-09-18 codex 终审补录）**〔约束〕：本表的「最小验收出口」列是**界面层的最小出口**（M0.1 起即用户可见的判定），**不等于**该切片的全部验收。**各后端切片（BE-0…BE-7、T08 等）有各自的验收清单**，以对应设计正文为准——本表**不**替代它们，也不因为本表只写一个出口就降低后端切片的验收要求。
+
+| 切片 | 目标 | 最小验收出口（界面层） |
 |---|---|---|
 | **S0 接通** | 插件装配、受控写入、同包重启 | 加载成功 + 受控写 + 重启读回 |
 | **S0 多公司基础** | 跨账户拒绝、引用归属、撤职失效、并发配额 | 隔离测试通过 |
@@ -1135,6 +1291,8 @@ export function register(client: ClientModules): void {
 | **M1 双版本联调** | Web ↔ 3D 状态同步 | 操作同步 |
 | **M2 总助理** | AI 驱动运营 | 对话完成日常事务 |
 | **M3 日志监测** | 三层日志 | 能查询审计记录 |
+
+**各后端切片的验收**〔约束〕：见 `docs/prds/system-assistant-backend-design-v0.1.md` §4.1（BE-0…BE-7 逐片验收标准）。**界面最小出口达成 ≠ 后端切片全部通过**；反向亦然——后端切片通过也不等于界面可用。两者分别取证。
 
 > **界面路线注记（2026-09-17）**：上表切片口径不变。M0.1「Web 基础」的界面来源为**复制官方 Web 插件 fork 改造的 `soloips-web`**（验收出口「创建公司成功」不变）；M0.3（3D 基础）与 M1（双版本联调）随原「自研 Web+3D 双版本」路线**推迟**，解冻时点〔待决〕。见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
@@ -1162,3 +1320,4 @@ export function register(client: ClientModules): void {
 | 2026-09-18 | **P2 设计裁定落实**：①C-1 配额口径统一（M0.1 提交门计数不建表 / 完整 Entitlement+quota 表属 M0.2，§0 与 §6.1 同述）；②C-2 §3.1 account-binding 与 `SOLOIPS_CORE_ACCOUNT_MISMATCH` 标〔待实现〕BE-1；③C-3 §0 与 §2.1 注明 Employee 目标字段与实现字段不重叠；④C-4 新增 §2.3 `scope` 先可选 + 3 条推断规则 + 4 项收紧前置（当前不满足）；⑤C-5 `SoloipsTeamRecord` 补 `leadAppointmentId`；⑥C-6 §1.2 补「只有 Team 无 TeamBinding」中间态；⑦C-7 §4.2 标〔待实现〕M0.2 + 新增 §4.3 M0.1 形态；⑧C-8 §5.1 示例改为本项目实际 spec 形态；⑨C-9 §0 补已实现能力面清单 | 用户 2026-09-18 授权技术自主决策；指挥裁定，来源 `docs/prds/system-assistant-backend-design-v0.1.md` §1.4 与 `docs/prds/organization-full-backend-design-v0.1.md` §7 |
 | 2026-09-18 | **新实体与裁定登记**：§2.1 登记 6 个新实体（Team 三字段 / TeamSkillAssignment / TeamMcpIntent / team_norm / NormAck / AssemblyEvidence，均标〔待实现〕，其中 AssemblyEvidence 写死「只读不参与判定」）；§2.2 新增实体登记表；§2.4 记 Q-N5(a) 允许子公司嵌套、Q-N5(b) 配额按全部 `subsidiary` 计数、**Q-N5b 每个公司（含子公司）首个总助理由用户直接招募**（递归终止，跨公司招募待决）；§2.5 登记 20 项工具名（下划线模型面 vs 点号 Remote 面）与两条边界 | 用户 2026-09-18 授权技术自主决策；指挥裁定 |
 | 2026-09-18 | 修缮：§3.1 缺失的代码块起栅栏补齐（原有闭合栅栏无起始，会导致后续正文渲染为代码） | 文档智能体自查发现（写入范围内的既有缺陷） |
+| 2026-09-18 | **codex 终审修正（12 条全部接受）**：①§2.4 删自动创建总助理示例、补「待招募合法」与可信用户入口（幂等/恢复）、「母公司兼任」排除理由改为不依赖「模型无法表达」；②§3.2 示例降级为不可作实现模板 + 7 条已登记缺陷（D-1…D-7）+ M0.1 实际授权规则（A-1…A-6）；③新增 §2.1.1 组长唯一性协议（P-1…P-6，撤职→团队不可用+显式换任）；④新增 §2.1.2 MCP 期望/生效分工与生效确认规则；⑤新增 §2.1.3 NormAck 强证据契约（写入方/关联字段/主键唯一/效力规则/版本不可变）；⑥§4.3 补 K-1…K-6 条件、失效条件、四类验收、部分成功与版本归属 Q-1…Q-3、演进约束改写；⑦§4.2 删除含一致性错误的完整示例，改为待设计占位；⑧§2.5 改写工具名依据为本项目命名规范、读写工具分开要求、Remote「—」注明不暴露；⑨§3.1 补根级绑定元数据、换绑重放规则、seed 根三条处置路径；⑩§0 加「代码定义现状/本文定义目标」优先级声明、§2.1 Employee 补完整目标形状（既有判定字段不得移出）；⑪新增 §2.6 公司树规则（T-1…T-6、孤儿处置、enterprise 带父拒绝）、TeamBinding 重复字段登记为派生快照、§6.1 区分界面最小出口与各后端切片验收、§5.2 降为待核验参考结构 | codex CLI 终审「需修正后重审」，指挥逐条裁定全部接受 |

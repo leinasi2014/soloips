@@ -512,7 +512,7 @@ flowchart TB
 | **用户意图** | 「我要开一家公司」/「帮我建个公司」/ 首次进入时点击引导卡 |
 | **助理行为** | 1) 说明公司将作为组织根与配额计量单位；2) 若已是第 2 家，先做**配额预检**；3) 抛出创建公司卡片；4) 收集公司名 + 类型（+ 父公司，若选 `subsidiary`）；5) 提交后**读回确认**并宣读结果；6) 推进至第②步（招募总助理——**系统助理引导的终点**，§4.2） |
 | **界面呈现** | 消息流：助理开场文案 + 内嵌创建公司卡片；右面板：切换为「公司概览」空态 |
-| **数据写入** | 命令 `createCompany`（`kind: "company.create"`）<br>入参：`operationId`、`name`、`type?`（默认 `enterprise`）、`parentCompanyId?`<br>落库字段（`SoloipsCompanyRecord`）：`id`、`accountId`、`parentCompanyId?`、`type`、`name`、`status: 'active'`、`createdAt`<br>其余副作用〔目标设计，未实现〕：创建默认总助理任职（`data-contract.md` §4.2 步骤 4 `createDefaultGeneralAssistant`）、写审计 `company_created` |
+| **数据写入** | 命令 `createCompany`（`kind: "company.create"`）<br>入参：`operationId`、`name`、`type?`（默认 `enterprise`）、`parentCompanyId?`<br>落库字段（`SoloipsCompanyRecord`）：`id`、`accountId`、`parentCompanyId?`、`type`、`name`、`status: 'active'`、`createdAt`<br>~~其余副作用：创建默认总助理任职~~ → **〔已删除，2026-09-18 裁定〕`createCompany` 不再创建任何总助理任职**；公司创建后处于**「待招募」合法状态**，首任总助理由用户经可信入口招募（`data-contract.md` §2.4.1/§2.4.2）。`createCompany` 仍写审计 `company_created` |
 | **该步特有风险** | **配额**：Free 计划 `companyLimit=1`，第 2 家必须被挡（`data-contract.md` §2 三层配额表）。<br>**类型可见性**：`platform`/`operation` 是官方类型，用户界面**不得**作为可选项呈现（选了也会污染配额语义）。<br>**父子校验**：`operation` 类型不能有子级；公司树有 `MAX_TREE_DEPTH` 深度限制（`store.ts` 校验） |
 | **〔待决〕** | 「创建公司」的配额校验在 M0.1 是否启用？`data-contract.md` §0 明确 `SoloipsEntitlement*` 与三层配额「**未实现**」，且 §0 记「S0 不校验配额」；而 M0.2 才是「配额生效」。界面是否**预置**配额提示（前端提示但不阻断）须澄清 → PRD Q7 |
 
@@ -527,7 +527,7 @@ flowchart TB
 | **界面呈现** | 消息流：招募总助理卡 + 交接说明卡；工作台：公司节点下出现总助理，组织树开始生长 |
 | **数据写入** | 同 §3.2.4 的招募命令：`createEmployee`（`kind: "employee.create"`）→ `SoloipsEmployeeRecord`；`createAppointment`（`kind: "appointment.create"`）→ `SoloipsAppointmentRecord`<br>〔约束〕**总助理的「公司级」身份在 M0.1 无法写入**：`appointment.create` 无 `role`/`scope` 入参（`data-contract.md` §2 标「待实现」）。数据上是「员工 + 任职」；「总助理」只是界面叙事与文案 |
 | **该步特有风险** | **角色不可写入**：总助理的「公司级」不落库（B-3）。界面**不得**显示「已任命为公司总助理」这类**暗示已落库**的表述；宜表述为「已招募总助理（角色能力将在后续版本生效）」或类似诚实措辞。<br>**⚠️ 阻塞级结构矛盾**：`createAppointment` **强制要求 `departmentId`**（`contracts.ts:270-275`），`store.ts` 还校验该部门必须存在；**但招募总助理时公司里还没有任何部门**（用户表述的顺序是「公司 → 招募总助理 → 总助理创建部门」）。**本设计不自行选择出路**，四候选（先建默认部门 / 挂到先建部门 / 调整顺序 / 契约扩展）见 PRD Q5g(c)。**此矛盾不解决，本步无法落地。**<br>**半成功态**：见 §4.4 通用细则。<br>**入职未就绪**：总助理同样要过 `checkOnboarding`（四类文档 + 记忆 + 能力 + 装配）。 |
-| **〔待决〕** | 总助理是否**必须**招募才能继续（阻断式），还是**可跳过**（后续由用户自己操作）？M0.1 可达终点见 PRD Q5g。<br>〔源码事实〕`data-contract.md` §4.2 的目标设计里有「创建公司时自动创建默认总助理任职」（`createDefaultGeneralAssistant`），但**未实现**，且与用户「招募产生」的描述**不一致**——须澄清是否放弃该自动创建设计。见 PRD Q5g(b)。 |
+| **〔待决〕** | 总助理是否**必须**招募才能继续（阻断式），还是**可跳过**（后续由用户自己操作）？M0.1 可达终点见 PRD Q5g。<br>~~〔源码事实〕`data-contract.md` §4.2 的目标设计里有「创建公司时自动创建默认总助理任职」（`createDefaultGeneralAssistant`），但**未实现**，且与用户「招募产生」的描述**不一致**——须澄清是否放弃该自动创建设计。见 PRD Q5g(b)。~~<br>**〔2026-09-18 部分关闭〕自动创建设计已放弃**（`data-contract.md` 已删除该示例，§2.4.1 明确「创建后待招募合法」）。**「阻断式 vs 可跳过」仍〔待决〕**——契约层已允许「无总助理」状态存在，但**是否阻断后续引导**属界面/产品决定，见 PRD Q5g。 |
 
 ### 4.3 第③步：总助理创建部门（**总助理驱动范围起点**）
 
