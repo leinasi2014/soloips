@@ -1,7 +1,4 @@
-# PR 门禁：按 DEV-02 的五条接口执行检查。
-#
-# 与本地命令一致（package.json scripts），不维护第二套检查清单。
-# 未建立的入口不得用空脚本填充；条件未满足时应失败而不是静默通过。
+# PR 门禁：Ubuntu + Windows 双平台验证
 name: verify
 
 on:
@@ -18,23 +15,35 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          - os: windows-latest
+            shell: pwsh
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
         with:
           version: 9.15.9
 
-      - uses: actions/setup-node@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
 
-      - name: Install (frozen lockfile)
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Format
+      - name: Format check
         run: pnpm run format:check
 
       - name: Lint
@@ -48,3 +57,11 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Delivery load check
+        run: pnpm run check:delivery-load
+        # Windows runner temp dir: C:\Users\RUNNER~1\AppData\Local\Temp
+        # Ubuntu runner temp dir: /tmp
+        # This check validates the package artifacts can be loaded correctly
+        env:
+          TMPDIR: ${{ runner.temp }}
