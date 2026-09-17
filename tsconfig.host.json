@@ -1,0 +1,64 @@
+{
+  // Typert 生成用的 **Host 分析面聚合配置**（BE-0a）。
+  //
+  // 为什么必须是独立文件、且必须叫这个名字：
+  // `@deepseek-ai/dsh-typert-generator` 的 workspace 模式在**工作区根**读
+  // `tsconfig.host.json`（`analyzer.ts`：`hostConfig ?? 'tsconfig.host.json'`），
+  // 用它解析出的 **projectReferences** 逐个登记包，并用**本文件的
+  // compilerOptions** 为整个 host face 建一个程序（rootNames 取被引用包各自的
+  // 文件清单）。因此：只有写在本文件里的 `paths` 才作用于分析程序；各包自己的
+  // tsconfig 仍按 node_modules 解析，构建产物不受影响。
+  //
+  // 本文件**只被生成器消费**：`tsc -b` 走根 `tsconfig.json`（不含 paths），
+  // tsdown 打包走各包已安装的真实依赖。删掉本文件会让 `pnpm run build` 的
+  // tsdown 阶段报 `cannot find workspace root above …`。
+  //
+  // ── core 接入：paths 与 references **两者都需要**（实测 2×2 矩阵）──────────
+  //
+  // 探针：把 `getStatus` 的**参数类型**直接换成一个 core 拥有的接口
+  // （`SoloipsCreateCompanyInput`），再逐个开关下面两项，观察构建结果与生成的
+  // `lib/typert.remote-client.d.ts` 是否含 `from 'soloips-core/contracts'` 那行。
+  // 每格跑 2 次，结果一致：
+  //
+  // | core 在 paths | core 在 references | 构建 | 生成的 dts |
+  // |---------------|--------------------|------|-----------|
+  // | 有            | 有                 | OK   | import 行**存在**（正确） |
+  // | 有            | 无                 | OK   | import 行**缺失**（静默损坏） |
+  // | 无            | 有                 | 〔未复现：QA 复核同配置构建成功且 import 行缺失——不得据此格决策，改动前先补最小复现〕 | — |
+  // | 无            | 无                 | OK   | import 行**缺失**（静默损坏） |
+  //
+  // 结论（限定在「core 类型直接作 Remote 边界类型」这一已测场景）：
+  //  - **paths 是硬要求**：缺了它，生成器在跨包类型上崩溃（上表第 3 行）；
+  //  - **references 是产物正确性的要求**：只有 paths 时构建绿灯，但产出的
+  //    d.ts 引用 `SoloipsCreateCompanyInput` 却不 import 它——**静默损坏**，
+  //    类型消费者报错。两者都配上才既通过又正确。
+  //
+  // 〔未验证〕本切片自身只消费本包 `./contracts` 类型，故**当前**构建对这两项
+  // 不敏感（删掉任一项目前仍能过）。上表结论是为 BE-6 消费 core 契约时准备的，
+  // 已按上法实测；若 BE-6 的边界形态与探针不同（如 core 类型只作嵌套成员），
+  // 需重新测——嵌套成员可能因解析路径不同而不触发同样的失败。
+  //
+  // ── protocol 的两条别名，都指向**源码面 / 分析面**，刻意如此，不可删 ──────
+  //
+  //  1. `@deepseek-ai/dsh-typert-protocol` → 本仓库内的分析面 shim
+  //     （根 `typert-analysis-protocol.d.ts`）。理由见该文件头注释：已安装的
+  //     npm 包不构成工作区 registration，生成器识别不到 decorator，报
+  //     「publishes Remote artifacts but has no Remote methods」。
+  //
+  //  2. `@deepseek-ai/dsh-typert-protocol/upstream` → 已安装的真实包。shim 经
+  //     这条别名**派生**签名（不手抄）。指向 `lib/types/index.d.ts` 而非包目录：
+  //     `paths` 不做 package.json 的 `exports`/`types` 解析，必须给具体文件。
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@deepseek-ai/dsh-typert-protocol": ["./typert-analysis-protocol.d.ts"],
+      "@deepseek-ai/dsh-typert-protocol/upstream": [
+        "./node_modules/@deepseek-ai/dsh-typert-protocol/lib/types/index.d.ts"
+      ],
+      "soloips-core": ["./packages/core/src/index.ts"],
+      "soloips-core/contracts": ["./packages/core/src/contracts.ts"]
+    }
+  },
+  "files": [],
+  "references": [{ "path": "packages/core" }, { "path": "packages/web" }]
+}

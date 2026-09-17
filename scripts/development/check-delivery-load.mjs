@@ -20,7 +20,16 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,13 +37,37 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..");
 
-/** 必须能被原生 Node 按包名导入的公开入口。 */
+/**
+ * 必须能被原生 Node 按包名导入的公开入口。
+ *
+ * 〔约束〕**每个 exports 子路径都要有一行**——不能只列包根入口。
+ * 变异测试（BE-0a 补强，变异 #6）的背景：把 `zod` 从 `packages/web` 的
+ * dependencies 删掉后六门全绿，因为 zod **只被** `lib/typert.host.js` 与
+ * `lib/typert.remote-client.js` 这两个**子路径产物** import，而入口清单当时
+ * 只有包根 `soloips-web`（它不 import zod）。
+ *
+ * ⚠ **仅加子路径入口并不能拦下该变异**（实测）：本门禁把 tarball 装进隔离
+ * 消费者，而 pnpm 会把 `soloips-adapter-dsh` 所依赖官方包
+ * （`@deepseek-ai/dsh-llm` / `dsh-chunked-list` / `dsh-session-projection` 等）
+ * 自身依赖的 zod **提升**到 `node_modules/.pnpm/node_modules/zod`，于是
+ * `soloips-web/typert` 的 import 被提升副本意外满足、**照常通过**。
+ * （对照实验：手工隐藏该提升副本后，`soloips-web` 根入口仍 OK，而
+ * `soloips-web/typert` 立即 `ERR_MODULE_NOT_FOUND`——证明子路径入口确实加载
+ * zod，只是本地布局掩盖了缺声明。）
+ *
+ * 因此变异 #6 由 `checkDeclaredDependencies()`（见下）以**静态**方式拦下：
+ * 直接比对产物说明符与 manifest 的 dependencies，不依赖解析运气。
+ * 子路径入口在此**仍有独立价值**：它覆盖「子路径产物自身可加载」这一面。
+ */
 const entryPoints = [
   { package: "soloips-core", specifier: "soloips-core" },
   { package: "soloips-adapter-dsh", specifier: "soloips-adapter-dsh" },
   { package: "soloips-web", specifier: "soloips-web" },
   { package: "soloips-adapter-dsh", specifier: "soloips-adapter-dsh/contracts" },
   { package: "soloips-core", specifier: "soloips-core/contracts" },
+  // BE-0a：web 的 Host 半边产物（生成物与其运行时依赖的加载面）。
+  { package: "soloips-web", specifier: "soloips-web/typert" },
+  { package: "soloips-web", specifier: "soloips-web/remote" },
 ];
 
 /**
@@ -99,6 +132,83 @@ function parseActivationFailures(stderr) {
     .map((entry) => entry.trim());
 }
 
+/**
+ * 列出 `lib/` 下全部 `.js` 产物里出现的**裸模块说明符**（非相对、非 node:）。
+ *
+ * 为什么要静态扫产物而不是只靠隔离安装的 import：实测（BE-0a 补强，变异 #6）
+ * 证明「删掉 zod 依赖 → 隔离安装 → import 子路径」**不会失败**——因为
+ * `soloips-adapter-dsh` 依赖的官方包（`@deepseek-ai/dsh-llm` /
+ * `dsh-chunked-list` / `dsh-session-projection` 等）自身依赖 zod，pnpm 把它
+ * **提升**到 `node_modules/.pnpm/node_modules/zod`，于是被提升的副本意外满足了
+ * web 产物的 import。这种「靠邻居的传递依赖碰巧能跑」正是要拦下的隐患：
+ * 它随无关包升级而静默失效，且 tarball 消费者按 `dependencies` 解析时拿不到保证。
+ * 因此本门禁**直接比对产物说明符与包的 dependencies 声明**，不依赖解析运气。
+ *
+ * @param {string} libDir - 包的 `lib/` 目录。
+ * @returns {Set<string>} 产物中出现的裸说明符集合。
+ */
+function bareSpecifiersIn(libDir) {
+  const found = new Set();
+  const pattern =
+    /(?:^|[\s;])(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;])import\s*['"]([^'"]+)['"]/g;
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        walk(path);
+        continue;
+      }
+      if (!entry.endsWith(".js")) continue;
+      const source = readFileSync(path, "utf8");
+      for (const match of source.matchAll(pattern)) {
+        const specifier = match[1] ?? match[2];
+        if (specifier === undefined) continue;
+        if (specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("node:"))
+          continue;
+        found.add(specifier);
+      }
+    }
+  };
+  walk(libDir);
+  return found;
+}
+
+/** 取说明符的包名（处理 `@scope/name/subpath` 与 `name/subpath`）。 */
+function packageNameOf(specifier) {
+  const parts = specifier.split("/");
+  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+}
+
+/**
+ * 断言每个包产物里用到的裸依赖都已在其 `dependencies` 中声明。
+ *
+ * 覆盖的是「生成物 import 了某包，但 manifest 没声明」这一**确定性的**故障：
+ * 无论本机 node_modules 布局如何（hoist / 传递依赖），该不一致都成立。
+ *
+ * @returns {string[]} 违规描述（空数组 = 通过）。
+ */
+function checkDeclaredDependencies() {
+  const violations = [];
+  for (const name of ["core", "adapter-dsh", "web"]) {
+    const packageDir = join(repoRoot, "packages", name);
+    const libDir = join(packageDir, "lib");
+    const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
+    const declared = new Set([
+      ...Object.keys(manifest.dependencies ?? {}),
+      ...Object.keys(manifest.peerDependencies ?? {}),
+      ...Object.keys(manifest.optionalDependencies ?? {}),
+    ]);
+    for (const specifier of bareSpecifiersIn(libDir)) {
+      const packageName = packageNameOf(specifier);
+      if (declared.has(packageName)) continue;
+      violations.push(
+        `packages/${name}: 产物 import "${specifier}"，但 dependencies 未声明 "${packageName}"`,
+      );
+    }
+  }
+  return violations;
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
 
@@ -112,6 +222,25 @@ function main() {
   const workDir = mkdtempSync(join(tmpdir(), "soloips-loadgate-"));
   const pnpmCli = resolvePnpmCli();
   try {
+    // 0) 静态一致性：产物用到的裸依赖必须在 dependencies 里声明。
+    //
+    // 这一步放在隔离安装**之前**：它是确定性的（只读产物与 manifest），
+    // 不依赖本机 node_modules 布局或 pnpm 的提升行为，因此能拦下
+    // 「产物 import zod 但没声明 zod」这类靠邻居传递依赖碰巧能跑的问题
+    // （BE-0a 补强，变异 #6；详见 checkDeclaredDependencies 的注释）。
+    const dependencyViolations = checkDeclaredDependencies();
+    process.stdout.write("产物依赖声明检查（产物 import ⊆ dependencies）：\n");
+    if (dependencyViolations.length === 0) {
+      process.stdout.write("  OK   全部产物的裸依赖均已在各自 dependencies 中声明\n");
+    } else {
+      for (const violation of dependencyViolations) process.stdout.write(`  FAIL ${violation}\n`);
+      process.stdout.write(
+        "\n产物使用了未声明的依赖。隔离安装可能因 pnpm 提升/传递依赖而**碰巧通过**，\n" +
+          "但 tarball 消费者不享有该保证（无关包升级即静默失效）。请补进该包 dependencies。\n",
+      );
+      process.exit(1);
+    }
+
     // 1) 打真实 tarball。
     const artifactDir = join(workDir, "artifacts");
     mkdirSync(artifactDir, { recursive: true });

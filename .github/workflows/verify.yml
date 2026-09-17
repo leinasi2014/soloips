@@ -53,6 +53,18 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # 生成物可复现（BE-0a）：删生成物 → 重跑构建 → 逐文件比对 SHA-256。
+      #
+      # 为什么必须放在 CI 而不只在本地：本门禁是**唯一**检查 Typert 产物
+      # 有效性/可复现的地方。默认测试套件（vitest）跑在 `build` **之前**
+      # （见上面的 Test 步骤顺序），此时 `lib/` 还不存在，故
+      # `packages/web/tests/typert-artifacts.spec.ts` 的产物断言在 CI 上
+      # 只能做「无部分生成」这类条件检查——产物有效性的硬检查由本步骤承担。
+      # 变异测试证明：只把门禁写进测试接线（spec 断言脚本存在）而 CI 不跑它，
+      # 等于 CI 永远不验证产物。
+      - name: Build reproducibility check
+        run: pnpm run check:build-repro
+
       - name: Delivery load check
         run: pnpm run check:delivery-load
 
@@ -97,6 +109,11 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      # 与主检查同一理由（见 verify job 内该步骤的注释）：产物有效性/可复现的
+      # 硬检查只在 CI 的这一步发生。
+      - name: Build reproducibility check
+        run: pnpm run check:build-repro
 
       - name: Delivery load check
         run: pnpm run check:delivery-load
