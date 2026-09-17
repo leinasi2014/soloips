@@ -8,7 +8,7 @@
 | 决策状态 | 〔约束〕用户要求独立迭代运行、官方 DSH + Team、默认供应商配置与所选八项插件；本文收敛其管理方式 |
 | 证据范围 | 本文规定操作与验收；具体版本、路径、哈希、进程及通过结果见版本清单与 ENV-01 本机记录 |
 | 依据 | [官方 Team 决策](../decisions/official-team-and-dsh-fork.md)、[代码规范](../governance/code-development-standard.md)、[环境交接](environment-handoff.md)及用户本次配置要求 |
-| 变更权 | 按[注册表](../governance/document-registry.yaml)维护；主智能体执行已授权实例的配置与验证，真实业务验收由用户决定 |
+| 变更权 | 按[注册表](../governance/document-registry.md)维护；主智能体执行已授权实例的配置与验证，真实业务验收由用户决定 |
 
 ## DEVENV-01：目录与版本身份
 
@@ -96,17 +96,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:SOLOIPS_ROOT/scrip
 
 〔约束〕切回上一版 runtime/home 才是该版运行环境的回退；切 Profile 只改变装配。下一版已经产生的新数据单独保留，不因回退删除，不自动灌入旧 schema。需要延续 Session 或业务状态时按 SOLO-DATA-01–04 与 SOLO-ACC-06 做一致备份及兼容验证。
 
-## 新增架构里程碑（ARCH-D08）
+## 界面与后续里程碑
 
-### UI 双版本开发路线
+> **权威里程碑定义见 [`docs/design/data-contract.md`](../design/data-contract.md) §6.1**，本节仅为展开引用，不复述为第二口径。其中 M0.1–M1 属 ARCH-D08（Web/3D 双界面）路线；M2（总助理）、M3（日志与监测）是独立的框架核心里程碑，不属于 ARCH-D08。
+
+### UI 双版本与框架核心路线
 
 | 阶段 | 目标 | 验收 |
 |---|---|---|
 | **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 |
-| **M0.2** | 订阅限制：免费1公司、付费多公司 | 免费用户无法创建第二公司 |
+| **M0.2** | 订阅限制：三层配额生效（Free 1 公司+0 子公司；Pro 1 公司+3 子公司） | 免费用户无法创建第二公司或任一子公司 |
 | **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 |
 | **M1** | 双版本联调：Zustand 状态共享 | Web 操作能同步到 3D 视图 |
 | **M2** | 总助理：AI 驱动的公司运营 | 能对话总助理完成日常事务 |
-| **M3** | 日志与监测：三层层日志系统 | 能查询业务审计、执行历史、系统监测 |
+| **M3** | 日志与监测：三层日志系统 | 能查询业务审计、执行历史、系统监测 |
 
 详细设计见 [`docs/architecture-complete.md`](../architecture-complete.md)

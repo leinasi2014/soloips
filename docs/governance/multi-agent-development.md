@@ -14,6 +14,8 @@
 ## 0. 统一团队配置
 
 > **⚠️ 模型配置说明**：以下模型配置为默认推荐，**用户可随时调整**。一切以用户最新要求为准。
+>
+> **范围说明**：本文配置针对**开发团队**（代码实现的多智能体派工）；`docs/architecture.md` §8 的模型表是**文档团队**（需求收敛）配置，两者范围不同，不互相覆盖。
 
 ### 0.1 全局配置
 
@@ -31,8 +33,8 @@ indent: 2 spaces
 no_any: true
 no_ts_ignore: true
 
-# 项目根目录
-workspace: "D:/Source/workspace/soloips"
+# 项目根目录（符号名，按 docs/operations/environment-handoff.md ENV-02 解析；禁止硬编码绝对路径）
+workspace: "SOLOIPS_ROOT"
 ```
 
 ### 0.2 主会话配置
@@ -46,12 +48,14 @@ workspace: "D:/Source/workspace/soloips"
 
 ### 0.3 子 Agent 配置矩阵
 
+> 包路径为**实际目录名**（`packages/core/` 等；package 名才是 `soloips-*`）。
+
 | Agent ID | 任务 | 包路径 | 思考强度 | 主要工具 |
 |-----------|------|--------|----------|----------|
-| **A1** | soloips-core 基础结构 | `packages/soloips-core/` | `medium` | Read/Edit/Write/Bash |
-| **A2** | soloips-adapter-dsh 适配层 | `packages/soloips-adapter-dsh/` | `medium` | Read/Edit/Write/Bash |
-| **A3** | soloips-bundle 装配配置 | `packages/soloips-bundle/` | `medium` | Read/Edit/Write/Bash |
-| **A4** | soloips-web 界面层 | `packages/soloips-web/` | `medium` | Read/Edit/Write/Bash |
+| **A1** | soloips-core 基础结构 | `packages/core/` | `medium` | Read/Edit/Write/Bash |
+| **A2** | soloips-adapter-dsh 适配层 | `packages/adapter-dsh/` | `medium` | Read/Edit/Write/Bash |
+| **A3** | soloips-bundle 装配配置 | `packages/bundle/` | `medium` | Read/Edit/Write/Bash |
+| **A4** | soloips-web 界面层 | `packages/web/` | `medium` | Read/Edit/Write/Bash |
 | **I1** | 集成联调 | `packages/*` | `high` | Read/Edit/Bash |
 | **I2** | S0 验收测试 | 全局 | `high` | Read/Bash |
 
@@ -381,10 +385,13 @@ T-{序号}
 | 2026-09-17 | 新增 Agent 执行规范 | 主会话 | 明确 Agent 启动/执行/完成规范 |
 | 2026-09-17 | 新增阶段规划模板 | 主会话 | 规范多功能阶段开发 |
 | 2026-09-17 | 备注模型可由用户调整 | 主会话 | 明确用户可随时调整模型配置 |
+| 2026-09-17 | 按用户确认的产品准则统一：包路径改实际目录名；端口更正为 7 端口；§9 标〔已完成/历史〕（S0 已通过）；workspace 改符号名 SOLOIPS_ROOT；补开发团队/文档团队范围互引 | 主会话 | 文档冲突审查修正 |
 
 ---
 
-## 9. 开发流程：S0 功能开发
+## 9. 开发流程：S0 功能开发〔历史〕
+
+> **〔已完成/历史〕2026-09-17 核查**：S0 接通已通过 9 项验收；`core` 六表 CRUD、提交门、入职准入已实现，`adapter-dsh` 7 端口已就位（team 为 fail-closed 占位），`web` 仍为包边界骨架（下述 S0-T04 未执行）。本节保留为 S0 派工模板的历史参考，**不得作为当前待办**；后续派工以「S0 多公司基础缺口（配额/权限/执行绑定/跨账户拒绝）→ M0.1」为起点，当前现状以 `docs/design/data-contract.md` §0 为准。
 
 ### 9.1 S0 阶段目标
 
@@ -399,12 +406,12 @@ T-{序号}
 ### 9.2 包结构
 
 ```
-packages/
-├── soloips-core/            # 通用业务状态包（组织结构、文档模型）
-├── soloips-adapter-dsh/     # DSH 适配层（8 端口）
-├── soloips-bundle/          # 装配声明（patch 顺序）
-├── soloips-web/             # 可替换界面层（Web + 3D 双版本）
-└── soloips-tools-pv/        # 业务插件（PV 制作，用户/SoloIPS开发团队维护）
+packages/                    # 目录名不带前缀；package 名才是 soloips-*
+├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型）
+├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口）
+├── bundle/                  # soloips-bundle：装配声明（patch 顺序）
+├── web/                     # soloips-web：可替换界面层（Web + 3D 双版本）
+└── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
 ### 9.3 任务拆分策略
@@ -461,7 +468,7 @@ packages/
 
 #### A1: S0-T01 - soloips-core 基础结构
 
-**Agent 配置**: A1 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/soloips-core/
+**Agent 配置**: A1 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/core/
 
 ```
 S0-T01: soloips-core 基础结构
@@ -482,20 +489,19 @@ S0-T01: soloips-core 基础结构
 
 #### A2: S0-T02 - soloips-adapter-dsh 适配层
 
-**Agent 配置**: A2 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/soloips-adapter-dsh/
+**Agent 配置**: A2 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/adapter-dsh/
 
 ```
 S0-T02: soloips-adapter-dsh 适配层
 ├── T02-1: 初始化包结构 + tsconfig
-├── T02-2: DSH 8 端口接口定义
-│   ├── Host 端口
-│   ├── Client 端口
-│   ├── Service 端口
-│   ├── Event 端口
-│   ├── Storage 端口
-│   ├── Session 端口
-│   ├── Subagent 端口
-│   └── Workflow 端口
+├── T02-2: DSH 7 端口接口定义（以 docs/technical/packages.md 端口映射为准）
+│   ├── storage 端口（core 唯一消费）
+│   ├── session 端口
+│   ├── agents 端口
+│   ├── subagents 端口
+│   ├── team 端口（fail-closed 占位）
+│   ├── tools 端口
+│   └── events 端口
 └── T02-3: 适配层骨架实现
 ```
 
@@ -507,7 +513,7 @@ S0-T02: soloips-adapter-dsh 适配层
 
 #### A3: S0-T03 - soloips-bundle 装配配置
 
-**Agent 配置**: A3 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/soloips-bundle/
+**Agent 配置**: A3 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/bundle/
 
 ```
 S0-T03: soloips-bundle 装配配置
@@ -526,7 +532,7 @@ S0-T03: soloips-bundle 装配配置
 
 #### A4: S0-T04 - soloips-web 界面层
 
-**Agent 配置**: A4 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/soloips-web/
+**Agent 配置**: A4 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/web/
 
 ```
 S0-T04: soloips-web 界面层

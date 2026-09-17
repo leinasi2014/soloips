@@ -12,18 +12,22 @@
 | soloips-web | **界面层（Web + 3D 双版本）** | 只读投影 | core |
 | soloips-tools-pv | **业务插件（PV 制作）** | PV 任务状态 | adapter + core |
 
+> **实现程度（2026-09-17）**：`adapter-dsh` 只差 `team` 端口（fail-closed）；`core` 已实现六表 CRUD 与提交门；
+> `web` 目前只有包边界与工具链，**尚未接入 core、也没有 React/Zustand/3D 实现**；`tools-pv` 属 S1，未创建。
+
 ## 端口映射（adapter-dsh）
 
 | 端口 | 对应 DSH 能力 | 说明 |
 |---|---|---|
-| `storage` | storage-domain、storage-json | 持久化 |
+| `storage` | storage-domain、storage-json | 持久化（core 唯一消费的端口） |
 | `session` | session-persistence | 会话管理 |
 | `agents` | agent | Agent 管理 |
 | `subagents` | subagent | 子 Agent |
-| `team` | agent-team | Team 协作 |
+| `team` | agent-team | Team 协作（**fail-closed 占位，未接入**） |
 | `tools` | tools | 工具调用 |
 | `events` | events | 事件系统 |
-| `shared` | shared | 共享能力 |
+
+> `ports/shared.ts` 是 adapter 内部辅助函数，**不是** facade 上的端口。
 
 **core 只依赖 adapter 的 `storage` 端口**：其他端口存在但当前未使用。
 
@@ -61,42 +65,42 @@ SoloIPs 是 **AI 公司协作平台框架**：
 - 框架核心（core/adapter/bundle/web）由 SoloIPS 官方维护
 - 业务插件（PV 工具、发行渠道等）由用户 IT 团队或 SoloIPS 开发团队交付
 
-## 目录结构
+## 目录结构（当前实际）
 
 ```
-packages/
-├── soloips-bundle/
+packages/                    # package 名见各自 package.json（soloips-*）
+├── bundle/                  # 装配声明，无 src/、无运行时依赖
 │   ├── package.json
 │   ├── cordis.patch.yml
 │   └── tests/
-├── soloips-adapter-dsh/
+├── adapter-dsh/
 │   ├── package.json
 │   ├── cordis.patch.yml
 │   ├── src/index.ts
 │   ├── src/contracts.ts
-│   ├── src/ports/           # 8 个端口
+│   ├── src/ports/           # 7 个端口（team 为 fail-closed 占位）
 │   └── tests/
-├── soloips-core/
+├── core/
 │   ├── package.json
 │   ├── cordis.patch.yml
 │   ├── src/index.ts         # Host 入口
-│   ├── src/contracts.ts
-│   ├── src/store.ts         # 公司 store
-│   ├── src/company/         # 多公司支持
-│   ├── src/department/      # 部门管理
-│   ├── src/team/            # 团队管理
+│   ├── src/contracts.ts     # 服务契约与 DTO
+│   ├── src/domain.ts        # 六表 domain spec
+│   ├── src/store.ts         # 唯一 opener + 业务命令
+│   ├── src/commit-gate.ts   # 唯一提交前门（含账户归属盖章）
+│   ├── src/onboarding.ts    # 入职/准入判定
 │   └── tests/
-└── soloips-web/
+└── web/                     # 当前为包边界骨架（export {}），无 client 实现
     ├── package.json
     ├── cordis.patch.yml
-    ├── src/index.ts          # Host 桥
-    ├── src/client/index.ts   # Client 入口
-    ├── src/client/web/       # Web 版本（React + Zustand）
-    ├── src/client/3d/       # 3D 版本（R3F + Three.js）
+    ├── src/index.ts
     └── tests/
 ```
 
-### 三层公司生态（ARCH-D09）
+> 设计与实现差距逐项见 [`docs/design/data-contract.md`](../design/data-contract.md) §0。
+> `soloips-tools-pv` 属 S1，**当前不建占位包**。
+
+### 三层公司生态（SOLO-COMPANY-01）
 
 | 层级 | 类型 | 说明 | 持有者 |
 |------|------|------|--------|
@@ -120,3 +124,4 @@ packages/
 | 日期 | 变更 |
 |---|---|
 | 2026-09-17 | 从技术架构拆分 |
+| 2026-09-17 | 按用户确认的产品准则统一：三层公司生态的决策引用由不存在的 ARCH-D09 更正为 SOLO-COMPANY-01 |

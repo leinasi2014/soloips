@@ -7,8 +7,8 @@
 | 字段 | 值 |
 |---|---|
 | 项目 | SoloIPs |
-| 框架 | DSH（Claude Harness）插件 + profile 组合交付 |
-| 当前阶段 | S0（运行接通与恢复） |
+| 框架 | DSH（DeepSeek Harness）插件 + profile 组合交付 |
+| 当前阶段 | S0 多公司基础 / M0.1（S0 接通已通过 9 项验收；配额/权限/执行绑定未实现） |
 | 负责人 | product-owner |
 
 ## 快速入口
@@ -21,7 +21,7 @@
 | **多智能体开发** | `docs/governance/multi-agent-development.md` | **团队配置、任务拆分、Agent 派发、开发流程** |
 | 写文档 | `docs/governance/doc-format.md` | 怎么标注、怎么引用 |
 | 完整架构 | `docs/architecture-complete.md` | UI双版本、多公司模型、总助理、日志系统 |
-| 查装配规则 | `docs/technical-architecture.md` §6 | bundle/patch/profile 怎么组合 |
+| 查装配规则 | `docs/technical/assembly.md` | bundle/patch/profile 怎么组合 |
 | 查架构决策 | `docs/decisions/` | 哪些是已确认决定 |
 | 环境与工具 | `docs/operations/environment-handoff.md` | 本机路径、版本、命令 |
 
@@ -53,12 +53,12 @@
 ## 包结构
 
 ```
-packages/
-├── soloips-bundle/          # 装配声明，patch 覆写顺序
-├── soloips-adapter-dsh/     # DSH 适配层
-├── soloips-core/            # 通用业务状态包（组织结构、文档模型、公司层级）
-├── soloips-web/             # 界面层（Web + 3D 双版本，共享 Zustand）
-└── soloips-tools-pv/        # 业务插件（PV 制作，由用户/SoloIPS开发团队维护）
+packages/                    # 目录名不带前缀；package 名才是 soloips-*
+├── bundle/                  # soloips-bundle：装配声明，patch 覆写顺序
+├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口，team 为 fail-closed 占位）
+├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型、公司层级）
+├── web/                     # soloips-web：界面层（Web + 3D 双版本，共享 Zustand；当前为包边界骨架）
+└── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，由用户/SoloIPS开发团队维护）
 ```
 
 **包职责规则**：
@@ -171,3 +171,4 @@ type: feat | fix | docs | test | refactor | chore
 |---|---|
 | 2026-09-17 | 重构精简版：合并多文档、减少标注维度、简化元数据 | 主会话 |
 | 2026-09-17 | 新增多智能体开发入口 | 主会话 |
+| 2026-09-17 | 按用户确认的产品准则统一文档：DSH 更正为 DeepSeek Harness；当前阶段更新为 S0 多公司基础/M0.1；包结构图改为实际目录名 | 主会话 |

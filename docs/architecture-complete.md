@@ -4,7 +4,11 @@
 > 
 > **核心原则**：所有功能插件化，接入 DSH 方式，方便 DSH 更新合并，尽量复用 DSH 代码。
 >
-> **运营服务接口**：多租户认证、订阅财务、AI 模型计费详见 [`docs/design/operation-services.md`](docs/design/operation-services.md)（后期实现）
+> **权威数据模型**：数据模型、配额与实现状态以 [`docs/design/data-contract.md`](design/data-contract.md) 为准；
+> **里程碑定义**同样以该文 §6.1 为唯一正文（本文 §6 的旧阶段划分已被取代，仅作历史参考）。
+> 本文与之冲突处以契约为准。
+>
+> **运营服务接口**：多租户认证、订阅财务、AI 模型计费详见 [`docs/design/operation-services.md`](design/operation-services.md)（后期实现）
 
 ---
 
@@ -157,29 +161,30 @@ SoloIPs 采用**三层公司层级**设计，支持内容发布生态系统：
 
 ### 2.2 目录结构（插件化）
 
+> 顶层为**实际目录名**（`bundle/`、`adapter-dsh/`、`core/`、`web/`；package 名才是 `soloips-*`）；各包内部结构为设计稿，未实现部分以 `docs/technical/packages.md` 的当前实际登记为准。
+
 ```
 packages/
-├── soloips-bundle/
+├── bundle/                      # package: soloips-bundle
 │   ├── cordis.patch.yml          # DSH patch 配置
 │   └── package.json
 │
-├── soloips-adapter-dsh/           # DSH 适配层（复用 DSH API）
+├── adapter-dsh/                 # package: soloips-adapter-dsh，DSH 适配层（复用 DSH API）
 │   ├── src/
 │   │   ├── index.ts              # Plugin 入口
 │   │   ├── contracts.ts          # 业务契约
-│   │   └── ports/                # 8 个 DSH 端口映射
+│   │   └── ports/                # 7 个 DSH 端口映射（shared.ts 为内部辅助，非端口）
 │   │       ├── storage.ts
 │   │       ├── session.ts
 │   │       ├── agents.ts
 │   │       ├── subagents.ts
-│   │       ├── team.ts           # 复用 DSH Agent Team
+│   │       ├── team.ts           # 复用 DSH Agent Team（fail-closed 占位）
 │   │       ├── tools.ts
-│   │       ├── events.ts
-│   │       └── shared.ts
+│   │       └── events.ts
 │   ├── cordis.patch.yml
 │   └── package.json
 │
-├── soloips-core/                  # 业务 Domain（作为 DSH Service）
+├── core/                        # package: soloips-core，业务 Domain（作为 DSH Service）
 │   ├── src/
 │   │   ├── index.ts              # Service 入口
 │   │   ├── contracts.ts          # Record 类型定义
@@ -196,7 +201,7 @@ packages/
 │   ├── cordis.patch.yml
 │   └── package.json
 │
-├── soloips-web/                   # UI 插件（通过 DSH Client Slots 扩展）
+├── web/                         # package: soloips-web，UI 插件（通过 DSH Client Slots 扩展）
 │   ├── src/
 │   │   ├── index.ts              # Client Plugin 入口
 │   │   ├── host/                  # Host 侧（SSR/API 桥接）
@@ -226,7 +231,7 @@ packages/
 │   ├── cordis.patch.yml          # Client Module 配置
 │   └── package.json
 │
-└── soloips-tools-pv/              # 制作工具插件
+└── tools-pv/                    # package: soloips-tools-pv，制作工具插件（S1 创建）
     ├── src/
     │   ├── index.ts
     │   └── tools/
@@ -249,7 +254,8 @@ packages/
 export interface SoloipsEntitlementRecord {
   readonly accountId: string;
   readonly planCode: 'free' | 'pro' | 'enterprise';
-  readonly companyLimit: number;        // 免费版 = 1
+  readonly companyLimit: number;        // 顶层用户公司上限：free/pro=1，enterprise=-1（无限）
+  readonly subsidiaryLimit: number;     // 子公司总数上限：free=0，pro=3，enterprise=-1（无限）
   readonly features: readonly string[];
 }
 
@@ -260,6 +266,8 @@ export interface SoloipsEntitlementRecord {
 export interface SoloipsCompanyRecord {
   readonly id: SoloipsCompanyId;
   readonly accountId: string;          // 归属账户
+  readonly parentCompanyId?: SoloipsCompanyId;  // 父公司；无则为顶层公司
+  readonly type: 'platform' | 'operation' | 'enterprise' | 'subsidiary';
   readonly name: string;
   readonly status: 'active' | 'archived';
   readonly createdAt: string;
@@ -335,7 +343,8 @@ export interface EntitlementResolver {
 
 export interface EntitlementResult {
   readonly planCode: 'free' | 'pro' | 'enterprise';
-  readonly companyLimit: number;
+  readonly companyLimit: number;        // -1 表示无限
+  readonly subsidiaryLimit: number;     // -1 表示无限
   readonly features: readonly string[];
 }
 
@@ -345,11 +354,12 @@ export interface EntitlementResult {
  */
 export class ConfigEntitlementResolver implements EntitlementResolver {
   async resolve(accountId: string): Promise<EntitlementResult> {
-    // 从 cordis.patch.yml 或环境变量读取
+    // 从 cordis.patch.yml 或环境变量读取；三层配额见 data-contract §2
     const isPro = process.env.SOLOIPS_PRO_ACCOUNTS?.includes(accountId);
     return {
       planCode: isPro ? 'pro' : 'free',
-      companyLimit: isPro ? Infinity : 1,
+      companyLimit: 1,
+      subsidiaryLimit: isPro ? 3 : 0,
       features: isPro ? ['multi_company', 'advanced_analytics'] : [],
     };
   }
@@ -795,7 +805,18 @@ export const sciFiTheme = {
 
 ---
 
-## 6. 开发里程碑
+## 6. 开发里程碑〔已取代〕
+
+> **〔已取代〕2026-09-17**：本节的阶段代号与含义（M1=Web 核心、Sonnet=3D 可视化、Opus=协作功能、M4+）与统一里程碑冲突，已被 [`docs/design/data-contract.md`](design/data-contract.md) §6.1 取代：
+>
+> | 切片 | 目标 |
+> |---|---|
+> | S0 接通 / S0 多公司基础 | 装配、受控写、同包重启 / 跨账户拒绝、配额、撤职失效 |
+> | M0.1 / M0.2 / M0.3 / M1 | Web 基础 / 订阅限制（三层配额） / 3D 基础 / 双版本联调 |
+> | M2 / M3 | **总助理** / **日志与监测** |
+> | S1 / S2 | PV 交付 / 发行反馈 |
+>
+> 下列旧阶段表仅保留为任务清单的历史参考，代号含义以 §6.1 为准；其中"阶段 2（M1）"的权益策略验收对应现行 **M0.2**，"阶段 3（Sonnet）"对应现行 **M0.3**，"阶段 4（Opus）"中的总助理服务/日志系统分别对应现行 **M2/M3**，Team 绑定对应 S0 多公司基础缺口。
 
 ### 阶段 1：基础设施（M0）
 
@@ -913,7 +934,7 @@ export const sciFiTheme = {
 
 1. **创建 soloips-web 包骨架**
    ```bash
-   mkdir -p packages/soloips-web/src/{host/controllers,client/{slots,three,stores,api},shared}
+   mkdir -p packages/web/src/{host/controllers,client/{slots,three,stores,api},shared}
    ```
 
 2. **配置 DSH Client Module**
@@ -944,7 +965,7 @@ export const sciFiTheme = {
 | 问题 | 影响 | 决策人 |
 |------|------|--------|
 | 3D 技术栈最终选择 | Three.js vs Babylon.js | 用户 |
-| 付费套餐定价 | companyLimit 具体值 | 产品 |
+| 付费套餐定价 | `companyLimit` / `subsidiaryLimit` 具体值（当前三层配额见 data-contract §2） | 产品 |
 | 自托管商业策略 | 许可证模式 | 产品 |
 
 ---

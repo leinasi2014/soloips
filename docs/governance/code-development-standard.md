@@ -26,12 +26,12 @@ pnpm run build          # 构建
 ## 2. 包结构
 
 ```
-packages/
-├── soloips-bundle/          # 装配声明，无运行时代码
-├── soloips-adapter-dsh/     # DSH 适配，无业务状态
-├── soloips-core/            # 通用业务状态包（组织结构、文档模型）
-├── soloips-web/             # 界面层
-└── soloips-tools-pv/        # 业务插件（PV 制作，用户/SoloIPS开发团队维护）
+packages/                    # 目录名不带前缀；package 名才是 soloips-*
+├── bundle/                  # soloips-bundle：装配声明，无运行时代码
+├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配，无业务状态
+├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型）
+├── web/                     # soloips-web：界面层
+└── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
 **依赖方向**：
@@ -156,20 +156,20 @@ type: `feat` | `fix` | `docs` | `test` | `refactor` | `chore`
 ## 7. 目录约定
 
 ```
-packages/soloips-bundle/
-├── package.json
+packages/bundle/
+├── package.json             # name: soloips-bundle
 ├── cordis.patch.yml
 └── tests/
 
-packages/soloips-adapter-dsh/
-├── package.json
+packages/adapter-dsh/
+├── package.json             # name: soloips-adapter-dsh
 ├── cordis.patch.yml
 ├── src/index.ts
 ├── src/contracts.ts    # 按需
 └── tests/
 
-packages/soloips-core/
-├── package.json
+packages/core/
+├── package.json             # name: soloips-core
 ├── cordis.patch.yml
 ├── src/index.ts
 ├── src/contracts.ts
@@ -177,8 +177,8 @@ packages/soloips-core/
 ├── src/works/         # 按需
 └── tests/
 
-packages/soloips-web/
-├── package.json
+packages/web/
+├── package.json             # name: soloips-web
 ├── cordis.patch.yml
 ├── src/index.ts        # Host 桥
 ├── src/client/index.ts # Client 入口
@@ -190,3 +190,4 @@ packages/soloips-web/
 | 日期 | 变更 |
 |---|---|
 | 2026-09-17 | 精简版：从原 `code-development-standard.md` 提取核心规则 |
+| 2026-09-17 | 按用户确认的产品准则统一：§2/§7 包目录名更正为实际目录（package 名为 soloips-*） |

@@ -3,6 +3,9 @@
 > 快速参考：包职责、端口映射、依赖关系、关键决策。
 > 
 > **详细设计**见 [architecture-complete.md](architecture-complete.md)
+>
+> **权威数据模型与实现状态见**：[`docs/design/data-contract.md`](design/data-contract.md)
+> （§0 逐项列出契约与当前代码的差距；本文与契约冲突时以契约为准）
 
 ## 包结构
 
@@ -130,21 +133,23 @@ SoloIPs 采用**三层公司层级**：
 
 | 端口 | 对应 DSH 能力 | 说明 |
 |---|---|---|
-| `storage` | storage-domain、storage-json | 持久化 |
+| `storage` | storage-domain、storage-json | 持久化（core 唯一消费的端口） |
 | `session` | session-persistence | 会话管理 |
 | `agents` | agent | Agent 管理 |
 | `subagents` | subagent | 子 Agent |
-| `team` | agent-team | Team 协作 |
+| `team` | agent-team | Team 协作（**fail-closed 占位，未接入**） |
 | `tools` | tools | 工具调用 |
 | `events` | events | 事件系统 |
-| `shared` | shared | 共享能力 |
+| `readiness()` | — | 端口就绪诊断（非端口） |
+
+> `ports/shared.ts` 是 adapter 内部辅助函数，**不是** facade 上的端口。
 
 ### soloips-core
 
 - 唯一**通用**业务状态包
 - 持有：**公司层级树（platform/operation/enterprise/subsidiary）**
 - 持有：**部门、团队、任职** 等组织结构
-- 持有：**文档模型（profile/avatar/soul/operating/work/ip_summary/storyboard）** 和版本管理
+- 持有：**文档模型**（当前实现 `profile`/`avatar`/`soul`/`operating`/`work`；`ip_summary`/`storyboard` 见 data-contract §0 尚未实现）和版本管理
 - **不持有**：具体业务任务的领域逻辑（如 PV 任务、镜头领取、制作工具适配）
 - **只消费** adapter 的 storage 端口
 - 对外暴露公司服务（SoloipsCoreService）
@@ -224,26 +229,29 @@ SoloIPs 采用**三层公司层级**：
 ### 公司与组织
 
 ```typescript
-// 详见 data-contract.md §2
+// 详见 data-contract.md §2（持久记录用 Soloips* 前缀）
 
-interface CompanyRecord {
-  id: CompanyId;
-  accountId: string;        // 直接归属账户（隔离条件）
+interface SoloipsCompanyRecord {
+  id: SoloipsCompanyId;
+  accountId: string;                    // 直接归属账户（隔离条件）
+  parentCompanyId?: SoloipsCompanyId;   // 父公司；无则为顶层公司
+  type: 'platform' | 'operation' | 'enterprise' | 'subsidiary';
   name: string;
   status: 'active' | 'archived';
+  createdAt: string;
 }
 
-interface DepartmentRecord {
-  id: DepartmentId;
-  companyId: CompanyId;    // 必须归属公司
+interface SoloipsDepartmentRecord {
+  id: SoloipsDepartmentId;
+  companyId: SoloipsCompanyId;    // 必须归属公司
   name: string;
-  leaderAppointmentId?: AppointmentId;  // 通过任职引用负责人
+  leaderAppointmentId?: SoloipsAppointmentId;  // 通过任职引用负责人（未实现，见 §0）
 }
 
-interface AppointmentScope {
+interface SoloipsAppointmentScope {
   kind: 'company' | 'department' | 'team';
-  companyId: CompanyId;
-  departmentId?: DepartmentId;
+  companyId: SoloipsCompanyId;
+  departmentId?: SoloipsDepartmentId;
   teamBindingId?: string;
 }
 ```
@@ -253,11 +261,12 @@ interface AppointmentScope {
 > **详细实现见**：[`docs/design/data-contract.md` §4](design/data-contract.md#4-原子配额操作)
 
 ```typescript
-// 权益快照（用于原子操作）
-interface EntitlementSnapshot {
+// 权益快照（用于原子操作；三层配额见 data-contract §2）
+interface SoloipsEntitlementSnapshot {
   accountId: string;
   planCode: 'free' | 'pro' | 'enterprise';
-  companyLimit: number | -1;  // -1 表示无限
+  companyLimit: number;        // 顶层用户公司上限；-1 表示无限
+  subsidiaryLimit: number;     // 子公司总数上限；-1 表示无限
   quotaVersion: number;        // 乐观锁版本
 }
 
@@ -319,18 +328,18 @@ class PermissionService {
 > 
 > **运营服务接口见**：[`docs/design/operation-services.md`](design/operation-services.md)（预留，后期实现）
 
-### 框架核心里程碑（S0–Opus）
+### 框架核心里程碑（S0–M3）
 
 | 阶段 | 目标 | 验收 | 负责方 |
 |---|---|---|---|
 | **S0 接通** | 插件装配、受控写入、同包重启 | 加载成功 + 受控写 + 重启读回 | SoloIPS |
 | **S0 多公司基础** | 跨账户拒绝、引用归属、撤职失效、并发配额 | 隔离测试通过 | SoloIPS |
 | **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 | SoloIPS |
-| **M0.2** | 订阅限制：免费1公司、付费多公司 | 免费用户无法创建第二公司 | SoloIPS |
+| **M0.2** | 订阅限制：三层配额生效（Free 1 公司+0 子公司；Pro 1 公司+3 子公司） | 免费用户无法创建第二公司或任一子公司 | SoloIPS |
 | **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 | SoloIPS |
 | **M1** | 双版本联调：Zustand 状态共享 | Web 操作同步到 3D 视图 | SoloIPS |
-| **Sonnet** | 总助理：AI 驱动的公司运营 | 对话总助理完成日常事务 | SoloIPS |
-| **Opus** | 日志与监测：三层层日志系统 | 能查询业务审计、执行历史 | SoloIPS |
+| **M2** | 总助理：AI 驱动的公司运营 | 对话总助理完成日常事务 | SoloIPS |
+| **M3** | 日志与监测：三层日志系统 | 能查询业务审计、执行历史 | SoloIPS |
 
 ### 平台运营里程碑（后期）
 
@@ -344,9 +353,10 @@ class PermissionService {
 | **业务插件** | PV 制作、短剧发行等业务包 | 由用户 IT / SoloIPS 开发团队交付 | 用户/SoloIPS | - |
 
 **里程碑说明**：
-- S0–Opus 是 SoloIPS 框架本身的交付
+- S0–M3 是 SoloIPS 框架本身的交付
 - 业务插件（PV 工具等）由用户 IT 团队或 SoloIPS 开发团队作为服务交付
 - 平台运营里程碑（P1–P3）在框架核心完成后实现
+- 里程碑代号 M2/M3 于 2026-09-17 由 Sonnet/Opus 更名（原代号与模型档位同名易误解）
 
 ## 关键约束
 
@@ -357,12 +367,14 @@ class PermissionService {
 3. **adapter 无业务状态**：只做 DSH 能力适配
 4. **UI 双版本共享状态**：通过 Zustand，Web/3D 自动同步
 5. **所有权限校验必须使用 await**：不能用 `||` 短路 Promise
-6. **配额操作必须原子化**：检查→递增→创建在同一事务内
-7. **accountId 来自可信上下文**：不接受外部传入的 accountId
+6. **配额操作必须原子化**：检查→递增→创建收在同一提交门内串行执行，失败回滚；不虚构跨表事务（见 data-contract §4.1）
+7. **accountId 不接受业务命令传入**：S0 由部署层经插件 config 注入并在打开 store 时绑定，一个数据根一个账户；P1 Auth 后改由 DSH Session 解析（见 data-contract §3.1 临时例外）
 
-## DSH 复用清单
+## 旧 swarm 参考映射（不作运行依赖）
 
-| dsh-agent-swarm | SoloIPs 对应 |
+> 下表仅为旧 `dsh-agent-swarm` 组件与 SoloIPs 服务的概念对照，用于需求追溯与测试经验提取；按 SOLO-TEAM-02，旧 swarm **仅作源码与测试经验参考，不作为运行依赖**，协作执行复用官方 Agent Team。
+
+| dsh-agent-swarm（参考） | SoloIPs 对应 |
 |---|---|
 | `team-captain` | `company.service` |
 | `team-member` | `department.service` |
@@ -375,3 +387,5 @@ class PermissionService {
 |---|---|---|
 | 2026-09-17 | 创建简化版架构概览 | 架构整理 |
 | 2026-09-17 | 新增 UI 双版本、总助理、日志系统 | 子智能体讨论整合 |
+| 2026-09-17 | 按用户确认的产品准则统一：M0.2 改三层配额口径；末尾"DSH 复用清单"更正为"旧 swarm 参考映射（不作运行依赖）" | 文档冲突审查 |
+| 2026-09-17 | 里程碑代号 Sonnet→M2、Opus→M3（权威定义以 data-contract §6.1 为准） | 用户裁定更名 |

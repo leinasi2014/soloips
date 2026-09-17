@@ -8,6 +8,31 @@
 
 ---
 
+## 0. 实现状态（对照代码事实，2026-09-17）
+
+> 本文档是**目标数据契约**；下表给出它与 `packages/` 当前代码的差距。
+> 「未实现」是实现目标，不代表已交付能力。文档之间冲突时以本文档为准。
+
+| 模型 / 能力 | 代码状态 | 说明 |
+|---|---|---|
+| `SoloipsCompanyRecord`（`accountId`/`parentCompanyId`/`type`/`status`） | **已实现** | `packages/core/src/contracts.ts`、`store.ts`；公司树深度上限 10 |
+| 部门 / 员工 / 任职 / 文档版本 / 操作台账 | **已实现** | 六表 domain `soloips_company` v1；写路径唯一经 `commit-gate` |
+| `SoloipsDepartmentRecord` 的 `leaderAppointmentId`/`description`/`parentDepartmentId`/`status` | **未实现** | 代码只有 `id`/`companyId`/`name` |
+| `SoloipsAppointmentRecord` 的 `scope`(判别联合) 与 `role` | **未实现** | 代码是 `employeeId` + `departmentId` + `requiredCapabilities` + `generation` |
+| 文档类型 `ip_summary` / `storyboard` | **未实现** | 代码枚举只有 `profile`/`avatar`/`soul`/`operating`/`work` |
+| `SoloipsEntitlement*` 与三层配额（§3/§4） | **未实现** | 目标设计；S0 不校验配额 |
+| `SoloipsAuthContext` / `SoloipsPermissionService` | **未实现** | S0 用部署账户绑定替代，见 §3.1 临时例外 |
+| `SoloipsTeamBindingRecord`（及独立 `Team` 实体） | **未实现** | adapter 的 `team` 端口是 fail-closed 占位；任务/attempt 状态归官方 Team |
+| `SoloipsExecutionBindingRecord` | **未实现** | 撤职使执行失效的验收因此尚未覆盖 |
+| `SoloipsAuditRecord` | **未实现** | 审计落库属 M3 里程碑 |
+| 跨账户拒绝 / 并发配额 / 多租户隔离验收 | **未实现** | 属「S0 多公司基础」，尚未通过 |
+
+- 术语以本文档为准：持久记录一律用 `Soloips*` 前缀（如 `SoloipsCompanyRecord`），
+  架构概览里的短名（`CompanyRecord`）只是示意。
+- 与 `multi-company-organization.md` / `multi-company-implementation.md` 的冲突已由本文档取代（见文档注册表）。
+
+---
+
 ## 1. 冲突分析与解决
 
 ### 1.1 原有两套模型对比
@@ -44,18 +69,34 @@ type SoloipsCoreId<T extends string> = string & { readonly __brand: T };
 // =====================
 
 /**
- * 账户权益（免费版限制）
+ * 账户权益（三层配额）
  * 账户是 SoloIPs 的顶层归属单位
  */
 export interface SoloipsEntitlementRecord {
   readonly id: SoloipsEntitlementId;
   readonly accountId: string;              // 账户 ID（DSH session 绑定）
   readonly planCode: 'free' | 'pro' | 'enterprise';
-  readonly companyLimit: number;            // 免费版 = 1，pro = 3，enterprise = Infinity
+  readonly companyLimit: number;            // 顶层用户公司数上限；-1 = 无限制
+  readonly subsidiaryLimit: number;         // 子公司总数上限；-1 = 无限制
   readonly features: readonly string[];
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+```
+
+**三层配额表（权威；SOLO-COMPANY-01）**：
+
+| planCode | companyLimit | subsidiaryLimit |
+|---|---|---|
+| `free` | 1 | 0 |
+| `pro` | 1 | 3 |
+| `enterprise` | -1（无限制） | -1（无限制） |
+
+- 配额只统计**用户持有**的公司：`enterprise`（顶层用户公司）计入 `companyLimit`，`subsidiary`（用户子公司）计入 `subsidiaryLimit`。
+- `platform` / `operation`（SoloIPS 官方平台与运营子公司）**不占用户配额**。
+- 统一用 `-1` 表示无限制；**不使用 `Infinity`**（`Infinity` 无法 JSON 持久化，会静默变成 `null`）。
+
+```typescript
 
 export type SoloipsEntitlementId = SoloipsCoreId<'entitlement'>;
 
@@ -144,11 +185,27 @@ export interface SoloipsAppointmentRecord {
 export type SoloipsAppointmentId = SoloipsCoreId<'appointment'>;
 
 /**
+ * 团队（SoloIPs 业务层团队实体）
+ * Team 承担工作协作的身份；实际执行经 TeamBinding 对接 DSH Team
+ */
+export interface SoloipsTeamRecord {
+  readonly id: SoloipsTeamId;
+  readonly companyId: SoloipsCompanyId;
+  readonly departmentId?: SoloipsDepartmentId;  // 可选归属部门
+  readonly name: string;
+  readonly status: 'active' | 'archived';
+  readonly createdAt: string;
+}
+
+export type SoloipsTeamId = SoloipsCoreId<'team'>;
+
+/**
  * 团队绑定（SoloIPs Team → DSH Team）
  * SoloIPs 的团队概念通过 DSH Team 执行
  */
 export interface SoloipsTeamBindingRecord {
   readonly id: SoloipsTeamBindingId;
+  readonly teamId: SoloipsTeamId;              // 绑定的 SoloIPs 团队
   readonly companyId: SoloipsCompanyId;
   readonly departmentId?: SoloipsDepartmentId;  // 可选归属部门
   readonly name: string;
@@ -207,7 +264,8 @@ export type SoloipsEmployeeId = SoloipsCoreId<'employee'>;
 export interface SoloipsEntitlementSnapshot {
   readonly accountId: string;
   readonly planCode: 'free' | 'pro' | 'enterprise';
-  readonly companyLimit: number | -1;         // -1 表示无限
+  readonly companyLimit: number;              // -1 表示无限
+  readonly subsidiaryLimit: number;           // -1 表示无限
   readonly quotaVersion: number;              // 配额版本，用于乐观锁
   readonly expiresAt?: string;
 }
@@ -247,6 +305,24 @@ export interface SoloipsAuthContext {
   readonly executionBinding?: SoloipsExecutionBindingRecord;
   readonly sessionId: string;
 }
+```
+
+**〔约束〕S0 过渡例外：accountId 的临时绑定（2026-09-17 用户批准）**
+
+契约目标仍是「accountId 来自 DSH Session」。但 S0 尚未接入认证（P1 Auth 属后期里程碑），
+adapter 的 session 端口只有会话持久化、没有账户身份面，core 也没有任何可信账户来源。
+因此本阶段采用以下**受限临时决定**，并在 S0 验收中**不得**声称已满足多租户隔离：
+
+| 项 | S0 临时做法 | P1 Auth 的目标做法 |
+|---|---|---|
+| 来源 | 部署层经插件 config 注入（`accountId` 字段），Host 打开 store 时绑定 | DSH Session → 账户映射 |
+| 信任依据 | **部署配置的控制权 + Host 内部调用边界**，不是字符串校验 | 宿主签发的会话身份 |
+| 基数 | 一个业务存储根**只绑定一个账户**；数据根内出现其他账户的公司记录即拒绝打开（`SOLOIPS_CORE_ACCOUNT_MISMATCH`） | 多账户共享数据面时按账户隔离 |
+| 命令面 | 业务命令、UI、模型**不得**逐次传入或覆盖 accountId | 每命令携带由 Session 派生的 `SoloipsAuthContext` |
+
+- 平台公司（`platform`）/ 运营子公司（`operation`）的官方账户初始化**不在 S0 范围**，且不自动归属部署账户。
+- 存量占位数据（旧 `"seed"` 账户写下的记录）**不认领、不自动改归**部署账户；换绑后旧操作不得重放。
+
 
 /**
  * 权限校验结果
@@ -306,19 +382,21 @@ export class SoloipsPermissionService {
     ctx: SoloipsAuthContext,
     action: SoloipsAction,
     resource: { type: string; id: string; companyId: SoloipsCompanyId },
+    companyType?: SoloipsCompanyType,
   ): Promise<SoloipsPermissionResult> {
-    // 1. 先校验公司归属
+    // 1. 创建公司时目标公司尚不存在：不做归属校验，只校验配额。
+    if (action === 'company:create') {
+      return this.checkQuota(ctx, companyType ?? 'enterprise');
+    }
+
+    // 2. 其余操作先校验公司归属
     const companyAccess = await this.checkCompanyAccess(ctx, resource.companyId);
     if (!companyAccess.allowed) {
       return companyAccess;
     }
 
-    // 2. 校验具体操作权限
+    // 3. 校验具体操作权限
     switch (action) {
-      case 'company:create':
-        // 检查配额
-        return this.checkQuota(ctx);
-
       case 'department:create':
       case 'department:update':
         // 需要部门级或更高级任职
@@ -353,12 +431,10 @@ export class SoloipsPermissionService {
       },
     });
 
-    // 找到匹配公司的任职
+    // 找到匹配公司的任职（三种作用域都携带 companyId；不能只认公司级任职，
+    // 否则部门级/团队级任职永远无法通过校验）
     const validAppointment = appointments.find((apt) => {
-      if (apt.scope.kind === 'company' && apt.scope.companyId === companyId) {
-        return allowedRoles.includes(apt.role);
-      }
-      return false;
+      return apt.scope.companyId === companyId && allowedRoles.includes(apt.role);
     });
 
     if (!validAppointment) {
@@ -375,26 +451,35 @@ export class SoloipsPermissionService {
   }
 
   /**
-   * 校验配额（原子操作）
+   * 校验配额（只读预检；真正的原子扣减见 §4）
+   *
+   * 三层配额：enterprise 计 companyLimit，subsidiary 计 subsidiaryLimit；
+   * platform / operation（官方公司）不占用户配额。
    */
   private async checkQuota(
     ctx: SoloipsAuthContext,
+    type: SoloipsCompanyType,
   ): Promise<SoloipsPermissionResult> {
+    // 官方公司不受用户配额限制
+    if (type === 'platform' || type === 'operation') {
+      return { allowed: true, context: ctx };
+    }
+
     // 获取权益快照
     const snapshot = await this.entitlements.resolve(ctx.accountId);
-    
-    // 统计当前公司数
+
+    // 统计当前账户下同类型公司数
     const companies = await this.domain.table('company').scan({
-      filter: { accountId: ctx.accountId, status: 'active' },
+      filter: { accountId: ctx.accountId, type, status: 'active' },
     });
 
     const currentCount = companies.length;
-    const limit = snapshot.companyLimit;
+    const limit = type === 'subsidiary' ? snapshot.subsidiaryLimit : snapshot.companyLimit;
 
     if (limit !== -1 && currentCount >= limit) {
-      return { 
-        allowed: false, 
-        reason: `company_limit_exceeded: current=${currentCount}, limit=${limit}` 
+      return {
+        allowed: false,
+        reason: `${type}_limit_exceeded: current=${currentCount}, limit=${limit}`,
       };
     }
 
@@ -411,16 +496,25 @@ export class SoloipsPermissionService {
 
 **原问题**：先 `canCreate()` 检查，后 `gate.commit()` 创建，并发时可能超限。
 
-**解决方案**：在同一事务内完成「检查 → 原子递增 → 创建」。
+**解决方案**：把「配额预检 → 原子递增 → 创建公司」收在**同一个提交门**内串行执行，任一失败即回滚配额。
+
+**〔约束〕不虚构跨表事务**：DSH storage 的多条写**不构成**跨表事务（CE-G / DEV-08）。
+因此一致性由三件事共同保证，而不是靠一个数据库事务：
+
+1. **进程内串行**：同一 store 实例的提交门串行化（`commit-gate` 的请求链）。
+2. **跨进程互斥**：由 storage 的 writer lease 承担；每次持久发布前重新 `assertHeld`。
+3. **崩溃恢复**：崩溃在「递增成功、公司未落」之间时，按未决 operationId 核对并回滚配额；
+   不按文件年龄擅自清锁，也不把未决操作当作成功。
 
 ### 4.2 实现
 
 ```typescript
 /**
  * 配额计数器（用于原子操作）
+ * 三层配额下按 resourceType 分开计数：'company'（顶层用户公司）/ 'subsidiary'（子公司）
  */
 export interface SoloipsQuotaCounter {
-  readonly resourceType: 'company';
+  readonly resourceType: 'company' | 'subsidiary';
   readonly accountId: string;
   readonly currentCount: number;
   readonly quotaVersion: number;
@@ -428,7 +522,7 @@ export interface SoloipsQuotaCounter {
 
 /**
  * 创建公司（原子操作）
- * 在同一事务内完成：检查配额 → 原子递增 → 创建公司
+ * 在同一提交门内完成：选择配额 → 原子递增 → 创建公司（失败回滚）
  */
 export class SoloipsCompanyService {
   constructor(
@@ -438,20 +532,36 @@ export class SoloipsCompanyService {
 
   /**
    * 原子创建公司
-   * 使用乐观锁确保并发安全
+   * 使用乐观锁确保并发安全；平台/运营公司不占用户配额
    */
   async createCompany(
     ctx: SoloipsAuthContext,
     name: string,
+    type: SoloipsCompanyType = 'enterprise',
+    parentCompanyId?: SoloipsCompanyId,
   ): Promise<{ success: true; company: SoloipsCompanyRecord } | { success: false; reason: string }> {
-    // 1. 获取权益快照（包含版本号）
+    // 0. 层级校验：子公司必须有父公司，且父公司同账户
+    if (type === 'subsidiary') {
+      if (parentCompanyId === undefined) {
+        return { success: false, reason: 'subsidiary_requires_parent' };
+      }
+      const parent = await this.domain.table('company').get(parentCompanyId);
+      if (!parent) return { success: false, reason: 'parent_not_found' };
+      if (parent.accountId !== ctx.accountId) {
+        return { success: false, reason: 'parent_account_mismatch' };
+      }
+    }
+
+    // 1. 获取权益快照（包含版本号）；官方公司不占配额
+    const countsAgainstQuota = type === 'enterprise' || type === 'subsidiary';
     const snapshot = await this.entitlements.resolve(ctx.accountId);
-    const limit = snapshot.companyLimit;
+    const resourceType: 'company' | 'subsidiary' = type === 'subsidiary' ? 'subsidiary' : 'company';
+    const limit = resourceType === 'subsidiary' ? snapshot.subsidiaryLimit : snapshot.companyLimit;
 
     // 2. 原子递增配额（如果失败说明超限）
-    if (limit !== -1) {
+    if (countsAgainstQuota && limit !== -1) {
       const incrementResult = await this.atomicIncrement(
-        'company',
+        resourceType,
         ctx.accountId,
         snapshot.quotaVersion,
         limit,
@@ -460,15 +570,17 @@ export class SoloipsCompanyService {
       if (!incrementResult.success) {
         return {
           success: false,
-          reason: `company_limit_exceeded: current=${incrementResult.currentCount}, limit=${limit}`,
+          reason: `${resourceType}_limit_exceeded: current=${incrementResult.currentCount}, limit=${limit}`,
         };
       }
     }
 
-    // 3. 创建公司记录
+    // 3. 创建公司记录（type 与 parentCompanyId 必须落库，否则与 §2 数据模型不一致）
     const company: SoloipsCompanyRecord = {
       id: this.generateId('company'),
       accountId: ctx.accountId,
+      type,
+      ...(parentCompanyId === undefined ? {} : { parentCompanyId }),
       name,
       status: 'active',
       createdAt: new Date().toISOString(),
@@ -488,14 +600,14 @@ export class SoloipsCompanyService {
         resourceType: 'company',
         resourceId: company.id,
         outcome: 'success',
-        details: { name },
+        details: { name, type },
       });
 
       return { success: true, company };
     } catch (error) {
-      // 4. 失败时回滚配额
-      if (limit !== -1) {
-        await this.atomicDecrement('company', ctx.accountId);
+      // 6. 失败时回滚配额（崩溃窗口由未决意图恢复核对兜底，见 §4.1）
+      if (countsAgainstQuota && limit !== -1) {
+        await this.atomicDecrement(resourceType, ctx.accountId);
       }
       throw error;
     }
@@ -505,7 +617,7 @@ export class SoloipsCompanyService {
    * 原子递增配额（使用乐观锁）
    */
   private async atomicIncrement(
-    resourceType: 'company',
+    resourceType: 'company' | 'subsidiary',
     accountId: string,
     expectedVersion: number,
     limit: number,
@@ -555,7 +667,7 @@ export class SoloipsCompanyService {
    * 原子递减配额（用于回滚）
    */
   private async atomicDecrement(
-    resourceType: 'company',
+    resourceType: 'company' | 'subsidiary',
     accountId: string,
   ): Promise<void> {
     const counterKey = `quota:${resourceType}:${accountId}`;
@@ -598,12 +710,17 @@ const soloipsDomainSpec = defineDomain({
 
 export { soloipsDomainSpec };
 
-// 在运行时打开 domain
-export function apply(ctx: Context, config: Config): void {
+// 在运行时打开 domain（apply 必须 async：内部有 await）
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const domain = await ctx.storageDomain.open(soloipsDomainSpec);
   // 使用 domain...
 }
 ```
+
+**〔约束〕SoloIPs core 不走 `ctx.storageDomain`**：core 只消费 adapter 的
+`SoloipsStoragePort`（租约先行 → 同一 canonical root 建栈 → 显式 facility → `facility.open(spec)`），
+契约中不存在 `ctx.storageDomain` 回退（SOLO-FENCE-01 / SEAM-X1）。上面的 `ctx.storageDomain`
+示例只说明 DSH 官方 API 形状，不代表本项目的写路径。
 
 ### 5.2 Client Plugin 正确用法
 
@@ -649,11 +766,11 @@ export function register(client: ClientModules): void {
 | **S0 接通** | 插件装配、受控写入、同包重启 | 加载成功 + 受控写 + 重启读回 |
 | **S0 多公司基础** | 跨账户拒绝、引用归属、撤职失效、并发配额 | 隔离测试通过 |
 | **M0.1 Web 基础** | 公司/部门/团队 CRUD | 创建公司成功 |
-| **M0.2 订阅限制** | 免费1公司、付费多公司 | 免费用户无法创建第二公司 |
+| **M0.2 订阅限制** | 三层配额生效（Free 1 公司 + 0 子公司；Pro 1 公司 + 3 子公司） | 免费用户无法创建第二公司或任一子公司 |
 | **M0.3 3D 基础** | 场景搭建 | 能渲染公司结构 |
 | **M1 双版本联调** | Web ↔ 3D 状态同步 | 操作同步 |
-| **Sonnet 总助理** | AI 驱动运营 | 对话完成日常事务 |
-| **Opus 日志监测** | 三层日志 | 能查询审计记录 |
+| **M2 总助理** | AI 驱动运营 | 对话完成日常事务 |
+| **M3 日志监测** | 三层日志 | 能查询审计记录 |
 
 ---
 
@@ -666,3 +783,8 @@ export function register(client: ClientModules): void {
 | 2026-09-17 | 总助理改为公司级任职 | 复用现有任职机制 |
 | 2026-09-17 | 添加原子配额操作 | 解决并发超限问题 |
 | 2026-09-17 | 修正 DSH 接口示例 | 与官方文档对齐 |
+| 2026-09-17 | 配额改三层模型（companyLimit + subsidiaryLimit），统一用 -1 表示无限 | 用户裁定沿用三层配额；`Infinity` 无法 JSON 持久化 |
+| 2026-09-17 | 新增 §0 实现状态表 | 契约与代码差距需要显式化 |
+| 2026-09-17 | 添加 §3.1 S0 临时账户绑定例外 | 批准部署层注入 accountId；P1 Auth 前不得声称多租户隔离 |
+| 2026-09-17 | 修正 createCompany（补 `type`/`parentCompanyId`）、任职作用域判定、`apply` 的 async、跨表事务表述 | 消除契约内部自相矛盾 |
+| 2026-09-17 | 里程碑代号 Sonnet→M2（总助理）、Opus→M3（日志监测） | 用户裁定：原代号借用模型档位名、与里程碑内容无关，易致多套含义漂移 |

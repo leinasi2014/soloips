@@ -16,22 +16,24 @@
 
 | 包 | 状态 | 核心内容 | 缺口 |
 |---|---|---|---|
-| `soloips-adapter-dsh` | 契约定义 | 8 个端口契约（agents, events, session, storage, team, tools 等） | **Team 端口是 fail-closed 占位**；agents/subagents 端口未实现 |
-| `soloips-core` | Schema 定义 | 6 张表 schema（company, department, employee, appointment, document_version, operation） | **无 CRUD 实现**；无 opener 实现；无 operation 台账逻辑 |
-| `soloips-bundle` | 装配声明 | cordis.patch.yml 骨架 | **无实际 patch 顺序逻辑**；无依赖解析 |
-| `soloips-web` | **新：UI 双版本设计** | Web（React+Zustand）+ 3D（R3F+Three.js） | **无实现代码** |
+| `soloips-adapter-dsh` | 已实现 | 7 个端口（storage/session/agents/subagents/tools/events + team） | **Team 端口是 fail-closed 占位** |
+| `soloips-core` | 已实现 | 6 张表 schema + CRUD、唯一 opener、提交门、入职/准入判定 | **无配额/权限/Team/执行绑定**；公司树分支缺测试 |
+| `soloips-bundle` | 装配声明 | cordis.patch.yml（关闭 llm-retry / otel 遥测） | 无运行时逻辑（符合设计） |
+| `soloips-web` | **包边界骨架** | 仅 `export {}` 与装配行，`registerClient: false` | **无 UI 实现代码**（React/Zustand/3D 均为设计） |
 | `soloips-tools-pv` | 未创建 | — | **S1 里程碑交付物** |
+
+> 更细的契约 vs 代码差距见 `docs/design/data-contract.md` §0。
 
 ### 1.2 与目标架构的差距
 
 | 差距项 | 影响 | 优先级 |
 |---|---|---|
-| Team 端口未实现 | 核心协作能力缺失，S0 无法交付 | **P0** |
-| core CRUD 未实现 | 业务状态无写权威，adapter 无调用目标 | **P0** |
-| 无隔离机制 | 多智能体并行开发可能互相干扰 | P1 |
-| CI 门禁不完整 | verify 命令无实现，PR 无法自动验证 | **P1** |
-| 无真实浏览器测试 | 无法验证用户可见路径 | P2 |
+| Team 端口未实现（fail-closed） | 核心协作能力缺失，S0 多公司基础未交付 | **P0** |
+| 配额/权限/执行绑定未实现 | 多租户隔离未验收（S0 只有部署账户绑定 + 数据根归属核对） | **P0** |
+| `verify:engineering` / CI 门禁未实现 | `pnpm verify` 只跑 S0 脚本，PR 无自动门禁 | **P1** |
+| 公司树分支（type/parent/深度上限）缺测试 | 无回归保护 | P1 |
 | web 无实现 | 无法展示 IP 业务状态 | P2 |
+| 无真实浏览器测试 | 无法验证用户可见路径 | P2 |
 
 ### 1.3 可复用的 dsh-agent-swarm 资产
 
@@ -66,11 +68,11 @@ Team 端口实现 ──┬── core CRUD 实现
 |---|---|---|---|---|
 | M0 | 基础就绪 | 依赖锁定、CI 门禁、隔离机制 | `pnpm verify` 通过；可构建 | 1-2 周 |
 | **M0.1** | **Web 版基础** | **公司/部门/团队 CRUD、Zustand store** | **能在 DSH Web 中创建公司** | — |
-| **M0.2** | **订阅限制** | **权益策略接口、免费1公司限制** | **免费用户无法创建第二公司** | — |
+| **M0.2** | **订阅限制** | **权益策略接口、三层配额（Free 1 公司+0 子公司；Pro 1 公司+3 子公司）** | **免费用户无法创建第二公司或任一子公司** | — |
 | **M0.3** | **3D 版基础** | **场景搭建、部门/团队可视化** | **3D 场景能渲染公司结构** | — |
 | **M1** | **双版本联调** | **Zustand 状态共享、Web↔3D 同步** | **Web 操作同步到 3D 视图** | — |
-| **Sonnet** | **总助理** | **AI 驱动的公司运营** | **对话总助理完成日常事务** | — |
-| **Opus** | **日志与监测** | **三层层日志系统** | **能查询业务审计、执行历史** | — |
+| **M2** | **总助理** | **AI 驱动的公司运营** | **对话总助理完成日常事务** | — |
+| **M3** | **日志与监测** | **三层日志系统** | **能查询业务审计、执行历史** | — |
 
 ### 平台运营里程碑（后期）
 
@@ -85,7 +87,7 @@ Team 端口实现 ──┬── core CRUD 实现
 | **P3 Invoice** | 发票服务 | 申请/管理 | 用户可申请电子发票 | P3 |
 
 **里程碑说明**：
-- M0–Opus 是 SoloIPS 框架本身的交付
+- M0–M3 是 SoloIPS 框架本身的交付
 - 平台运营里程碑（P1–P3）在框架核心完成后实现
 - 业务插件（PV 工具等）由用户 IT 团队或 SoloIPS 开发团队交付
 
@@ -97,7 +99,7 @@ Team 端口实现 ──┬── core CRUD 实现
 
 #### M0.2：订阅限制
 
-**目标**：免费版只能创建 1 个公司，付费版可创建多个。
+**目标**：三层配额生效——免费版 1 个顶层公司且不能创建子公司；Pro 1 个顶层公司 + 最多 3 个子公司；Enterprise 不限（权威口径见 `docs/design/data-contract.md` §2/§6.1）。
 
 #### M0.3：3D 版基础
 
@@ -109,7 +111,9 @@ Team 端口实现 ──┬── core CRUD 实现
 
 > **注意**：M0.1-M1 可与 M0 并行开发，独立验收。
 
-### 原有里程碑（保持）
+### 原有里程碑（〔已取代〕）
+
+> **〔已取代〕2026-09-17**：本节及下文 §2.2–2.4 的里程碑定义（M1=单员工闭环、Sonnet=部门协作、Opus=完整框架）已被 [`docs/design/data-contract.md`](../design/data-contract.md) §6.1 取代（M1=双版本联调、M2=总助理、M3=日志与监测；S1=PV 交付、S2=发行反馈为独立切片）。下列内容仅保留为历史任务分解参考，不再作为里程碑口径；其中 §2.3 的"任务状态机"表述同时违背"不建第二套任务状态机"的协作路线（SOLO-TEAM-03），不得据此实现。
 
 | 里程碑 | 目标 | 交付物 | 验收标准 |
 |---|---|---|---|
@@ -134,7 +138,7 @@ Team 端口实现 ──┬── core CRUD 实现
 
 3. **隔离机制**（简化版）
    - `.git/hooks/` 预提交检查
-   - `docs/governance/document-registry.yaml` 文档登记
+   - `docs/governance/document-registry.md` 文档登记
 
 #### 验收标准
 
@@ -152,7 +156,9 @@ Team 端口实现 ──┬── core CRUD 实现
 | T0.4 冻结 OFFICIAL_BASELINE | T0.1 | agent |
 | T0.5 完善 document-registry | T0.1 | agent |
 
-### 2.2 M1：单员工闭环
+### 2.2 M1：单员工闭环〔已取代〕
+
+> **〔已取代〕** 本节为旧 M1 定义的任务分解，里程碑口径以 data-contract §6.1 为准（M1=双版本联调）。本节保留为 core CRUD 任务分解的历史参考；其中 core CRUD 已实现（见 §1.1），未竟事项并入 S0 多公司基础缺口。
 
 **目标**：SoloIPs 可运行的最简形态——一个公司、一个部门、一名员工，可持久化。
 
@@ -193,7 +199,9 @@ Team 端口实现 ──┬── core CRUD 实现
 | T1.7 Host onboarding 流程 | T1.6 | — |
 | T1.8 恢复测试 | T1.7 | — |
 
-### 2.3 Sonnet：部门协作
+### 2.3 Sonnet：部门协作〔已取代〕
+
+> **〔已取代〕** 本节为旧 Sonnet 定义；现行口径 M2=总助理（data-contract §6.1）。本节内容保留为 Team 端口适配的历史参考。**特别注意**：下文"任务状态机"（交付物 2 及 T2.2）违背协作路线——任务/attempt 状态归官方 Agent Team，core 只做准入，不建第二套任务状态机（SOLO-TEAM-03、architecture.md §3）；Team 端口实现应以官方 Team 原生任务为准。
 
 **目标**：Team 端口实现，部门内多员工可协作完成有依赖的任务。
 
@@ -230,7 +238,9 @@ Team 端口实现 ──┬── core CRUD 实现
 | T2.5 bundle 装配逻辑完善 | M1 | — |
 | T2.6 协作测试 | T2.4, T2.5 | — |
 
-### 2.4 Opus：完整框架
+### 2.4 Opus：完整框架〔已取代〕
+
+> **〔已取代〕** 本节为旧 Opus 定义；现行口径 M3=日志与监测（data-contract §6.1）。下文交付物中的 tools-pv 属 **S1（PV 交付）**、发行反馈属 **S2（发行反馈）**，均为独立切片，不再并入某一框架里程碑。
 
 **目标**：全部 5 包就绪，可交付首个 PV 作品。
 
@@ -338,7 +348,7 @@ jobs:
 - 自我 review 完成
 - 无未解决的 blocking comments
 
-**Sonnet+ 阶段（多智能体）**：
+**M2+ 阶段（多智能体，指进入 M2 里程碑及以后的多人/多智能体协作期）**：
 - CI 通过
 - 至少 1 个非作者 approval
 - 无 blocking comments
@@ -374,9 +384,8 @@ jobs:
 | 阶段 | 可并行任务组 | 依赖关系 |
 |---|---|---|
 | M0 | T0.2 CI 配置、T0.4 基线冻结 | T0.1 完成后 |
-| M1 | T1.2 CRUD (公司/部门)、T1.3 CRUD (员工/文档) | T1.1 完成后可并行 |
-| M1 | T1.5 agents 端口、T1.6 session 端口 | T1.2/T1.3 完成后可并行 |
-| Sonnet | T2.2 任务状态机、T2.3 消息路由 | T2.1 完成后可并行 |
+| S0 多公司基础 | agents/session 端口核对、配额/权限/执行绑定补齐 | core CRUD 已完成 |
+| M2（总助理） | 总助理任职初始化、事件触发链 | S0 多公司基础完成后 |
 
 ### 4.3 子智能体角色定义
 
@@ -474,12 +483,13 @@ jobs:
 | 文档 | 路径 | 用途 | 更新时机 | 负责人 |
 |---|---|---|---|---|
 | 项目绑定 | `docs/governance/project-binding.yaml` | 权威治理契约 | 架构变更时 | governance-owner |
-| 文档登记 | `docs/governance/document-registry.yaml` | 文档路径与角色 | 新增文档时 | governance-owner |
+| 文档登记 | `docs/governance/document-registry.md` | 文档路径与角色 | 新增文档时 | governance-owner |
 | 代码规范 | `docs/governance/code-development-standard.md` | 编码要求 | 规范变更时 | engineering-owner |
 | **架构概览** | `docs/architecture-summary.md` | **快速参考：包职责、关键决策、里程碑** | 架构更新时 | architecture-owner |
 | **完整架构设计** | `docs/architecture-complete.md` | **UI双版本、多公司模型、总助理、日志系统** | 重大设计变更时 | architecture-owner |
-| **多公司架构** | `docs/design/multi-company-organization.md` | **多租户数据模型、权限体系、订阅限制** | 设计变更时 | architecture-owner |
-| **多公司实现** | `docs/design/multi-company-implementation.md` | **技术实现指南、核心接口、权益策略** | 实现时 | architecture-owner |
+| **权威数据契约** | `docs/design/data-contract.md` | **唯一权威数据模型、三层配额、实现状态** | 数据模型变更时 | architecture-owner |
+| **多公司架构** | `docs/design/multi-company-organization.md` | 〔已取代〕历史稿 | — | architecture-owner |
+| **多公司实现** | `docs/design/multi-company-implementation.md` | 〔已取代〕历史稿 | — | architecture-owner |
 | **弊端与优化** | `docs/design/tradeoffs-and-optimizations.md` | **每个设计的潜在弊端+优化方案** | 设计时 | architecture-owner |
 | 技术架构 | `docs/technical-architecture.md` | 包边界与技术决策 | 技术决策时 | architecture-owner |
 | 环境交接 | `docs/operations/environment-handoff.md` | 本机路径与命令 | 环境变化时 | operations-owner |
@@ -588,8 +598,17 @@ M0 完成后，且：
 
 | 术语 | 定义 |
 |---|---|
-| M0/M1/Sonnet/Opus | 里程碑代号，M0=基础就绪，M1=单员工闭环 |
+| M0/M1/M2/M3 | 里程碑代号（权威定义见 data-contract §6.1），M0=基础就绪，M1=双版本联调，M2=总助理，M3=日志与监测；曾用代号 Sonnet/Opus 已于 2026-09-17 更名（原代号借用模型档位名、与内容无关，易致多套含义漂移） |
 | verify:engineering | 完整工程验证命令（format/lint/typecheck/test/build） |
 | fail-closed | 服务不可用时默认拒绝访问，而非返回错误数据 |
 | cordis.patch.yml | Cordis 框架的装配配置文件 |
 | OFFICIAL_BASELINE | 锁定运行时依赖组合的基准 |
+
+---
+
+## 变更历史
+
+| 日期 | 变更 |
+|---|---|
+| 2026-09-17 | 按用户确认的产品准则统一：「原有里程碑」及 §2.2–2.4 标〔已取代〕（里程碑权威定义归 data-contract §6.1）；M0.2 改三层配额口径；§4.2 并行任务表去除旧代号与"任务状态机"；术语表同步 |
+| 2026-09-17 | 里程碑代号 Sonnet→M2、Opus→M3（含 §3.4 合并时机、§4.2 并行任务表、术语表）；原代号与模型档位同名易误解，用户裁定更名 |

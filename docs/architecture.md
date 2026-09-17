@@ -8,7 +8,7 @@
 | 决策状态 | 〔需求〕沿用各节用户来源；ARCH-D01–07 是用户 2026-09-16 委托“你来给我决定”后的技术裁定，正文只在技术架构维护 |
 | 证据范围 | 本文含需求与历史源码观察，不提供产品运行验收；证据基线见 §9 与技术架构附录 B |
 | 交付状态 | 产品交付仍为〔提案〕；正式技术设计不自动授权实现或变更服务 |
-| 依据 | [产品想法 V0.4](SoloIPs_Studio_Idea_Document_V0.4.md)、[项目绑定](governance/project-binding.yaml)、[注册表](governance/document-registry.yaml)、[技术架构](technical-architecture.md)及各节需求来源 |
+| 依据 | [产品想法 V0.4](SoloIPs_Studio_Idea_Document_V0.4.md)、[项目绑定](governance/project-binding.yaml)、[注册表](governance/document-registry.md)、[技术架构](technical-architecture.md)及各节需求来源 |
 | 变更权 | 用户决定产品目标与最终验收；技术决定按明确委托范围维护，文档身份与负责人复用注册表 |
 
 ## 1. 先确定真正交付什么
@@ -196,6 +196,8 @@ S0/S1 优先处理恢复、准入、API 停线、待回答入口、成果保存�
 | 独立 QA | `global:deepseek-v4.1-flash`、`global:hy4-preview` |
 
 `global:hy4-preview` 与 `cn:hy4-preview` 均要求默认开启思考、使用 `high`。国内 HY4 的加入属于可用模型配置补齐，不自动替换上表已指定的国际 HY4 席位。DeepSeek 两路保留 `off / low / high / max` 选项；PTC 与 RLM 沿用已确认的要求。文档团队的交付是收敛后的需求、技术边界与可验证的开发任务，产品代码实现另行开展。
+
+> **范围说明**：本表是**文档团队**（需求收敛）配置；**开发团队**（代码实现）的多智能体模型与派工配置见 [多智能体开发规范](governance/multi-agent-development.md)，两者范围不同，不互相覆盖。
 
 ## 9. 来源与剩余决定
 

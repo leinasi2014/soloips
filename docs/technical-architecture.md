@@ -28,12 +28,12 @@
 ## 包结构
 
 ```
-packages/
-├── soloips-bundle/          # 装配声明
-├── soloips-adapter-dsh/    # DSH 适配（8 端口）
-├── soloips-core/            # 通用业务状态包（组织结构、文档模型）
-├── soloips-web/             # 可替换界面层（Web + 3D 双版本）
-└── soloips-tools-pv/        # 业务插件（PV 制作，用户/SoloIPS开发团队维护）
+packages/                    # 目录名不带前缀；package 名才是 soloips-*
+├── bundle/                  # soloips-bundle：装配声明
+├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配（7 端口，team 为 fail-closed 占位）
+├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型）
+├── web/                     # soloips-web：可替换界面层（Web + 3D 双版本）
+└── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
 详细：见 [packages.md](technical/packages.md)
@@ -94,3 +94,4 @@ S0 验收目标：
 | 日期 | 变更 |
 |---|---|
 | 2026-09-17 | 拆分模块化文档结构 |
+| 2026-09-17 | 按用户确认的产品准则统一：包结构图改为实际目录名；adapter 端口数更正为 7（shared.ts 非端口） |
