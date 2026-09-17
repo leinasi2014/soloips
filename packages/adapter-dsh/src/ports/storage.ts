@@ -46,6 +46,7 @@ import {
 } from "../contracts.js";
 import { mapHostError } from "./shared.js";
 import { SqliteStorageBackend } from "./storage-sqlite.js";
+import type { StorageBackend } from "@deepseek-ai/dsh-storage";
 
 /** 租约文件名（置于数据根下；锁文件是其 `.lock` 兄弟）。 */
 const LEASE_FILE_NAME = ".soloips-writer-lease.json";
@@ -381,7 +382,7 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
       const registryName = `soloips-${backend}-${createHash("sha256").update(root).digest("hex").slice(0, 16)}`;
 
       // 根据 backend 类型创建对应的存储后端
-      let backendInstance: JsonStorageBackend | SqliteStorageBackend;
+      let backendInstance: StorageBackend;
       if (backend === "sqlite") {
         backendInstance = new SqliteStorageBackend(root);
       } else {
