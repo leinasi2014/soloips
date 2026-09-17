@@ -280,13 +280,53 @@ DSH 会话（系统助理 agent）
 | --- | --- | --- | --- | --- |
 | **BE-1 账户绑定落地** | core config 增 `accountId`（必填、绝对注入）；打开时校验数据根内公司记录同账户，否则 fail-closed；新增稳定码 `SOLOIPS_CORE_ACCOUNT_MISMATCH`；`createCompany` 写入真实 `accountId`（去掉 `"seed"`） | core | ① 缺 `accountId` 不发布服务；② 公司记录 `accountId` = 注入值；③ 数据根内出现异账户公司记录时打开被拒（无服务发布）；④ 单测覆盖三条 | — |
 | **BE-2 任职 scope/role 与部长链** | `appointment` 增 `scope`（判别联合）与 `role`；`department` 增 `leaderAppointmentId?`；domain 版本递增并登记兼容边界 | core | ① 可建公司级 `general_assistant` 任职；② 可建部门级 `department_lead` 任职并回填 `department.leaderAppointmentId`；③ 公司级任职在旧 `departmentId` 必填约束下**不再**被迫挂部门；④ 岗位校验：`department_lead` 不能产生 `general_assistant` | BE-1 |
-| **BE-3 Team 数据层** | 新表 `team`；`scope.kind='team'` 的任职承载 `team_lead`/`member`；`listTeams`/`getTeam` | core | ① 部门下可建多个 team；② 一个团队恰好一名 `team_lead` + N 名 `member` 可读回；③ **不**引用任何任务/attempt 字段（CUR-03） | BE-2 |
+| **BE-3 Team 数据层（含最小 team 命令 kind）** | **新增最小 team 命令 kind**：`team.create` / `team.update-function` / `team.close`（`SoloipsOperationKind` 的契约扩展，**三处同步**：`contracts.ts` kind 联合 + `domain.ts` 表声明 + `store.ts` 命令实现）；新表 `team`；`scope.kind='team'` 的任职承载 `team_lead`/`member`；`listTeams`/`getTeam` | core | ① **kind 未登记前不存在任何 team 写命令**（详见「组织全景后端设计」§1.4 的契约扩展点说明）；② 部门下可建多个 team；③ 一个团队恰好一名 `team_lead` + N 名 `member` 可读回；④ **不**引用任何任务/attempt 字段（CUR-03）；⑤ 读操作（`listTeams`/`getTeam`）**不产生 kind** | BE-2 |
 | **BE-4 读投影扩容** | `getDepartment` / `listEmployees`（按 company/department）/ `listAppointments` / `listDocumentVersions` / `listAdministrators(companyId)` | core | ① 组织树「公司→部门→部长→团队」可一次读回；② 员工配置页所需字段齐备；③ 形状校验与既有读面一致（含 `listDepartments` 补校验） | BE-3 |
 | **BE-5 配额最小版** | 部署配置 `planCode`；`createCompany` 在提交门内按 `accountId+type` 计数校验；新稳定码 `SOLOIPS_CORE_QUOTA_EXCEEDED` | core | ① Free 下第二次建 `enterprise` 被拒且**无业务写**；② Free 下建 `subsidiary` 恒被拒；③ `platform`/`operation` 不占配额；④ 重启后计数读回一致（基于既有公司记录，无新表） | BE-1 |
-| **BE-6 Host 半边与两条命令链** | 新建 Host 半边包：`@Remote` 服务（公司/部门/员工/团队 CRUD + 只读投影）+ `adapter.tools` 注册的模型工具（同一命令面，带 `soloips-` 前缀）；新增 oxlint 窄口径 override；接入 Typert 生成（tsdown + generator）与 `exports["./typert"]`/`["./remote"]` | 新包 + 根配置 | ① 模型经对话调用工具创建一条公司并读回（M0.1 验收出口的**后端**半边）；② 浏览器经 `ctx.remote.<ns>` 调用同一命令成功；③ 无 agent 上下文的调用 fail-closed；④ 失权后发布被拒且状态不变 | BE-1..BE-5 |
+| **BE-6 Host 半边与两条命令链** | 新建 Host 半边包：`@Remote` 服务（**BE-1..BE-5 已实现的命令面**：公司/部门/员工/任职 + BE-3 新增的 team 命令 + 只读投影）+ `adapter.tools` 注册的模型工具（同一命令面）；新增 oxlint 窄口径 override；接入 Typert 生成（tsdown + generator）与 `exports["./typert"]`/`["./remote"]` | 新包 + 根配置 | ① 模型经对话调用工具创建一条公司并读回（M0.1 验收出口的**后端**半边）；② 浏览器经 `ctx.remote.<ns>` 调用同一命令成功；③ 无 agent 上下文的调用 fail-closed；④ 失权后发布被拒且状态不变；⑤ **每个工具都对应一个已存在的命令 kind**（无 kind 的动作不得暴露为工具） | BE-1..BE-5 |
 | **BE-7 员工配置页服务面** | 只读投影与 CAS 保存的**组合验收**（写面已存在，无需新命令） | core（读面）+ Host 半边 | ① 配置页可显示四类文档当前版本与内容；② 以过期 `expectedPreviousVersion` 保存返回 `conflict` 且当前引用不变；③ 保存成功版本后 `checkOnboarding` 缺项相应减少；④ 装配证据过期时 `checkOnboarding` 报 `assembly-evidence-stale` | BE-4 |
 
 **BE-6 的前置未知**〔未验证〕：soloips 仓库当前 `build` 只有 `tsc -b`，无 `tsdown`、无 React/Vite 客户端工具链〔`package.json:17-25`；根 `node_modules` 无 react/tsdown〕。Typert 生成是 **tsdown 插件**，因此 BE-6 实际包含「引入客户端构建工具链」这一隐式子片。该子片与 UI 智能体的界面工作**共用**，须在合并前对齐（QA 阶段）。
+
+#### BE-6 系统助理工具名建议清单〔建议，供 UI 侧对齐（QA 裁定 A4）〕
+
+**★ 命名形态修正（本次读源发现，与提议的 `soloips.company.create` 形态不符）**：
+
+提议要点是「工具名与命令 kind 对齐」。但**点号（`.`）不能用于工具名**：
+
+| 证据 | 内容 |
+| --- | --- |
+| 〔读源确认：fork `packages/mcp/mcp-client/src/tools.ts:50-51,83-86`〕 | DeepSeek **函数名称约定只允许 `[A-Za-z0-9_-]`**；不允许的字符被替换为 `_`，有损时追加 12 位 hash。点号属「不允许」字符 |
+| 〔读源确认：全仓 `name: '...'` 字面量检索〕 | **零个**原生工具名含点号；`@deepseek-ai/dsh-experimental-tool-agent-team` 的十个工具全部用 `lowercase_with_underscores`（`spawn_teammate`/`send_message`/`list_agents`/`wait_agent`/`interrupt_agent`/`team_task_create`/`team_task_list`/`team_task_get`/`team_task_update`），`tool-skill` 用 `skill` |
+| 〔`AGENTS.md` 命名风格〕 | 项目自身用 kebab-case 标识包名；DSH 工具词汇用下划线 |
+
+⇒ **建议形态：`<包前缀>_<域>_<动作>`，全部小写 + 下划线**，与 DSH 既有工具词汇一致、且与命令 kind 的语义一一对齐（kind 用点号是**持久台账**的命名空间，工具名用下划线是**模型可见**的函数名，两者刻意不同形，通过下表逐行对应）。
+
+| 建议工具名 | 对应命令 kind | 语义 | 备注 |
+| --- | --- | --- | --- |
+| `soloips_company_create` | `company.create` | 建公司（含 `type`/`parentCompanyId`） | M0.1 验收出口所需 |
+| `soloips_company_get` | （无 kind，读） | 读公司 | 读面不产生 kind |
+| `soloips_company_tree` | （无 kind，读） | 读公司树/子公司 | 复用 `getCompanyTree`/`listSubsidiaries` |
+| `soloips_department_create` | `department.create` | 建部门 | |
+| `soloips_department_list` | （无 kind，读） | 列部门 | |
+| `soloips_employee_create` | `employee.create` | 建员工 | |
+| `soloips_appointment_create` | `appointment.create` | 建任职（含 `scope`/`role`/`requiredCapabilities`） | 总助理/部长/组长/成员均经此 |
+| `soloips_appointment_revoke` | `appointment.revoke` | 撤任职 | |
+| `soloips_document_save` | `document.save` | 存文档（CAS + `outcome`） | 员工配置页写路径 |
+| `soloips_onboarding_check` | （无 kind，读） | 读入职状态/缺项 | 只读判定 |
+| `soloips_grouping_suggest` | （无 kind，读） | 生成编组建议（组织全景 §1.2） | **纯读**：产建议不写状态 |
+| `soloips_team_create` | `team.create`〔BE-3 新增〕 | 建团队（含 `function`） | **依赖 BE-3 的 kind** |
+| `soloips_team_update_function` | `team.update-function`〔BE-3 新增〕 | 改团队职能 | 同上 |
+| `soloips_team_close` | `team.close`〔BE-3 新增〕 | 归档团队 | 同上 |
+| `soloips_team_list` | （无 kind，读） | 列团队/读团队 | |
+| `soloips_work_entry_request` | `work-entry.request` | 请求工作准入 | 返回 `admitted`/`refused`/`unknown` |
+
+**四条纪律**〔建议〕：
+
+1. **工具名与 kind 的对应表是显式契约**：每个写工具**必须**对应一个已存在的 kind；无 kind 的动作（读面、建议生成）**不得**暴露为写工具。这条已写入 BE-6 验收⑤。
+2. **`soloips_` 前缀是命名空间隔离**，避免与官方工具（`spawn_teammate`/`send_message`/`team_task_*`）撞名——工具重名在作用域内注册失败〔`adapter-dsh/src/contracts.ts:524-525`〕。注意**不要**用 `team_` 开头（会与官方 `team_task_*` 视觉混淆），故建议 `soloips_team_*`。
+3. **工具数控制在 ~16 个以内**：工具面越大，模型选择错误率越高；上表已按 M0.1 必需面裁剪（不含配额、审计、MCP、skill 分配等面）。
+4. **本清单**〔未验证〕**未与 UI 侧对齐**——UI 侧可能按 `@Remote` 的 namespace 形态（点号合法，如 `soloips/company-create`）设计浏览器调用面。**两套命名刻意不同形**：Remote 端点是 Cordis 服务 + 方法（点号/斜杠可用），工具名是模型可见函数名（下划线）。QA 阶段需确认 UI 侧引用的是哪一面。
 
 ### 4.2 明确不做（留给后续里程碑）
 
