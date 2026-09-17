@@ -51,11 +51,17 @@ function createStubContext(settingsReady: boolean): ContextStub {
     inject(deps: readonly string[], _callback: (ctx: Context) => void) {
       calls.push({ method: "inject", args: [deps] });
       injected.push(deps);
+      // 真实 `Context.inject` 返回 `Fiber & PromiseLike<Fiber>`；被测路径不消费返回值，
+      // 但签名必须一致——`satisfies` 检查把差异抓了出来。
+      return undefined as unknown as ReturnType<Context["inject"]>;
     },
     effect(execute: () => () => void, label?: string) {
       calls.push({ method: "effect", args: [label] });
-      effectDisposers.push(execute());
-      return () => undefined;
+      // 真实 `Context.effect` 的返回是 `AsyncDisposable<Promise<void>>`：
+      // disposer 本身要返回 Promise。`satisfies` 检查把这一点抓了出来。
+      const dispose = execute();
+      effectDisposers.push(() => void dispose());
+      return (async () => undefined) as unknown as ReturnType<Context["effect"]>;
     },
     provide(name: string, value: unknown) {
       calls.push({ method: "provide", args: [name] });
@@ -78,6 +84,12 @@ function createStubContext(settingsReady: boolean): ContextStub {
     },
   };
 
+  // 桩只实现被测路径用到的成员，不是完整 Context（宿主有 30+ 成员）。
+  // 用 `satisfies` 把「已实现成员的签名是否与宿主一致」交给编译器：
+  // 签名写错即此处编译失败，而不是被一个宽泛的 `as` 吞掉。
+  // 之后剩下一处**受控**的完整性桥接——只表达「刻意未实现其余成员」，不再掩盖成员签名问题。
+  const stubSatisfiesUsedSurface = stub satisfies Pick<Context, keyof typeof stub>;
+
   return {
     calls,
     provided,
@@ -88,10 +100,10 @@ function createStubContext(settingsReady: boolean): ContextStub {
     effectDisposers,
     injected,
     settingsRegistrations,
-    // 单向窄化断言：桩的每个成员都是 Context 对应成员的宽松超集（any 参数/返回）。
-    // 测试替身只实现被测路径用到的成员，不是完整 Context；经 unknown 中转是诚实的表达
-    // （直接 `as Context` 会被 TS 判为不充分重叠）。不使用 any（DEV-05）。
-    context: stub as unknown as Context,
+    // 完整性桥接（唯一的 `as unknown as`）：把「已实现且已受 satisfies 检查」的部分视图
+    // 当作完整 Context 使用。刻意未实现的成员若被被测路径访问，会在运行期暴露为 undefined
+    // 调用错误——测试会失败，不会静默。
+    context: stubSatisfiesUsedSurface as unknown as Context,
   };
 }
 

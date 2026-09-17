@@ -55,9 +55,12 @@ function stubContextWithHub(): { context: Context; registered: string[]; unregis
       return name === "storage" ? storage : undefined;
     },
   };
+  // `satisfies` 检查**已完整实现**的成员签名（`get`/`emit`）；`storage` 是刻意的
+  // 部分替身（只实现被测路径用到的 backend 子面），故不纳入该检查——把它纳入只会
+  // 逼着伪造 Storage 的其余 10 个成员。下方一处 `as unknown as` 仍只表达完整性缺口。
+  const stubSatisfiesUsedSurface = stub satisfies Pick<Context, "get" | "emit">;
   return {
-    // 同上：部分 stub 经 unknown 中转，不用 any。
-    context: stub as unknown as Context,
+    context: stubSatisfiesUsedSurface as unknown as Context,
     registered,
     get unregistered() {
       return state.unregistered;
@@ -67,15 +70,15 @@ function stubContextWithHub(): { context: Context; registered: string[]; unregis
 
 /** 无宿主服务的桩（lease 不触达 ctx，故 lease 用例不受影响）。 */
 function bareContext(): Context {
-  return {
+  const stub = {
     get() {
       return undefined;
     },
     emit() {
       /* noop */
     },
-    // 同上：部分 stub 经 unknown 中转，不用 any。
-  } as unknown as Context;
+  } satisfies Pick<Context, "get" | "emit">;
+  return stub as unknown as Context;
 }
 
 const tempRoots: string[] = [];

@@ -16,7 +16,9 @@ import { createToolsPort } from "../src/ports/tools";
 import type { SoloipsSessionId } from "../src/contracts";
 
 function bareContext(): Context {
-  return {
+  // 只实现被测路径用到的成员；`satisfies` 让「已实现成员的签名」受编译器检查，
+  // 剩下的一处 `as unknown as` 仅表达「刻意未实现其余 Context 成员」这一完整性缺口。
+  const stub = {
     get() {
       return undefined;
     },
@@ -26,8 +28,8 @@ function bareContext(): Context {
     async parallel() {
       /* noop */
     },
-    // 同上：部分 stub 经 unknown 中转，不用 any。
-  } as unknown as Context;
+  } satisfies Pick<Context, "get" | "emit" | "parallel">;
+  return stub as unknown as Context;
 }
 
 const sessionId = "session-1" as SoloipsSessionId;

@@ -104,17 +104,12 @@ describe("events port（真实 cordis 事件总线，词表只有 soloips:*）",
       stopReason: "completed",
       // lastAssistantMessage 缺省 → 契约的空数组
     };
-    // 宿主的 `Events` 把这两个事件声明为 `this: Scoped<SubagentRuntime>`，因此
-    // `ctx.emit` 的重载在**未装载 subagent 服务**的裸 Context 上匹配不到——这是类型层的
-    // 事实，不是本用例可以绕开的。这里用一个只含 `emit` 的最小发射面来表达「事件名 + info」，
-    // 与 adapter 翻译实际消费的调用形一致；不伪造 `Scoped` 载体，也不改动 production 代码
-    // 去迁就测试。
-    const emitHost = ctx.emit as unknown as (
-      name: "subagent/start" | "subagent/end",
-      info: SubagentRunInfo | SubagentRunEndInfo,
-    ) => void;
-    emitHost("subagent/start", startInfo);
-    emitHost("subagent/end", endInfo);
+    // 直接按宿主签名发射，不做类型桥接。
+    // （先前这里用 `as unknown as (name, info) => void` 绕过重载；那是多余的：宿主
+    //  `emit<K>(name: K, ...args: Parameters<Events[K]>)` 对本事件可正常推导。
+    //  桥接还会丢掉事件名与负载的对应关系——类型上允许 start 配 end 的负载。）
+    ctx.emit("subagent/start", startInfo);
+    ctx.emit("subagent/end", endInfo);
 
     expect(starts).toEqual([{ runId: "run-1", childId: "child-1", provider: "spawn" }]);
     expect(ends).toEqual([
