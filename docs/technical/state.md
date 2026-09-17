@@ -27,13 +27,18 @@ SoloIPs 支持两种存储后端：
 
 | 后端 | 特点 | 适用场景 |
 |---|---|---|
-| **SQLite**（默认） | 单文件、事务支持、WAL 并发 | 开发、单机部署 |
+| **SQLite**（默认） | 单文件、事务支持、WAL 并发；Drizzle 查询构造 + better-sqlite3 driver | 开发、单机部署 |
 | **JSON** | 简单、无依赖 | 快速原型、向后兼容 |
 
-**后期迁移 PostgreSQL**：
-- 只需修改 Drizzle driver（`drizzle-orm/postgres-js`）
-- Schema 定义不变
-- Core 代码不需改动表
+**后期迁移 PostgreSQL**〔建议〕：Drizzle 是迁移载体（查询构造跨方言），但迁移面不止 driver：
+
+- **换 driver**：`drizzle-orm/postgres-js`
+- **连接层需重写**：PRAGMA（journal_mode/foreign_keys/busy_timeout/synchronous）与
+  `wal_checkpoint(PASSIVE)` 是 SQLite 特有语义，不随 driver 迁移
+- **写权协调机制需重新设计**：现为单机文件锁 + 租约代际（`storage.ts`），多机部署须改为
+  数据库侧协调
+- **存量数据**：导出导入并逐项核对
+- **不变的部分**：unit schema 形状与 core 的调用面（KvFacet/KvUnit 方法集）
 
 | 状态类型 | 归属包 | 说明 |
 |---|---|---|
