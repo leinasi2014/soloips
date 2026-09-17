@@ -52,11 +52,16 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const options = { keep: false };
-  for (const arg of argv) {
-    if (arg === "--keep") options.keep = true;
+  const options = { keep: false, activationLog: null };
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
+    if (arg === "--") continue;
+    if (arg === "--activation-log") options.activationLog = argv[++index];
+    else if (arg === "--keep") options.keep = true;
     else if (arg === "--help" || arg === "-h") {
-      process.stdout.write("usage: check-delivery-load.mjs [--keep]\n");
+      process.stdout.write(
+        "usage: check-delivery-load.mjs [--keep] [--activation-log <host cold-start stderr file>]\n",
+      );
       process.exit(0);
     } else fail(`Unknown argument: ${arg}`);
   }
@@ -73,6 +78,25 @@ function resolvePnpmCli() {
   ].filter((value) => typeof value === "string" && value.length > 0);
   for (const candidate of candidates) if (existsSync(candidate)) return candidate;
   fail("找不到 pnpm 的 JS 入口。请经 `pnpm run` 调用本脚本，或设置 npm_execpath。");
+}
+
+/**
+ * 运行层激活检查：**逐 entry 断言宿主真的激活了它**。
+ *
+ * 为什么必须单列：宿主对「entry 存在但无法激活」只发 **warning**，进程退出码不受影响
+ * （`app-boot` 的 `activationDiagnostic` 走 stderr）。因此只看 exit code 的门禁会漏掉
+ * 装配失败——本项目就实测到过：`soloips-web` 的 entry 在生效树里，冷启动却报
+ * "failed to import"，而进程照常运行。
+ *
+ * 判据取自宿主自己的诊断文本（`N entries did not activate` + 逐条 `<id>: ...`），
+ * 不硬编码"必须具名导出 apply"——宿主接受的入口形式不止一种（如 `export default`）。
+ */
+function parseActivationFailures(stderr) {
+  const lines = stderr.split(/\r?\n/);
+  if (!lines.some((entry) => /did not activate/.test(entry))) return [];
+  return lines
+    .filter((entry) => /^[a-z0-9-]+ \([^)]*\): /.test(entry))
+    .map((entry) => entry.trim());
 }
 
 function main() {
@@ -174,6 +198,37 @@ function main() {
         "证据边界：只覆盖这些入口及其加载到的模块图；不代表 DSH 装配、激活、\n" +
         "工具调用或业务验收通过，也不覆盖懒加载分支。\n",
     );
+
+    // 4) 运行层：若给了 --activation-log，断言宿主真的激活了每个 entry。
+    //
+    // 这一层不能省：宿主对「entry 在生效树里但无法激活」只发 warning、退出码不变，
+    // 因此只看 exit code 会漏掉真实装配失败（本项目实测过）。
+    if (options.activationLog !== null) {
+      if (!existsSync(options.activationLog)) {
+        fail(`--activation-log 指定的文件不存在：${options.activationLog}`);
+      }
+      const stderr = readFileSync(options.activationLog, "utf8");
+      const activationFailures = parseActivationFailures(stderr);
+      process.stdout.write("\n运行层激活检查（宿主诊断文本）：\n");
+      if (activationFailures.length === 0) {
+        process.stdout.write("  OK   无 entry 报告 did not activate\n");
+      } else {
+        for (const failure of activationFailures) process.stdout.write(`  FAIL ${failure}\n`);
+        process.stdout.write(
+          `\n${activationFailures.length} 个 entry 未能激活。宿主只把这写成 warning、不影响退出码，\n` +
+            "所以这里必须显式失败——它表示该 entry 在目标运行时**没有生效**。\n" +
+            "若该 entry 的实现确实不在本阶段范围内，应在阶段验收契约里登记为「已知未实现、非阻断」，\n" +
+            "而不是把这里的失败改记为通过或跳过检查。\n",
+        );
+        process.exit(1);
+      }
+    } else {
+      process.stdout.write(
+        "\n运行层激活检查：**未执行**。\n" +
+          "提供 --activation-log <宿主冷启动的 stderr> 可断言每个 entry 真的激活。\n" +
+          "未提供时本门禁只覆盖「入口可被原生加载」，不覆盖「宿主实际激活」。\n",
+      );
+    }
   } finally {
     if (options.keep) process.stdout.write(`\n保留临时目录：${workDir}\n`);
     else rmSync(workDir, { recursive: true, force: true });
