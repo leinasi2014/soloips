@@ -61,6 +61,22 @@ export interface SoloipsCommitRequest {
   readonly kind: SoloipsOperationKind;
   readonly employeeId?: SoloipsEmployeeId;
   readonly intent: SoloipsOperationIntent;
+  /**
+   * 提交槽位内的**前置判定**（可选）：在意图落盘**之前**、于本门的串行槽位上执行。
+   *
+   * 为什么需要这个钩子（而不是在 `mutate` 里判）：`mutate` 在**意图已落盘之后**
+   * 才运行——在那里拒绝会留下一条 `pending` 意图，把「零业务写」变成「零业务写 +
+   * 一条未决操作」。而「重复招募总助理」这类拒绝的语义是**什么都没发生**
+   * （data-contract §2.4.2「返回可判定的拒绝，而不是再建一条」），不该污染台账、
+   * 也不该让后续请求撞上 `unknown`。
+   *
+   * 放在**槽位内**的理由：判定必须与写入处于同一串行槽位，否则两个并发提交可同时
+   * 通过「无有效总助理」的检查（读-判-写之间被另一个提交插入）。经本钩子执行的
+   * 判定与 `mutate` 之间**没有其他本地提交可插入**；跨进程由 writer lease 排除。
+   *
+   * 抛错即整体拒绝：无意图落盘、无业务写（零业务写）。
+   */
+  readonly precondition?: () => void;
 }
 
 export type SoloipsCommitProbe = "absent" | "replayed" | "unknown";
@@ -137,6 +153,10 @@ export class SoloipsCommitGate {
     }
 
     const publish = this.#createPublisher();
+
+    // 前置判定：在意图落盘**之前**、本门串行槽位之内（零业务写、零未决意图）。
+    // 抛错即整体拒绝——见 SoloipsCommitRequest.precondition 的说明。
+    request.precondition?.();
 
     // 意图先行（ORG-05：保存必要恢复意图在提交之前）。
     await publish.put("operation", request.operationId, {

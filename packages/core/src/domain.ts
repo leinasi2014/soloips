@@ -18,6 +18,7 @@ import type {
 import type {
   SoloipsAppointmentId,
   SoloipsAppointmentRecord,
+  SoloipsAppointmentScope,
   SoloipsCompanyId,
   SoloipsCompanyRecord,
   SoloipsDepartmentId,
@@ -29,6 +30,7 @@ import type {
   SoloipsOperationId,
   SoloipsOperationRecord,
   SoloipsRootBindingRecord,
+  SoloipsTeamId,
 } from "./contracts.js";
 import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_COMPANY_DOMAIN_VERSION } from "./contracts.js";
 import {
@@ -52,6 +54,7 @@ import {
   isDocumentVersionId,
   isEmployeeId,
   isOperationIdShape,
+  isTeamId,
 } from "./ids.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +77,8 @@ const operationIdSchema = constrainedStringSchema<SoloipsOperationId>(
   isOperationIdShape,
   "操作 id",
 );
+/** 团队 id（BE-2 登记品牌；`team` 表本体属 BE-3）。 */
+const teamIdSchema = constrainedStringSchema<SoloipsTeamId>(isTeamId, "团队 id");
 
 /**
  * company：公司层级架构的核心实体
@@ -101,12 +106,15 @@ const companyRecordSchema: SoloipsSchema<SoloipsCompanyRecord> = objectSchema<So
  * department：SOLO-ACC-05 前置「公司/部门/员工」链。
  * - companyId：归属核对（部门属于哪个公司）。
  * - name：读回可比对的业务值。
+ * - leaderAppointmentId：部门负责人（部长）的**任职引用**（BE-2 部长链，§1.1
+ *   裁定「通过任职表达更灵活」）。可选——「首任无部长态」合法（ORG-02）。
  */
 const departmentRecordSchema: SoloipsSchema<SoloipsDepartmentRecord> =
   objectSchema<SoloipsDepartmentRecord>({
     id: departmentIdSchema,
     companyId: companyIdSchema,
     name: nonEmptyStringSchema(),
+    leaderAppointmentId: optionalSchema(appointmentIdSchema),
   });
 
 /**
@@ -141,17 +149,72 @@ const employeeRecordSchema: SoloipsSchema<SoloipsEmployeeRecord> =
 
 /**
  * appointment（任职）：ORG-03 准入首项「有效任职和权限代际」。
- * - employeeId/departmentId：ACC-05「核对任职」的关联链。
+ * - employeeId：ACC-05「核对任职」的关联链。
+ * - departmentId（**可选**，C-4 放宽）：部门级任职的既有表达；公司级/团队级任职
+ *   不被迫挂部门（BE-2 验收③）。与 `scope` 的一致性由 §2.3 严格三分支维护
+ *   （`src/store.ts` 的 `#resolveAppointmentScope`），schema 层不重复该业务规则。
+ * - scope（**可选**，C-4）：任职作用域判别联合（公司/部门/团队，三分支各带 companyId）。
+ * - role（**可选**）：五值角色（owner/general_assistant/department_lead/team_lead/member）。
+ *   **只登记事实、不做授权强制**（M0.1 无权限服务，§3.2 A-4/A-6）。
  * - requiredCapabilities：岗位必需能力，准入逐项核对（ORG-03）。
  * - generation：权限代际；同一员工新任职递增、撤销不复活（ORG-06），
  *   ACC-05 读回核对的可比较值。
  * - status：「有效」任职的判定面（active/revoked）；撤销后准入必须拒绝。
+ *
+ * 〔兼容边界登记，BE-2〕**domain 版本保持 `version = 1`，本切片新增字段全为可选**：
+ *  - `scope` / `role` 为可选：存量 `appointment` 记录缺它们仍通过 schema 校验，
+ *    不会触发介质层的整次 open 拒绝（`invalidRecords` 默认拒绝，且 sqlite 后端
+ *    无 `backupRecord` 逃生通道）；
+ *  - `departmentId` 由必填改可选是**放宽**：存量记录（一律带该字段）零风险；
+ *  - `department.leaderAppointmentId` 为可选：同理。
+ *  ⇒ 因此**不递增** `SOLOIPS_COMPANY_DOMAIN_VERSION`。递增会让存量根直接 open 失败：
+ *  json `single` 布局在 `parse()` 里做**严格相等**的版本判定
+ *  （`stored version !== descriptor.version` → `version-mismatch`），而 sqlite 后端
+ *  **完全不写/不校验版本戳**——递增只破坏前者、对后者无任何保护，收益为负。
+ *  「加可选字段」在 schema 层本就向后兼容，无需版本位（data-contract §2.3 的
+ *  P1「unit version 戳 + compatibleVersions」仍是收紧 `scope` 为必填的前置条件，
+ *  属后续切片）。
  */
+const appointmentScopeSchema: SoloipsSchema<SoloipsAppointmentScope> = unionSchema([
+  objectSchema<{ readonly kind: "company"; readonly companyId: SoloipsCompanyId }>({
+    kind: literalUnionSchema(["company"] as const),
+    companyId: companyIdSchema,
+  }),
+  objectSchema<{
+    readonly kind: "department";
+    readonly companyId: SoloipsCompanyId;
+    readonly departmentId: SoloipsDepartmentId;
+  }>({
+    kind: literalUnionSchema(["department"] as const),
+    companyId: companyIdSchema,
+    departmentId: departmentIdSchema,
+  }),
+  objectSchema<{
+    readonly kind: "team";
+    readonly companyId: SoloipsCompanyId;
+    readonly teamId: SoloipsTeamId;
+  }>({
+    kind: literalUnionSchema(["team"] as const),
+    companyId: companyIdSchema,
+    teamId: teamIdSchema,
+  }),
+]);
+
 const appointmentRecordSchema: SoloipsSchema<SoloipsAppointmentRecord> =
   objectSchema<SoloipsAppointmentRecord>({
     id: appointmentIdSchema,
     employeeId: employeeIdSchema,
-    departmentId: departmentIdSchema,
+    departmentId: optionalSchema(departmentIdSchema),
+    scope: optionalSchema(appointmentScopeSchema),
+    role: optionalSchema(
+      literalUnionSchema([
+        "owner",
+        "general_assistant",
+        "department_lead",
+        "team_lead",
+        "member",
+      ] as const),
+    ),
     requiredCapabilities: arraySchema(nonEmptyStringSchema()),
     generation: positiveIntegerSchema(),
     status: literalUnionSchema(["active", "revoked"] as const),
