@@ -14,6 +14,7 @@ import type {
   SoloipsDocumentVersionId,
   SoloipsEmployeeId,
   SoloipsOperationId,
+  SoloipsTeamId,
 } from "./contracts.js";
 
 /** 单次受控断言：从校验过的普通字符串收窄为品牌 id（唯一断言点）。 */
@@ -51,6 +52,17 @@ export function newDocumentVersionId(): SoloipsDocumentVersionId {
   return asId<SoloipsDocumentVersionId>(newPrefixedId("docver"));
 }
 
+/**
+ * 团队 id 生成（BE-2 品牌先行；`team` 表属 BE-3，本切片只建品牌与工厂）。
+ *
+ * 生成路径当前**无调用方**（BE-3 的 `createTeam` 才会用），先随品牌一并落地，
+ * 使「品牌 → 工厂 → 谓词 → 持久校验器」四件套保持同一切片内的完整性，
+ * 避免 BE-3 再回头改契约文件。`isTeamId` 则**已被** scope 校验使用。
+ */
+export function newTeamId(): SoloipsTeamId {
+  return asId<SoloipsTeamId>(newPrefixedId("team"));
+}
+
 // ── 边界校验（调用方传来的 id 不受类型系统保护，入口处必须校验形状） ──────────
 
 export function isCompanyId(value: string): boolean {
@@ -71,6 +83,11 @@ export function isAppointmentId(value: string): boolean {
 
 export function isDocumentVersionId(value: string): boolean {
   return isPrefixedId("docver", value);
+}
+
+/** 团队 id 形状（scope 校验用；`team` 表属 BE-3）。 */
+export function isTeamId(value: string): boolean {
+  return isPrefixedId("team", value);
 }
 
 /**

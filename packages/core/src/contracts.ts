@@ -58,6 +58,17 @@ export type SoloipsDepartmentId = SoloipsCoreId<"department">;
 export type SoloipsEmployeeId = SoloipsCoreId<"employee">;
 export type SoloipsAppointmentId = SoloipsCoreId<"appointment">;
 export type SoloipsDocumentVersionId = SoloipsCoreId<"document-version">;
+
+/**
+ * 团队 id（BE-2 登记品牌；`team` 表本体属 BE-3，本切片**不建表**）。
+ *
+ * 存在的理由：`SoloipsAppointmentScope` 的 `kind: 'team'` 分支要指向团队
+ * （data-contract §2.3「`kind: 'team'` 的引用目标 = `teamId`，**不是** `teamBindingId`」——
+ * C-6 裁定 M0.1 不建 `TeamBinding`，若指向绑定层，团队级任职在 M0.1 无法表达）。
+ * 品牌先落地使契约类型自洽；构造/校验同样经 src/ids.ts 的受控工厂。
+ */
+export type SoloipsTeamId = SoloipsCoreId<"team">;
+
 /** 稳定操作键：贯穿提交、结果与恢复（DEV-08 / ORG-05）。 */
 export type SoloipsOperationId = SoloipsCoreId<"operation">;
 
@@ -85,6 +96,45 @@ export type SoloipsCompanyType =
 export type SoloipsWorkEntryOrigin = "manager-dispatch" | "self-claim" | "scheduler-assign";
 
 export type SoloipsAppointmentStatus = "active" | "revoked";
+
+/**
+ * 任职作用域（判别联合）——区分公司级、部门级、团队级任职。
+ *
+ * 〔约束〕**三分支各自携带 `companyId`**（data-contract §2.1 原文）：作用域比较
+ * （「目标资源是否在该任职作用域内」，L4 scope 检查）与「同公司」判定都直接读
+ * `scope.companyId`，不需要先反查部门/团队记录——部门级/团队级任职因此也能通过
+ * 公司归属校验，而不是只认公司级任职。
+ *
+ * 〔约束〕`kind: 'team'` 指向 `teamId`（**不是** `teamBindingId`）：M0.1 只落纯
+ * 数据层 Team、不建 `TeamBinding`（C-6），指向绑定层会让团队级任职在 M0.1 无法表达
+ * （data-contract §2.3）。
+ */
+export type SoloipsAppointmentScope =
+  | { readonly kind: "company"; readonly companyId: SoloipsCompanyId }
+  | {
+      readonly kind: "department";
+      readonly companyId: SoloipsCompanyId;
+      readonly departmentId: SoloipsDepartmentId;
+    }
+  | { readonly kind: "team"; readonly companyId: SoloipsCompanyId; readonly teamId: SoloipsTeamId };
+
+/**
+ * 任职角色（五值，data-contract §2.1）。
+ *
+ * 〔约束〕本词表与 DSH 官方 roster 的 `'lead' | 'teammate'` **分属两层、不得混用**
+ * （core 任职 vs DSH Team roster）；core 记录里不得写 `'lead'`/`'teammate'`。
+ */
+export type SoloipsAppointmentRole =
+  /** 公司所有者（账户级）。 */
+  | "owner"
+  /** 总助理（公司级）；同公司同时至多一条有效（data-contract §2.4.2）。 */
+  | "general_assistant"
+  /** 部长（部门级）。 */
+  | "department_lead"
+  /** 团队组长（团队级）。 */
+  | "team_lead"
+  /** 普通成员。 */
+  | "member";
 
 /** 本切片实际存在的持久写操作种类；用于恢复核对与 operationId 冲突检测。 */
 export type SoloipsOperationKind =
@@ -146,6 +196,17 @@ export type SoloipsDepartmentRecord = {
   readonly id: SoloipsDepartmentId;
   readonly companyId: SoloipsCompanyId;
   readonly name: string;
+  /**
+   * 部门负责人（部长）的任职引用——「部门记录指向任职」而非指向员工：
+   * 通过任职表达更灵活（data-contract §1.1 裁定，取代 `leaderEmployeeId`）。
+   *
+   * 〔约束〕可选：部门可存在而**无部长**，「首任无部长态」是合法中间状态
+   * （ORG-02 / `02-company-contract.md` §11.2 的 `awaiting_manager`）。
+   *
+   * 写入方：`createAppointment` 在 `role === "department_lead"` 且
+   * `scope.kind === "department"` 时**回填**（BE-2 部长链）。
+   */
+  readonly leaderAppointmentId?: SoloipsAppointmentId;
 };
 
 export type SoloipsEmployeeRecord = {
@@ -168,7 +229,32 @@ export type SoloipsEmployeeRecord = {
 export type SoloipsAppointmentRecord = {
   readonly id: SoloipsAppointmentId;
   readonly employeeId: SoloipsEmployeeId;
-  readonly departmentId: SoloipsDepartmentId;
+  /**
+   * 部门归属（部门级任职的既有表达）。
+   *
+   * 〔裁定 C-4，2026-09-18〕本字段改为**可选**：公司级/团队级任职不受「旧
+   * `departmentId` 必填约束」被迫挂部门（BE-2 验收③）。改可选项是**放宽**，
+   * 存量记录（一律带 `departmentId`）零风险。
+   *
+   * 〔约束〕与 `scope` 的关系由 **§2.3 严格三分支**定义（见 `src/store.ts`
+   * `#resolveAppointmentScope`）：有 `scope` 用 `scope`；无 `scope` 且有
+   * `departmentId` 即部门级（`companyId` 由部门记录反解）；两者皆无即
+   * `SOLOIPS_CORE_RECORD_INVALID`。**禁止任何时序/「首个」推断。**
+   */
+  readonly departmentId?: SoloipsDepartmentId;
+  /**
+   * 任职作用域（判别联合）。**可选**——data-contract §2.3 的阶段一形态：
+   * 存量记录无此字段，设为必填会让整次 open 失败（介质层 `invalidRecords`
+   * 默认拒绝，且 sqlite 后端无逃生通道）。
+   */
+  readonly scope?: SoloipsAppointmentScope;
+  /**
+   * 任职角色。同样**可选**（理由同上：存量兼容）。
+   *
+   * 〔边界〕本切片**只登记与回填**角色事实，**不做授权强制**（M0.1 无权限服务，
+   * 见 data-contract §3.2 A-4/A-6）——「角色级授权不在 M0.1 范围」。
+   */
+  readonly role?: SoloipsAppointmentRole;
   /** 岗位必需能力：准入判定逐项核对（ORG-03「岗位必需能力」）。 */
   readonly requiredCapabilities: readonly string[];
   /** 权限代际：同一员工的新任职递增；撤销不复活旧代际（ORG-03/ORG-06）。 */
@@ -317,8 +403,37 @@ export interface SoloipsCreateEmployeeInput {
 export interface SoloipsCreateAppointmentInput {
   readonly operationId: SoloipsOperationId;
   readonly employeeId: SoloipsEmployeeId;
-  readonly departmentId: SoloipsDepartmentId;
+  /**
+   * 部门归属。**可选**（C-4 放宽，见 `SoloipsAppointmentRecord.departmentId`）：
+   * 公司级/团队级任职不被迫挂部门。
+   *
+   * 〔约束〕提供 `scope` 时本字段**不得**与 `scope` 冲突（如 `scope.kind='company'`
+   * 却给了 `departmentId`）——冲突即 `SOLOIPS_CORE_VALIDATION`，不做静默取舍。
+   */
+  readonly departmentId?: SoloipsDepartmentId;
+  /**
+   * 任职作用域（判别联合）。缺省时按 data-contract §2.3 的**严格三分支**推导：
+   * 有 `departmentId` → 部门级（`companyId` 由部门记录反解）；否则
+   * `SOLOIPS_CORE_RECORD_INVALID`（**不猜**，无时序推断）。
+   */
+  readonly scope?: SoloipsAppointmentScope;
+  /**
+   * 任职角色。缺省即**不登记角色**（存量形状：`role` 可选，见记录注释）。
+   */
+  readonly role?: SoloipsAppointmentRole;
   readonly requiredCapabilities?: readonly string[];
+  /**
+   * 执行者任职（SA-02「Host 层 actor 属半可信输入」）。
+   *
+   * 〔约束〕**只作审计线索**：本切片把该值记入 operation 台账的 `intent`（谁声称
+   * 执行了该动作），**不做授权强制**——不得仅凭它放行需要任职的敏感操作
+   * （data-contract §3.2 A-4「禁止自证授权」）。**不接受模型文本**：由 Host 半边
+   * 从真实执行上下文填入。
+   *
+   * 〔约束〕与 ORG-05 的**可信身份链**不得混同：`ExecutionBinding` 未落地前，
+   * 本字段只是**部署面自证**。
+   */
+  readonly actorAppointmentId?: SoloipsAppointmentId;
 }
 
 export interface SoloipsRevokeAppointmentInput {
