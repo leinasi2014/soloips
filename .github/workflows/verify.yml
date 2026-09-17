@@ -64,6 +64,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # better-sqlite3 对 Node 24 无预编译二进制需源码编译；
+      # runner 预装 VS Build Tools 但 node-gyp 探测不到，注入 MSVC 环境
+      - name: Setup MSVC for node-gyp
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
         with:
