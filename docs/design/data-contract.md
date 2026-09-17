@@ -23,11 +23,13 @@
 > `packages/adapter-dsh/src/ports/storage-sqlite.ts`）为默认；可选 JSON。后期可迁移 PostgreSQL
 > 〔建议〕迁移面见 `docs/technical/state.md`「后期迁移 PostgreSQL」。
 
+**〔约束〕§0 同步纪律（2026-09-18 补录）**：**凡改 §0 已实现行，必须对照 `packages/core/src/contracts.ts` 核验**（字段名/类型/服务面逐项对齐，必要时附行号）。理由：本表是「代码事实 ↔ 目标契约」的对照，脱离代码改表会让对照失效、把未实现说成已有能力。该纪律是 **M0.1 的替代手段**——自动化核对（`contract-doc-sync-check` CI）**未采纳**，登记为 **P3 切片候选 BE-8**（见 §6.2）。
+
 | 模型 / 能力 | 代码状态 | 代码实际字段 |
 |---|---|---|
 | `SoloipsCompanyRecord`（`accountId`/`parentCompanyId`/`type`/`name`/`status`/`createdAt`） | **已实现** | `contracts.ts` §3 |
 | `SoloipsDepartmentRecord` | **已实现（部分字段）** | 只有 `id`/`companyId`/`name`；`description`/`leaderAppointmentId`/`parentDepartmentId`/`status` 见 §2 设计稿 |
-| `SoloipsEmployeeRecord` | **已实现（部分字段）** | 已实现：`id`/`displayName`/`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/`verifiedCapabilities`。**未实现**：`email`/`modelConfig`/`status`/`createdAt`（目标新增）。**既有判定字段属目标契约，不得移出**（§2.1 C-3 注）；确切形状以 `contracts.ts` 为准 |
+| `SoloipsEmployeeRecord` | **已实现（部分字段）** | 已实现：`id`/`displayName`/`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/`verifiedCapabilities`。**未实现**：`email`/`modelConfig`/`status`/`createdAt`/`identitySource`（目标新增）。**既有判定字段属目标契约，不得移出**（§2.1 C-3 注）；确切形状以 `contracts.ts` 为准 |
 | `SoloipsAppointmentRecord` | **已实现（部分字段）** | `id`/`employeeId`/`departmentId`/`requiredCapabilities`/`generation`/`status`；`scope`(判别联合) 与 `role` 见 §2 设计稿（`scope` 先可选，见 §2.3） |
 | `SoloipsDocumentVersionRecord` | **已实现** | `versionId`/`ownerId`/`documentType`/`content`/`digest`/`previousVersionId?`/`appointmentId?` |
 | `SoloipsOperationRecord` | **已实现** | `id`/`kind`/`status`/`employeeId?`/`intent`/`result?` |
@@ -245,10 +247,38 @@ export interface SoloipsTeamRecord {
   readonly name: string;
   /** 本团队职能定义（纯文本，非空白）。**不承载能力项**——能力走 appointment.requiredCapabilities */
   readonly function: string;
-  /** 职能来源：部长定义 or 系统建议后确认（审计「谁定义了职能」） */
+  /**
+   * 职能来源（审计「谁定义了职能」）：部长定义 or 系统建议后确认。
+   *
+   * **枚举扩展〔待决 M0.2+〕**：`'user'`/`'template'`/`'import'` 等来源**尚未裁定**——
+   * 未裁定前实现**不得**自行新增取值；本字段当前只认下列两值。
+   */
   readonly functionSource: 'leader-defined' | 'system-suggested';
+  /**
+   * 确认者任职 ID（**`functionSource='system-suggested'` 时必填**）〔待实现〕。
+   *
+   * 系统建议**本身不是**职能定义——须由一名**有效任职**（部长/总助理）确认后才成为团队职能。
+   * `'leader-defined'` 时可省略（定义者即 `leadAppointmentId`）。
+   * **缺 `confirmedBy` 的 `system-suggested` 记录 = 未确认草稿**，不得被读作团队职能、
+   * 不得作为分配/准入的依据。
+   */
+  readonly confirmedBy?: SoloipsAppointmentId;
   /** 团队组长任职（唯一组长；与 role:'team_lead' 的任职一致） */
   readonly leadAppointmentId: SoloipsAppointmentId;
+  /**
+   * 团队状态。**语义三分必须成立**〔约束〕——**字段形态留 BE-3 裁定**（三值枚举，或
+   * 两值 `status` + 由组长引用有效性导出的「不可用」，与 §2.1.1 P-6 的「等效显式标记」一致）；
+   * **语义不允许缺项**：
+   * - **可用**：组长引用有效（满足 §2.1.1 P-4 四项）且未归档——可参与协作、可出现在 `listTeams`；
+   * - **不可用**：无有效组长（撤职未换任，或引用悬挂未修复）——**不得**读作可用团队（P-3/P-6/P-8）；
+   * - **归档**：显式关闭（`team.close`）后的终态，只读保留供追溯。
+   *
+   * **禁物理删除**〔约束〕：Team **不得**被物理删除（**无 delete 路径**），只能经 `status` transition
+   * 变更语义（可用 ↔ 不可用 → 归档）。理由：任职、skill 分配、规范确认、装配证据均以 `teamId`
+   * 为引用键，物理删除会制造**悬挂引用**，并让历史取证失去确定的所指。
+   *
+   * **注**：下方两值枚举是**候选实现之一**（「不可用」由组长引用有效性导出，与 P-6 的「等效显式标记」一致）；**最终形态留 BE-3 裁定**。
+   */
   readonly status: 'active' | 'archived';
   readonly createdAt: string;
 }
@@ -352,6 +382,8 @@ export interface SoloipsTeamMcpIntentRecord {
    * - `active`：**仅由可信接入流程**确认后写入（见下「生效确认」）；
    * - `revoked`：期望已撤回（不回溯已加载的工具/上下文）；
    * - `unavailable`：当前无法生效（未接路径、缺 provider、作用域不匹配等）。
+   *
+   * **迁移矩阵（权威）见 §2.1.2**——特别地：`revoked` **不可**直接回 `active`（须新建 intent）。
    */
   readonly status: 'requested' | 'active' | 'revoked' | 'unavailable';
   readonly assignedByAppointmentId: SoloipsAppointmentId;
@@ -390,8 +422,16 @@ export type SoloipsTeamNormVersionId = SoloipsCoreId<'team-norm-version'>;
  * ORG-03 明禁「模型自报独立形成 ready」——把「员工说它读了」直接记为合规即重犯该错误。
  * `method` 字段的作用就是让强/弱证据在数据上**可区分**。
  * 命名纪律：本记录表达的是「**送达/确认**」，**不是**「已阅读理解」——见 §2.1.3。
+ *
+ * **★ append-only 事件流**〔约束〕：本表是**只追加的事件台账**，主键是 `ackId`（唯一事件 ID），
+ * **不是** `(employeeId, teamId, normVersionId)`。理由：同一员工对同一团队同一规范版本会在
+ * **不同任职代际**重复送达（撤职再任命即属此类），若以三元组为主键，新代际的强确认会
+ * **覆盖**旧行——与「旧代际确认不作证据」（§2.1.3 效力规则）直接冲突，且销毁审计线索。
+ * 读取语义见 §2.1.3「append-only 与读取证据」。
  */
 export interface SoloipsNormAckRecord {
+  /** 唯一事件 ID（主键）。每次确认写入**新增一行**，旧行永不改写 */
+  readonly ackId: SoloipsNormAckId;
   readonly employeeId: SoloipsEmployeeId;
   readonly teamId: SoloipsTeamId;
   /** 哪一个版本被确认 */
@@ -414,17 +454,25 @@ export interface SoloipsNormAckRecord {
   readonly sessionRef?: string;
 }
 
+export type SoloipsNormAckId = SoloipsCoreId<'norm-ack'>;
+
 /**
  * 装配证据（只读装配读模型 = 装配动作的观测台账）
  *
  * 〔待实现〕M0.1 目标实体。
  *
- * **〔约束〕R-2：本表只读、仅供取证与展示，不参与任何判定。**
+ * **〔约束〕R-2 不变量（INV-AE-1，2026-09-18 升格）：本表只读、仅供取证与展示，禁止作为任何判定的输入。**
  * 四类文档的装配事实同时存在于 `employee.assemblyEvidence`（**个人资产**装配事实，
  * 服务 ORG-03 入职判定）与本报文的 `kind='document'` 记录（**装配动作**观测）。
  * 两者**不是同一事实的两份表示**（前者是「个人资产当前引用」，后者是「Host 侧装配动作观测」），
- * 但为避免被读成双事实来源，必须写死：**本表不参与判定**；onboarding 判定继续读
- * `employee.assemblyEvidence`，不改读本表。
+ * 但为避免被读成双事实来源，必须写死：
+ *
+ * - **禁作 onboarding 判定输入**——准入判定继续读 `employee.assemblyEvidence`，不改读本表；
+ * - **禁作 permission 输入**——权限链路（§3）不得以本表记录作为授权或拒绝的依据；
+ * - **禁作 readiness 判定输入**——任何「是否就绪/可上岗」的判定不得消费本表。
+ *
+ * **违反即契约违规**（不是「不推荐」）：实现若从本表读取判定输入，属**破坏单写权威**，
+ * 须在评审中拒绝；本不变量由 BE-3/编组切片的验收逐条核对。
  */
 export interface SoloipsAssemblyEvidenceRecord {
   readonly id: SoloipsAssemblyEvidenceId;
@@ -481,6 +529,17 @@ export interface SoloipsEmployeeRecord {
   // ── 〔待实现〕目标新增字段 ──
   readonly email?: string;
   readonly modelConfig?: SoloipsModelConfig;
+  /**
+   * 员工身份来源〔待实现〕：
+   * - `user_created`：用户在界面直接创建（如创建公司后招募首个总助理）；
+   * - `recruited`：由已有员工/总助理经招募流程产生。
+   *
+   * **两值起步**：只区分「用户直建」与「经招募」，**不**在此字段编码招募者身份
+   * （招募者可追溯性由 `appointment` 与 operation 台账承担）。
+   * 枚举**允许后续扩展**（如 `imported`/`template` 等来源）——扩展属**待决 M0.2+**，
+   * 未裁定前实现**不得**自行新增取值。
+   */
+  readonly identitySource?: 'user_created' | 'recruited';
   readonly status: 'pending' | 'active' | 'inactive';
   readonly createdAt: string;
 }
@@ -535,12 +594,26 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 | P-4 | **`leadAppointmentId` 约束**：必须满足**全部**四项——① 该任职**有效**（`status='active'`）；② **同公司**（`scope.companyId === team.companyId`）；③ **同团队**（`scope.kind='team'` 且 `scope.teamId === team.id`）；④ `role === 'team_lead'`。任一不满足即视为**无效引用**，按 P-3 排除 |
 | P-5 | **第二组长拒绝**：同一 Team 已有有效组长时，再建一条 `team_lead` 任职须返回**可判定的拒绝**，不得产生第二条 |
 | P-6 | **组长撤职后的语义（指挥裁定，三选一写死）**：组长任职被撤职时，**团队进入明确的不可用状态**——`Team` 的 `status` 转为不可用（或等效的显式标记），**不是**静默保留、也**不是**自动提升某成员继任。**换任须显式操作**（重新指定组长并建立新的 `team_lead` 任职），从而恢复可用 |
+| P-7 | **生命周期：禁物理删除**〔约束〕：Team **不得**被物理删除（无 delete 路径），**只允许 `status` transition**（可用 ↔ 不可用 → 归档）。理由与三态语义见 §2.1 `SoloipsTeamRecord` 的 `status` 注——任职、skill 分配、规范确认、装配证据均以 `teamId` 为引用键 |
 
 **P-6 的理由**：自动继任需要一套「谁继任」的规则（资历？能力匹配？部长指定？），那等于在契约里埋一个未裁定的策略；而静默保留会让「有组长」这一事实失真。写死为「不可用 + 显式换任」使失效可见、恢复可控，且不引入新策略。
 
+**P-8 悬挂组长引用的处置协议**〔约束〕：**介质允许短暂存在 `leadAppointmentId` 无效的 Team**——P-1/P-2 的「同一操作内写入」在崩溃后可能留下中间态，且介质层**无法**用外键约束表达 P-4 的四项语义（「有效任职 + 同公司 + 同团队 + `team_lead`」跨表且含状态判定）。因此**不禁止**该状态出现，但**必须**按下表处置：
+
+| # | 要求 |
+|---|---|
+| P-8.1 | **恢复流程必须扫描**：每次打开数据根（或每次执行团队读面）时，**扫描全部 `status='active'` 的 Team**，逐一核验 `leadAppointmentId` 是否满足 P-4 四项 |
+| P-8.2 | **归入不可用**：核验不通过的 Team **一律归入不可用**——`listTeams`/`getTeam` **不得**将其作为可用团队返回（与 P-3 同判据、同读面） |
+| P-8.3 | **不自动修复**：恢复流程**只标记、不自动**补任职或改指引用。**不得**自动指定新组长（P-6 同理由：会引入未裁定的继任策略） |
+| P-8.4 | **待显式修复或换任**：Team 恢复可用**只能**经两类显式操作之一——① **修复**：补齐/改正使 `leadAppointmentId` 重新满足 P-4；② **换任**：建立新的 `team_lead` 任职并显式改指 `leadAppointmentId`（对齐 P-5 的第二组长拒绝） |
+| P-8.5 | **读面不得静默降级**：不可用 Team **必须**以显式状态呈现（「无有效组长」），**不得**返回空成员列表或空任务列表冒充正常团队（对齐 §1.2 C-6 对「Team 未接入」的同类要求） |
+| P-8.6 | **归档 Team 不参与扫描**：`status='archived'` 的 Team 不再要求有效组长（归档是终态，见 §2.1 `SoloipsTeamRecord` 的禁物理删除与语义三分） |
+
+**P-8 与 P-3 的关系**：P-3 是**写入时的中间态**排除（同一次操作的两步之间）；P-8 是**恢复时的悬挂态**处置（崩溃残留或任职被撤）。两者判据一致（`leadAppointmentId` 无效即排除），但触发时机不同——**读面必须两条都覆盖**。
+
 **与 DSH Team roster 的分工**：本协议约束 **core 侧 `Team` 记录与任职**；DSH roster 的 `role: 'lead' | 'teammate'` 是**另一层**词表（见 §2.1 `SoloipsTeamRecord` 的两套词表不可混用）。M0.1 不接 DSH Team（§1.2 C-6），故本协议在 M0.1 内自成闭环。
 
-**〔待实现〕**：P-1…P-6 均为 M0.1 目标要求（`team` 表尚未建，见 §0）；BE-3 须逐条验收。
+**〔待实现〕**：P-1…P-8 均为 M0.1 目标要求（`team` 表尚未建，见 §0）；BE-3 须逐条验收。
 
 #### 2.1.2 MCP：期望与生效的分工（2026-09-18 裁定）〔约束〕
 
@@ -560,6 +633,24 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 **`configRef` 取值限制**：**部署层可解析的受控标识**（如部署配置中的键名/别名）。**禁止**任意路径、含凭据的连接串（`url`/`token`/`Authorization`/`env` 值）——凭据留受保护部署配置（红线 2 + ORG-13）。
 
 **作用域粒度**：**agent，不是 team**。DSH 的 `serverName` 唯一性以**注册作用域**为单位，而 teammate 继承父 preset 的 standing 组合——团队级隔离**必须**走 per-agent 挂载或自建 provider，**不能**写进 preset 行（R-1）。
+
+**状态迁移矩阵（权威，2026-09-18 补录）**〔约束〕：
+
+| 起点 → 终点 | 允许 | 条件与说明 |
+|---|---|---|
+| `requested` → `active` | ✅ | **仅可信接入流程**：Host 侧实际完成挂载并读取到可见性后回写。**模型不得自声明** |
+| `requested` → `unavailable` | ✅ | 接入时判定当前无法生效（未接路径/缺 provider/作用域不匹配） |
+| `unavailable` → `requested` | ✅ | 条件变化后重新登记期望（如路径接入、provider 补齐）——**回到待确认**，不是直接生效 |
+| `unavailable` → `active` | ❌ | **不得**跳跃：生效确认须经可信接入流程，而该流程的写入前置是 `requested`（先登记期望、后确认生效） |
+| `active` → `revoked` | ✅ | 显式撤回期望。**不回溯**已加载的工具/上下文（ORG-08：撤回 ≠ 已加载内容消失） |
+| `requested` / `unavailable` → `revoked` | ✅ | 未生效的期望同样可撤回 |
+| `revoked` → `active` | ❌ | **禁止**。撤回是**终态**——恢复同一配置须**新建一条 intent**（新 `id`、新 `createdAt`），旧行保留供审计。理由：原地复活会让「撤回—再启用」在台账上不可见，且 `revoked` 行无法表达「这是哪一次重新登记」 |
+| `revoked` → `requested` / `unavailable` | ❌ | 同上：`revoked` **无出边**，任何恢复都走新行 |
+| `active` → `unavailable` | ❌ | **不得**由 `active` 直接降级：先经可信流程撤回（`active` → `revoked`），再按新期望登记新 intent。理由：`active` 的失效是**运行态**事实，改写意图行会覆盖「曾确认生效」的历史 |
+
+**M0.1 停留态（不变）**：M0.1 **未接**逐 agent 挂载路径，故 intent **只允许停留在 `requested` / `unavailable`**，**不得**出现 `active`（与上「生效确认规则」第 2 条逐字一致）；`revoked` 在 M0.1 亦不可达（无生效态可撤）。
+
+**违反迁移矩阵即契约违规**：实现**不得**用「直接改 `status` 字段」的方式绕过上表；每次迁移须由**对应动作**触发（登记期望 / 可信接入确认 / 显式撤回），并在 operation 台账留痕。
 
 **〔未验证〕**：本节只登记意图形态与确认规则；**不声称**「团队级 MCP 已隔离」，也不声称逐 agent 挂载已可行（该路径未做挂载实验）。
 
@@ -582,11 +673,25 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 2. **强确认是准入可用的取证**；**弱确认不足以形成资格判定**（ORG-03：模型自报不能独立形成 `ready`）。
 3. **弱确认不覆盖强确认**：已有 `host-delivered` 记录时，后来的 `model-reported` **不得**降级或替换它（两方法并存时以强为准）；反向亦然——弱记录不因后来出现强记录而被「补正」为强。
 
-**主键与唯一约束**〔约束〕：
+**主键与追加语义**〔约束〕：
 
-- **主键**：`(employeeId, teamId, normVersionId)`——同一员工对同一团队同一规范版本**只有一条**确认记录。
-- **强确认写入是幂等的**：同一 `(employeeId, teamId, normVersionId)` 重复装配**不新增行**，只更新 `acknowledgedAt` 与执行上下文（保持最新一次送达可追溯）。
+- **主键**：`ackId`（唯一事件 ID）。**不是** `(employeeId, teamId, normVersionId)`——三元组在**不同任职代际**会重复（撤职再任命、重新送达），以其为主键会导致新证据**覆盖**旧行。
+- **本表 append-only**：确认写入一律**新增事件行**，**不得**改写或删除既有行。旧行保留供审计（「当时谁在哪个代际送达过」）。
+- **强确认重复装配**：同一 `(employeeId, teamId, normVersionId)` 在**同一代际**内重复装配时，**新增一行**事件（携带该次的 `appointmentGeneration` / `sessionRef` / `acknowledgedAt`），**不更新旧行**。「幂等」在此表现为**同一 `operationId` 重放不产生第二行**（提交门语义），而**不是**「重复装配不新增行」。
 - **跨版本不合并**：新版本是**新行**（`normVersionId` 不同），旧行保留供追溯。
+- **跨代际不合并**：同一版本在**新任职代际**重新送达是**新行**（`appointmentGeneration` 不同），旧行保留。
+
+**append-only 与「读取证据」**〔约束〕——**写入是事件流，读取是单条投影**，二者不可混：
+
+| 操作 | 语义 |
+|---|---|
+| **读取证据**（判定用） | 按 `(employeeId, teamId, normVersionId)` 取**当前有效代际**的**最新事件**（按 `acknowledgedAt` 取最新；代际匹配见下）。**只**取该条参与判定 |
+| **当前有效代际** | 由该员工在该团队的**有效任职**（`status='active'` 的 `team_lead`/`member` 任职）的 `generation` 决定；无有效任职即**无有效代际**（该团队下无任何强确认可用） |
+| **代际不匹配的事件** | 保留为历史事实，但**不作为**当前证据（对齐下「效力规则」的「旧确认不再作为当前代际的证据」） |
+| **审计读取** | 可取**全部**历史行（按时间序列），用于回答「送达到过几次、每次在哪一代际」 |
+| **弱证据的读取** | `model-reported` 行可读可展示，但**不参与**任何资格判定（不因存在强证据而被补正，见下效力规则 3） |
+
+> **反面声明**：读取规则**不蕴含**「取最新一行即可」——必须先按代际过滤再取最新；否则撤职后重新送达前，旧代际的行会被误读为当前证据。
 
 **效力规则**〔约束〕：
 
@@ -594,10 +699,10 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 |---|---|
 | 规范出新版本 | 旧版本的确认**不自动延续**到新版本。新版本需**新的**强确认；`normVersionId` 不同即另起一行 |
 | 旧版本确认 | 保留为历史事实（「当时送达过 v1」），**不**因新版本出现而失效或删除 |
-| 员工撤职后再入团 | 任职代际（`generation`）变化 → **旧确认不再作为当前代际的证据**（`appointmentGeneration` 不匹配即视为过期）；须重新送达并写新确认 |
+| 员工撤职后再入团 | 任职代际（`generation`）变化 → **旧确认不再作为当前代际的证据**（`appointmentGeneration` 不匹配即视为过期）；须重新送达并**写新事件行**（旧行保留，不覆盖——见上「append-only 与读取证据」） |
 | 同一员工换团队 | 按 `teamId` 分开；不跨团队复用 |
 
-**`SoloipsTeamNormRecord` 的版本不可变性**〔约束〕：**已写入的规范版本不可修改**——内容变更即**新版本**（新的 `normVersionId` + 新 `digest`）。「当前版本」由**指向前一版本链的最新 `versionId`** 定位（或由团队记录持当前引用），不得原地覆盖历史版本的内容或摘要。理由：确认记录以 `(…, normVersionId)` 为键，若版本内容可变，历史确认就失去确定的所指。
+**`SoloipsTeamNormRecord` 的版本不可变性**〔约束〕：**已写入的规范版本不可修改**——内容变更即**新版本**（新的 `normVersionId` + 新 `digest`）。「当前版本」由**指向前一版本链的最新 `versionId`** 定位（或由团队记录持当前引用），不得原地覆盖历史版本的内容或摘要。理由：确认事件以 `normVersionId` 为**引用键**（`ackId` 是主键，但事件所指的版本必须是确定不变的），若版本内容可变，历史确认就失去确定的所指。
 
 **〔待实现〕**：以上字段与规则均为 M0.1 目标；`SoloipsNormAckRecord` 尚未实现（§0），强确认的 Host 写入路径**依赖** §2.1 的 `SoloipsAssemblyEvidenceRecord`（装配动作的观测台账）作为落点。
 
@@ -607,12 +712,12 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 
 | # | 实体 | 位置 | 关键点 |
 |---|---|---|---|
-| 1 | `SoloipsTeamRecord`（+ `function`/`functionSource`/`leadAppointmentId`） | §2.1 | 已有类型，**本次补三字段**；能力项**不入本记录**（走 `appointment.requiredCapabilities`）；组长落点见 C-5 |
+| 1 | `SoloipsTeamRecord`（+ `function`/`functionSource`/`confirmedBy`/`leadAppointmentId`） | §2.1 | 已有类型，**本次补字段**；能力项**不入本记录**（走 `appointment.requiredCapabilities`）；组长落点见 C-5；**禁物理删除，只允许 `status` transition**，语义三分（可用/不可用/归档）必须成立（字段形态留 BE-3） |
 | 2 | `SoloipsTeamSkillAssignmentRecord` | §2.1 | 分配（意图+授权）与**实际加载**是两层；撤回不等于清除已加载上下文 |
-| 3 | `SoloipsTeamMcpIntentRecord` | §2.1 | `configRef` **不含凭据**；必须有 `unavailable` 态；作用域粒度是 agent |
+| 3 | `SoloipsTeamMcpIntentRecord` | §2.1 | `configRef` **不含凭据**；必须有 `unavailable` 态；作用域粒度是 agent；**状态迁移矩阵见 §2.1.2**（`revoked` 无出边） |
 | 4 | `SoloipsTeamNormRecord`（+ `SoloipsTeamNormVersionId`） | §2.1 | 团队级资料；**不能**塞进 `document_version`（`ownerId` 语义不同） |
-| 5 | `SoloipsNormAckRecord` | §2.1 | `method` 必须显式；**弱证据不足以形成资格**（ORG-03） |
-| 6 | `SoloipsAssemblyEvidenceRecord` | §2.1 | **只读、不参与判定**（R-2）；与 `employee.assemblyEvidence` 并存不冲突 |
+| 5 | `SoloipsNormAckRecord` | §2.1 | `method` 必须显式；**弱证据不足以形成资格**（ORG-03）；**主键 `ackId`、append-only 事件流**（三元组非主键） |
+| 6 | `SoloipsAssemblyEvidenceRecord` | §2.1 | **只读、不参与判定**（R-2 不变量 INV-AE-1：禁作 onboarding/permission/readiness 输入，违反即契约违规）；与 `employee.assemblyEvidence` 并存不冲突 |
 
 ### 2.3 任职 `scope` 政策（C-4，2026-09-18 裁定）
 
@@ -631,6 +736,8 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 > **规则 2 的诚实边界**〔未验证〕：规则 2 依赖「首个 `general_assistant`」这一**基于读取顺序/时间**的推断，**不是权威事实**——存量记录里没有信息能区分公司级与部门级任职（这正是 `scope` 缺失造成的不可判定历史数据）。更稳妥的做法是**阶段一不推断规则 2**，改由迁移脚本或重新任命（新 `operationId`）显式建立公司级任职；读取时遇无 `scope` 且无 `departmentId` 的记录一律按规则 3 报错。两个方案须在切片内**二选一**。
 
 **收紧为必填的 4 项前置条件**〔约束〕（**当前不满足**，故 `scope` 必须保持可选）：
+
+> **锚点〔约束〕**：**目标在 M1 前完成 `scope` required 迁移**（即「M0.1/M0.2 期间保持可选、M1 里程碑前收紧为必填」）。该锚点是**目标时点**，不是当前授权——迁移**必须**先满足下列 4 项前置，且不得因该锚点提前收紧（存量记录整次 open 失败的风险见上「根因」）。
 
 1. `P1`：unit version 戳 + `compatibleVersions` 机制落地（**当前不满足**——含 sqlite 后端的版本戳实现）；
 2. 存量 `appointment` 记录已全部带 `scope`（迁移完成、无缺项）；
@@ -746,6 +853,14 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
    - **每个「读」工具必须对应一个已登记的查询服务**；**查询不要求创建 `operation`**（读路径不写台账，见 §2.5 表内读面各行）。
 
 **`@Remote` 列的「—」含义**〔约束〕：**不暴露**（该查询经**既有服务面**消费，不新增 Remote 方法）。上表第 11–20 行的读面因此只有模型工具名，没有 Remote 方法——**不是**「待补」。
+
+**不拆分 `tool-registry.md`（2026-09-18 登记：提案未采纳）**〔约束〕：
+
+> **提案**：把本节的工具清单拆出为独立文档 `tool-registry.md`。
+> **裁定：不拆。** 理由：§2.5 的**单一权威刚刚建立**（此前 16 行版与 20 项版并存的**双清单**问题刚由本次收敛消除，见 `system-assistant-backend-design-v0.1.md` §4.1 BE-6 小节）；拆分会让工具名清单**再次**出现第二来源，与 `doc-format.md` §6「单一权威 / 投影不复制」相悖。清单的**引用点**已由外部文档指向本节，拆分需同步改动全部引用方，收益不足。
+> **复议触发条件**：**工具数 > 40 时再议**。届时若清单长度确实影响本节可读性，可在**保持单一权威**的前提下拆分（拆分后须有一处为权威、其余为投影引用）。
+
+**`contract-doc-sync-check` CI（提案未采纳）**〔待决〕：审查曾提议新增 CI，自动核对文档中的模型/字段/工具名与 `packages/core/src/contracts.ts` 是否同步。**本轮不实施**，登记为 **P3 切片候选 BE-8**——**权威登记与理由见 §6.2**（本节不重复）。**M0.1 的替代纪律**：凡改 §0 已实现行，必须对照 `packages/core/src/contracts.ts` 核验（见 §0 开头注）。
 
 ### 2.6 公司树规则（2026-09-18 codex 终审补录）〔约束〕
 
@@ -1051,6 +1166,24 @@ export class SoloipsPermissionService {
 
 **〔待实现〕**：A-1/A-2/A-3 依赖 BE-1（账户绑定）；A-6 的「同账户」与「非 operation」在现有代码中**部分未实现**（§2.6 已逐条标注）。
 
+### 3.3 权限判定优先级（M0.2 权限服务约束）〔约束〕
+
+**判定顺序写死为：`explicit deny` > `allow` > `inherited default`。** 三条语义如下：
+
+| 层 | 语义 | 作用 |
+|---|---|---|
+| **`explicit deny`** | **显式拒绝**：某条规则明确拒绝该主体对该资源执行该动作 | **最高优先级**——**任何** `allow` 或继承默认**不得**覆盖它。命中即拒绝，不再向下求值 |
+| **`allow`** | **显式允许**：某条规则明确允许 | 仅在**无** `explicit deny` 时生效 |
+| **`inherited default`** | **继承默认**：由上级作用域（公司 → 部门 → 团队）或角色默认推导出的许可 | **最低优先级**——可被同层或下层的 `allow` 收紧/放宽，**更**被 `explicit deny` 一票否决 |
+
+**为什么写死**：若允许「`allow` 覆盖 `explicit deny`」，则**任何**一条宽松规则都能让禁止失效——这使「拒绝」不构成安全边界，且在撤职/换任后无法保证失效生效（与 §2.1.1 P-6「撤职即不可用」、ORG-05 的可信身份链方向相反）。**失败方向必须是拒绝**（fail-closed）。
+
+**适用范围**：M0.1 **不建** `SoloipsPermissionService`（D-7），故本节**不是** M0.1 的实现要求；它约束 **M0.2 权限服务**的判定实现——届时 `SoloipsPermissionResult`（§3.1）的求值须逐字遵守本节顺序。
+
+**与 §3.2 示例的关系**：§3.2 的示例**未**表达本节语义（它没有 deny 层，默认分支直接 `unknown_action` 拒绝）——这正是它已降级为「不可作为实现模板」的原因之一（见 D-1…D-7）。本节**不**通过改写该示例落地。
+
+**〔待实现〕**：`explicit deny` 的**载体形态**（独立 deny 规则表 / 角色内嵌 deny 列表 / 资源属性策略）**尚未裁定**〔待决〕，属 M0.2 设计；本节只写死**优先级语义**，不预设载体。在载体裁定前，**不得**声称权限优先级已实现。
+
 ---
 
 ## 4. 原子配额操作
@@ -1138,6 +1271,16 @@ export class SoloipsPermissionService {
 | **重启重放** | 重启后按未决 `operationId` 核对：已提交的返回 `replayed`（不重复计数/不重复建公司）；未决的按 §4.1 第 3 条核对并回滚 |
 
 **失败语义**：返回**可判定的拒绝**（稳定码，附 `{resourceType, current, limit}`），且**不产生任何业务写**。
+
+**扫表计数的适用边界**〔约束〕（2026-09-18 补录）：
+
+| 项 | 要求 |
+|---|---|
+| **适用规模** | 单账户**公司数 ≤ 1000**（含 `enterprise`/`subsidiary`/`platform`/`operation` 全部 `active` 记录） |
+| **判据** | 该边界是**扫表全表计数**成立的条件——每次 `createCompany` 都要扫出同账户同类型全部记录，规模越大单次提交门持有时间越长（K-2 要求锁覆盖全程） |
+| **超出处置** | 规模**超出**该边界，或**实测性能不达标**（提交门内计数耗时使写入不可接受）→ **必须**转入 **M0.2 的 `quota` 计数器表**（§4.2 形态），**不得**在 M0.1 的扫表方案上叠加缓存/近似计数绕过 |
+| **性能验证** | 边界是**设计上限**，不替代实测——切片内须有计数耗时观测；无观测数据时**不得**声称该边界已够用〔未验证〕 |
+| **与失效条件的关系** | 本条是**规模维度**的边界，与上文「本方案的失效条件」1–4 条（写者/多账户/绕过路径/跨根聚合）**并列**，任一触发即须重新设计 |
 
 #### 部分成功与版本归属（待设计）〔待决〕
 
@@ -1300,6 +1443,18 @@ export function register(client: ClientModules): void {
 > **M0.1 内做 Free 1/0 的提交门计数校验（不建表、不用乐观锁）；完整的 Entitlement 记录与 `quota` 表形态属 M0.2。**
 > 本表述与 §0「C-1 配额口径」及 §4.3 逐字一致，两处口径以此为准。此前 §0 曾写「S0 不校验配额」，与「M0.2 才做配额」并存易被读成冲突——现统一为上述分工。
 
+### 6.2 切片候选登记（未排期）〔待决〕
+
+本节登记**提案未采纳、但保留复议条件**的切片候选。**它们不属 M0.1/M0.2 的承诺范围**，列入此处只为避免提案遗失或被误读为已排期。
+
+| 候选 | 内容 | 优先级 | 未采纳理由 | 复议触发条件 |
+|---|---|---|---|---|
+| **BE-8** | **`contract-doc-sync-check` CI**：自动核对文档中的模型/字段/工具名与 `packages/core/src/contracts.ts` 是否同步 | **P3** | 需先定义可解析的文档结构约定与「合法差距」容错规则（目标 vs 现状），约定成型前实施会产生误报，反而促使实现去迁就检查器 | §0 连续两次出现「文档与代码不符」返工，或 BE-1…BE-7 全部落地后需长期维护 §0 表 |
+
+**M0.1 的替代手段**〔约束〕：**人工核验纪律**——凡改 §0 已实现行，必须对照 `packages/core/src/contracts.ts` 核验（见 §0 开头注）。该纪律**不因** BE-8 未实施而放宽。
+
+> **注**：§2.5 另登记一项**文档层面**的未采纳提案（工具清单不拆 `tool-registry.md`，工具数 > 40 时再议）——因属文档组织而非切片，**不**入本表，权威登记在 §2.5。
+
 ---
 
 ## 7. 变更历史
@@ -1321,3 +1476,4 @@ export function register(client: ClientModules): void {
 | 2026-09-18 | **新实体与裁定登记**：§2.1 登记 6 个新实体（Team 三字段 / TeamSkillAssignment / TeamMcpIntent / team_norm / NormAck / AssemblyEvidence，均标〔待实现〕，其中 AssemblyEvidence 写死「只读不参与判定」）；§2.2 新增实体登记表；§2.4 记 Q-N5(a) 允许子公司嵌套、Q-N5(b) 配额按全部 `subsidiary` 计数、**Q-N5b 每个公司（含子公司）首个总助理由用户直接招募**（递归终止，跨公司招募待决）；§2.5 登记 20 项工具名（下划线模型面 vs 点号 Remote 面）与两条边界 | 用户 2026-09-18 授权技术自主决策；指挥裁定 |
 | 2026-09-18 | 修缮：§3.1 缺失的代码块起栅栏补齐（原有闭合栅栏无起始，会导致后续正文渲染为代码） | 文档智能体自查发现（写入范围内的既有缺陷） |
 | 2026-09-18 | **codex 终审修正（12 条全部接受）**：①§2.4 删自动创建总助理示例、补「待招募合法」与可信用户入口（幂等/恢复）、「母公司兼任」排除理由改为不依赖「模型无法表达」；②§3.2 示例降级为不可作实现模板 + 7 条已登记缺陷（D-1…D-7）+ M0.1 实际授权规则（A-1…A-6）；③新增 §2.1.1 组长唯一性协议（P-1…P-6，撤职→团队不可用+显式换任）；④新增 §2.1.2 MCP 期望/生效分工与生效确认规则；⑤新增 §2.1.3 NormAck 强证据契约（写入方/关联字段/主键唯一/效力规则/版本不可变）；⑥§4.3 补 K-1…K-6 条件、失效条件、四类验收、部分成功与版本归属 Q-1…Q-3、演进约束改写；⑦§4.2 删除含一致性错误的完整示例，改为待设计占位；⑧§2.5 改写工具名依据为本项目命名规范、读写工具分开要求、Remote「—」注明不暴露；⑨§3.1 补根级绑定元数据、换绑重放规则、seed 根三条处置路径；⑩§0 加「代码定义现状/本文定义目标」优先级声明、§2.1 Employee 补完整目标形状（既有判定字段不得移出）；⑪新增 §2.6 公司树规则（T-1…T-6、孤儿处置、enterprise 带父拒绝）、TeamBinding 重复字段登记为派生快照、§6.1 区分界面最小出口与各后端切片验收、§5.2 降为待核验参考结构 | codex CLI 终审「需修正后重审」，指挥逐条裁定全部接受 |
+| 2026-09-18 | **PR #15 审查意见修正（N-1…N-9 采纳，2 条登记不采纳）**：①**N-1** NormAck 改 **append-only 事件流**——主键改 `ackId`，三元组不再作主键；重复装配**新增事件行**（含 `appointmentGeneration`/`sessionRef`/`acknowledgedAt`），删除「不新增行只更新上下文」表述；新增「append-only 与读取证据」（按当前有效代际取最新事件，旧行留审计）；②**N-2** Team 生命周期——§2.1 `status` 注 + §2.1.1 **P-7 禁物理删除**、**P-8 悬挂组长引用处置协议**（扫描/归入不可用/不自动修复/待显式修复或换任/读面不静默降级/归档不扫描），语义三分写死、字段形态留 BE-3；③**N-3** AssemblyEvidence 升格为显式不变量 **INV-AE-1**（禁作 onboarding/permission/readiness 输入，违反即契约违规）；④**N-4** §2.1.2 补 **MCP Intent 状态迁移矩阵**（`revoked` 无出边、`unavailable→active` 禁跳跃、`active→unavailable` 禁直降；M0.1 停留 requested/unavailable 维持）；⑤**N-5** `functionSource` 补 `confirmedBy`（system-suggested 必填）+ 枚举扩展标〔待决 M0.2+〕；⑥**N-6** 新增 **§3.3 权限判定优先级**（explicit deny > allow > inherited default，M0.2 权限服务遵守）；⑦**N-7** Employee 补 `identitySource`（`user_created`/`recruited` 两值起步，〔待实现〕）；⑧**N-8** §4.3 补**扫表计数适用边界**（单账户公司数 ≤1000，超出或性能不达转 M0.2 quota 表）；⑨**N-9** §2.3 收紧前置旁加**锚点「目标 M1 前完成 scope required 迁移」**；⑩**登记不采纳 2 条**——工具清单**不拆** `tool-registry.md`（§2.5，工具数 >40 再议）；`contract-doc-sync-check` CI 登记为 **P3 切片候选 BE-8**（新增 §6.2 切片候选登记表），M0.1 替代纪律写入 **§0 开头注**「凡改 §0 已实现行，必须对照 `packages/core/src/contracts.ts` 核验」 | ChatGPT 对 PR #15 的审查意见；指挥逐条核实属实并裁定（9 采纳 2 登记） |
