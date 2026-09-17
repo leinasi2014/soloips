@@ -15,64 +15,109 @@ import { fakeAdapterEvents, fakeStoragePort, resetFakeAdapter } from "./adapter-
 
 const ROOT = "/tmp/soloips-plugin-root";
 
-class FakeHostContext implements SoloipsCoreHostContext {
+/**
+ * 宿主测试替身。
+ *
+ * 〔约束〕**不用 `implements SoloipsCoreHostContext`**：真实 `Context` 有 30+ 个成员，
+ * 让替身实现完整接口等于要求伪造全部成员；而只列用到的成员又会让「替身是否与宿主同形」
+ * 变得不可检查。因此替身按**被测路径实际用到的签名**实现，并靠
+ * `host-context-compat.spec.ts` 断言真实 `Context` 可赋值给 core 的派生类型——
+ * 兼容性的证据在那条断言，不在替身自己身上。
+ *
+ * 早先该替身手写了 `effect`（少 label 参数、返回类型放宽）与 `logger`（缺 info/debug），
+ * 与真实宿主不符且未被发现——那正是「tests/ 从不做类型检查」缺口的后果。
+ */
+class FakeHostContext {
+  /**
+   * 类型自检：替身必须可赋给 core 的宿主上下文面。
+   * 用 `satisfies` 而非 `implements`——`implements` 会把「未实现其余 Context 成员」
+   * 也变成错误，而替身刻意只实现被测路径用到的成员。
+   */
+  static readonly asHostContext = (instance: FakeHostContext): SoloipsCoreHostContext =>
+    instance satisfies SoloipsCoreHostContext;
+
   readonly injectCalls: string[][] = [];
   readonly provided = new Map<string, unknown>();
   readonly warnings: string[] = [];
   private readonly services = new Map<string, unknown>();
   private readonly disposers: (() => void | Promise<void>)[] = [];
 
+  /**
+   * 与 `Context.inject` 同形：`deps` 是服务名数组或其映射，返回值是 `Fiber & PromiseLike<Fiber>`
+   * ——返回类型从宿主派生，不手写（早先写 `unknown` 即与宿主不符）。
+   * 替身按测试需要只驱动回调，返回一个不完整的 fiber 占位：被测路径不消费返回值。
+   */
   inject(
-    deps: readonly string[],
-    callback: (ctx: SoloipsCoreHostContext) => void | Promise<void>,
-  ): unknown {
-    this.injectCalls.push([...deps]);
-    void callback(this);
-    return undefined;
+    ...args: Parameters<SoloipsCoreHostContext["inject"]>
+  ): ReturnType<SoloipsCoreHostContext["inject"]> {
+    const [deps, callback] = args;
+    this.injectCalls.push(Array.isArray(deps) ? [...(deps as string[])] : [String(deps)]);
+    void callback(this as never);
+    return undefined as unknown as ReturnType<SoloipsCoreHostContext["inject"]>;
   }
 
   get(name: string): unknown {
     return this.services.get(name);
   }
 
-  provide(name: string, value: unknown): () => void {
+  provide(
+    ...args: Parameters<SoloipsCoreHostContext["provide"]>
+  ): ReturnType<SoloipsCoreHostContext["provide"]> {
+    const [name, value] = args;
     this.provided.set(name, value);
-    return () => {
+    return (() => {
       this.provided.delete(name);
-    };
+    }) as ReturnType<SoloipsCoreHostContext["provide"]>;
   }
 
-  effect(
-    execute: () => (() => void | Promise<void>) | Iterable<() => void | Promise<void>>,
-  ): () => void {
+  /**
+   * 与 `Context.effect` 同形。真实返回类型是 `AsyncDisposable<Promise<void>>`——
+   * **既可调用、又是 thenable**（cordis `fiber.d.ts`：`interface AsyncDisposable<T> extends
+   * PromiseLike<() => T> { (): T }`）。返回类型直接从宿主派生，替身不自己描述它。
+   *
+   * 早先替身返回 `() => void`（既非 thenable、disposer 也不返回 Promise），
+   * 与宿主不符——由派生类型抓出。
+   */
+  effect(execute: () => unknown): ReturnType<SoloipsCoreHostContext["effect"]> {
     const returned = execute();
-    // 宿主的 SyncEffect 是「一个 disposer」或「disposer 的可迭代集合」；测试替身同样支持两者。
-    const disposers = typeof returned === "function" ? [returned] : [...returned];
-    this.disposers.push(...disposers);
-    return () => {
+    const disposers: unknown[] =
+      typeof returned === "function" ? [returned] : [...(returned as Iterable<unknown>)];
+    this.disposers.push(...(disposers as (() => void | Promise<void>)[]));
+    const dispose = async (): Promise<void> => {
       for (const disposer of disposers) {
-        const index = this.disposers.indexOf(disposer);
+        const index = this.disposers.indexOf(disposer as () => void | Promise<void>);
         if (index >= 0) this.disposers.splice(index, 1);
       }
     };
+    // AsyncDisposable：调用返回 Promise<void>，且 thenable 解析为那个 disposer。
+    return Object.assign(dispose, {
+      then: <R>(onfulfilled: (value: () => Promise<void>) => R): Promise<R> =>
+        Promise.resolve(dispose).then(onfulfilled),
+    }) as ReturnType<SoloipsCoreHostContext["effect"]>;
   }
 
-  logger(): SoloipsCoreLogger {
-    return {
-      warn: (message: string) => {
-        this.warnings.push(message);
-      },
-      error: (message: string) => {
-        this.warnings.push(message);
-      },
-    };
-  }
+  /** 真实 `Context.logger` 按名返回 logger；替身返回同一个含级别方法的对象。 */
+  readonly logger = Object.assign((): SoloipsCoreLogger => this.logger, {
+    warn: (message: string): void => {
+      this.warnings.push(message);
+    },
+    error: (message: string): void => {
+      this.warnings.push(message);
+    },
+    info: (message: string): void => {
+      this.warnings.push(message);
+    },
+    debug: (message: string): void => {
+      this.warnings.push(message);
+    },
+  });
 
-  /** 测试辅助：模拟服务注册与宿主卸载。 */
+  /** 测试辅助：模拟服务注册。 */
   setService(name: string, value: unknown): void {
     this.services.set(name, value);
   }
 
+  /** 测试辅助：模拟宿主卸载。 */
   async unload(): Promise<void> {
     for (const disposer of this.disposers.splice(0)) {
       await disposer();

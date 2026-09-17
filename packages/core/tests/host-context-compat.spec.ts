@@ -1,52 +1,68 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { describe, expect, it } from "vitest";
-import type { SoloipsCoreHostContext } from "../src/index";
+import type { SoloipsCoreHostContext, SoloipsCoreLogger } from "../src/index";
+import soloipsCoreEntry from "../src/index";
 
 /**
- * core 的结构化 Host 上下文与**真实** cordis `Context` 的兼容性。
+ * core 的宿主上下文面与**真实** cordis `Context` 的关系。
  *
- * ## 为什么需要它
+ * ## 类型兼容性的证据在哪里
  *
- * core 不 import cordis（oxlint 限制 `packages/core/src/**` 导入官方包），因此用一个
- * 结构化类型 `SoloipsCoreHostContext` 描述它消费的宿主注册面。结构化类型的问题是没有
- * 东西保证它与真实宿主一致：签名一旦比宿主宽松，core 就能写出宿主会拒绝的调用，
- * 而 `tsc -b` 与 lint 都不会报错。
+ * 本仓库的状态是：
+ * - `packages/core/src/index.ts` 的 `SoloipsCoreHostContext` 由官方 `Context` **派生**
+ *   （`Omit<Pick<Context, …>, "logger"> & { logger: … }`）。
+ * - `tsconfig.tests.json`（经 `pnpm run typecheck` 调用）**把 tests/ 纳入编译**。
  *
- * ## 本文件为什么这样写
+ * 因此类型兼容性由**编译器**证明，证据是 `pnpm run typecheck` 的退出码，不是本文件的 `it`。
+ * 本文件只覆盖**运行期**可观察的行为，并在此声明该分工。
  *
- * 曾有一版在这里写「条件类型判断 Context 是否可赋给 SoloipsCoreHostContext」，
- * 再断言该类型等于 true。**那是假证据**：本仓库的 vitest 不做类型检查
- * （实测把必然为 false 的条件类型赋 true 照样通过），且三个包的 tsconfig 只覆盖
- * 各自的 src 目录，`tsc -b` 不覆盖 tests/。于是该条件类型解析成 false 时，
- * 赋值不会被任何检查求值，测试仍然全绿。
+ * ## 为什么删掉了先前的「条件类型 + 赋值」写法
  *
- * 因此这里改为**运行时比较双向可赋值性**：用真实 `Context` 构造一个最小宿主对象并把它
- * 交给 core 的入口签名驱动的路径。类型层是否兼容由 `pnpm run typecheck:tests` 负责
- * （见该脚本与 `tsconfig.tests.json`），本文件只覆盖运行期行为，不冒充类型检查。
- *
- * 〔边界〕本文件**不是**类型兼容性证据。类型兼容的证据在 `tsconfig.tests.json` 的编译结果里。
+ * 先前这里写 `type A = Context extends SoloipsCoreHostContext ? true : false;`
+ * 再断言 `const x: A = true`。**那是空转的**：本仓库的 vitest 不做类型检查，
+ * 那条赋值不会被求值，`A` 解析成 `false` 时测试仍然全绿。留着它只会让人以为
+ * 有兼容性检查，实则没有。
  */
 
 describe("core host-context runtime contract", () => {
-  it("exposes the no-storageDomain-fallback boundary at runtime", () => {
-    // SEAM-X1：core 消费的上下文面里不存在 storageDomain。这里断言的是**实现侧**不读取它：
-    // 即使构造一个带 storageDomain 的宿主对象，core 的入口也不会碰它（代码里零引用）。
-    const host = {
-      inject: (): void => undefined,
-      get: (): undefined => undefined,
-      provide: (): (() => void) => () => undefined,
-      effect: (): (() => void) => () => undefined,
-      storageDomain: { domain: {} },
+  it("declares the host surface as a derivation of the real Context (shape check)", () => {
+    // 运行期能观察到的事实：core 的模块确实导出了入口，且入口可被一个最小宿主对象驱动。
+    // 类型层面的「真实 Context 可赋值给它」由 typecheck 负责，不在此冒充。
+    const logger: SoloipsCoreLogger = { warn: () => undefined, error: () => undefined };
+    const host: SoloipsCoreHostContext = {
+      inject: () => undefined as never,
+      get: () => undefined,
+      provide: () => (() => undefined) as never,
+      effect: () => (() => Promise.resolve()) as never,
+      logger: () => logger,
     };
-    // 传入一个「多出成员」的对象是合法的（结构化类型的正常用法），
-    // 用于固定 core 不强依赖该成员的存在。
-    const asCoreContext: SoloipsCoreHostContext = host;
-    expect(typeof asCoreContext.get).toBe("function");
+    // enabled:false ⇒ 任何副作用之前早退：不调用 inject、不抛。
+    expect(() => soloipsCoreEntry(host, { enabled: false })).not.toThrow();
   });
 
-  it("keeps the real cordis Context type importable for the type-level check", () => {
-    // 本用例只保证 `@deepseek-ai/cordis` 在测试上下文可解析——那是 tsconfig.tests.json
-    // 做类型兼容断言的前提。真正的赋值检查由 typecheck:tests 执行。
+  it("does not expose storageDomain on the declared host surface", () => {
+    // SEAM-X1：回退路径必须在类型层不可表达。这条**是类型层断言**，
+    // 其求值同样归 typecheck（条件类型在 vitest 里不会被求值）。
+    // 这里只在运行期固定「core 的入口不读取该成员」这一行为。
+    const accessed: string[] = [];
+    const logger: SoloipsCoreLogger = { warn: () => undefined, error: () => undefined };
+    const host = {
+      inject: () => undefined as never,
+      get: (name: string) => {
+        accessed.push(name);
+        return undefined;
+      },
+      provide: () => (() => undefined) as never,
+      effect: () => (() => Promise.resolve()) as never,
+      logger: () => logger,
+    } as SoloipsCoreHostContext;
+    soloipsCoreEntry(host, { enabled: true, storageRoot: "/tmp/soloips-compat-probe" });
+    expect(accessed).not.toContain("storageDomain");
+  });
+
+  it("keeps the real cordis Context type resolvable for the type-level check", () => {
+    // 前提检查：`@deepseek-ai/cordis` 在测试编译上下文可解析——
+    // 那是 tsconfig.tests.json 做兼容性推导的基础。
     const reference: Context | undefined = undefined;
     expect(reference).toBeUndefined();
   });
