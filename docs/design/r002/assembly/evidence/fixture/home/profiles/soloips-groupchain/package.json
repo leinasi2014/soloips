@@ -1,6 +1,0 @@
-{
-  "name": "dsh-profile-soloips-groupchain",
-  "private": true,
-  "dependencies": {},
-  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "soloips-adapter-dsh", "soloips-core", "soloips-web", "soloips-bundle"], "patchReload": "startup" } }
-}

@@ -1,0 +1,33 @@
+# SoloIPs core 层 patch
+#
+# 职责（ARCH-D02 / TERM-17）：SoloIPs 公司、作品、IP、业务绑定与验收的**唯一状态包**，
+# 持有业务 domain 的唯一 opener 与写入口。
+#
+# 本包在 SOLO-C01 顺序中位于 adapter-dsh **之后**、web 之前：
+# 它消费 adapter 暴露的内部接口，并被 web 读取投影。
+
+- insert:
+    - id: soloips-core
+      name: "soloips-core"
+      # inject 只声明**必需且由目标组合保证存在**的服务。
+      #
+      # `soloipsAdapter`：core 的**唯一**宿主依赖面。storage 能力（租约、facility）
+      # 由 adapter 收敛后经该服务提供（DEV-04：core 不直接 import 能力包，
+      # 因此也不 inject `storageDomain` —— 那会绕过 adapter 的类型层收窄）。
+      #
+      # 〔约束〕不得写 `storageDomain`：T03 起 core 的写路径只经 adapter 的
+      # `SoloipsStoragePort`（lease 先于 stack，facility 显式传入），
+      # 契约中不存在 `ctx.storageDomain` 回退（SEAM-X1）。写进 inject 会让本行
+      # 依赖一个 core 已不再使用的服务，并把待就绪面扩大到无必要的范围。
+      inject: [soloipsAdapter]
+      config:
+        # 统一开关位；false 时必须在打开任何 domain 之前早退（DEV-06/DEV-08），
+        # 本行不发布任何服务。
+        enabled: true
+        # 已解析的**绝对**存储根。缺失或非绝对路径时 core 不发布服务（fail-closed）。
+        # 〔约束〕环境相关值不写死在产品定义里：本字段由部署层（实例 profile 或
+        # $DSH_HOME/cordis.patch.yml）覆写为本机实际数据根，见 design.md §5.4/§5.6。
+        # 覆写本行时必须**完整重述** config 的全部键（SOLO-C03）。
+        storageRoot: ""
+        # backend 名；缺省 json（与 adapter 的 defaultBackend 一致）。
+        backend: "json"

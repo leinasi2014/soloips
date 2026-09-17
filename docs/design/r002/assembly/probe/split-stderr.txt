@@ -1,1 +1,0 @@
-dsh: [$SOLOIPS_ROOT\.artifacts\operations\r002-assembly-20260916\probe\home\profiles\soloips-exp\cordis.patch.yml] patch insert: entry "soloips-probe-missing-group" not found

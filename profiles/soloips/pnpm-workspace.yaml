@@ -1,0 +1,15 @@
+# SoloIPs 交付 profile 的 pnpm 安装上下文。
+#
+# 下面的 `packages` / `nodeLinker` / `autoInstallPeers` 三项**取值等于** DSH 启动器
+# `initProfile` 生成的默认值（0.1.6-alpha.1 `dsh-app-boot/lib/index.js:485-490` 的
+# `PROFILE_PNPM_WORKSPACE` 常量）。保持一致可让「版本控制内的定义」与「实例实际
+# 初始化结果」直接比对。本文件由 pnpm 直接解析，不要写入非 YAML 内容。
+#
+# 为何必须入 git（SOLO-C05）：profile 是独立安装上下文，本文件决定 pnpm 的链接行为
+# 与 allowBuilds 策略；缺失时实例会用启动器默认值，定义与实际可能静默分叉。
+
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
