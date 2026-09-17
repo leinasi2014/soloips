@@ -23,6 +23,19 @@
 | **V1 界面路线** | `docs/decisions/web-ui-fork.md` | **V1 界面 = 复制官方 Web 插件 fork 改造为 soloips-web；装配替换、上游同步、自研双版本推迟** | architecture-owner |
 | 重构需求基线 | `docs/refactoring/README.md` | 公司/部门/员工/作品需求 | product-owner |
 
+## 设计产物（docs/prds/）
+
+> **本类文档是设计阶段的产物，不是权威正文**：它们给设计建议、读源事实与差距清单，**不改变** `data-contract.md` 的权威地位（各文阅读契约均已自述此边界）。登记用途是让后续切片能找到依据与过程留痕；结论落地后以对应权威正文为准。
+
+| 文档 | 路径 | 用途 | 负责人 |
+|---|---|---|---|
+| **系统助理 PRD** | `docs/prds/system-assistant-m01-prd-v1.0.md` | `SOLO-PRD-SA-01`；M0.1 系统助理产品需求、验收标准、执行阶段（草稿，含未解缺口） | architecture-owner |
+| **系统助理 UI 设计** | `docs/prds/system-assistant-ui-design-v0.1.md` | `SOLO-UI-SA-01`；链式引导旅程、界面落点、结构化卡片、状态机、失败边界 | architecture-owner |
+| **系统助理后端设计** | `docs/prds/system-assistant-backend-design-v0.1.md` | `SOLO-SA-BE-01`；core/adapter 现状盘点、后端模型、对话流路径、BE-0~BE-7 最小切片、C-1…C-9 处置记录 | architecture-owner |
+| **组织全景后端设计** | `docs/prds/organization-full-backend-design-v0.1.md` | `SOLO-ORG-FULL-BE-01`；智能编组、入团自动三步、子公司、任务领取的领域与服务面设计（Q-N1/N2/N3/N5、R-1…R-7） | architecture-owner |
+| **组织全景 UI 设计** | `docs/prds/organization-full-ui-design-v0.1.md` | `SOLO-UI-ORG-01`；组织生命周期界面覆盖矩阵、slot 席位映射、§9b 工具名与两条命名面推导表 | architecture-owner |
+| **DSH 设计语言底册** | `docs/prds/dsh-design-language-v0.1.md` | `SOLO-UI-DL-01`；fork 侧 DSH 界面事实（token、组件、布局、强调色纪律、i18n、品牌位 BR1–BR7）——主题一致性权威 | architecture-owner |
+
 ## 环境与操作
 
 | 文档 | 路径 | 用途 | 负责人 |
@@ -43,7 +56,7 @@
 |---|---|---|---|
 | **架构概览** | `docs/architecture-summary.md` | 快速参考：包职责、关键决策、里程碑 | architecture-owner |
 | **完整架构设计** | `docs/architecture-complete.md` | 多公司模型、总助理、日志系统（§4.2/§5 的 UI 双版本设计已标〔已取代〕，V1 界面见 web-ui-fork.md） | architecture-owner |
-| **权威数据契约** | `docs/design/data-contract.md` | **唯一权威数据模型（含实现状态表、三层配额、S0 临时账户绑定例外）** | architecture-owner |
+| **权威数据契约** | `docs/design/data-contract.md` | **唯一权威数据模型（含实现状态表、三层配额、S0 临时账户绑定例外）**。2026-09-18 起另含：§2.2 六新实体（Team 三字段/TeamSkillAssignment/TeamMcpIntent/team_norm/NormAck/AssemblyEvidence）、§2.3 `scope` 先可选政策、§2.4 Q-N5/Q-N5b 子公司与总助理裁定、§2.5 20 项工具名、§4.3 M0.1 配额形态 | architecture-owner |
 | **多公司架构** | `docs/design/multi-company-organization.md` | 〔已取代〕历史稿；实现以 data-contract.md 为准 | architecture-owner |
 | **多公司实现** | `docs/design/multi-company-implementation.md` | 〔已取代〕历史稿；实现以 data-contract.md 为准 | architecture-owner |
 | **弊端与优化** | `docs/design/tradeoffs-and-optimizations.md` | 每个设计的潜在弊端+优化方案对照表 | architecture-owner |
@@ -75,6 +88,9 @@
    - adapter 端口清单：`docs/technical/packages.md`
    - 包目录结构（当前实际）：`docs/technical/packages.md`
    - V1 界面路线（官方 Web fork 改造、装配替换、上游同步、自研双版本推迟）：`docs/decisions/web-ui-fork.md`
+   - **产品定位（AI 公司元框架：用户供 runtime+资源／框架供结构+身份+任务协议／员工自主驱动）：`docs/architecture.md` §1.1**
+   - **工具名与两条命名面（下划线模型面 vs 点号 Remote 面）：`docs/design/data-contract.md` §2.5**
+   - **DSH 界面事实（token/组件/布局/强调色纪律/i18n/品牌位）：`docs/prds/dsh-design-language-v0.1.md`**
 
    新增同题复述视为冲突，按 `docs/refactoring/README.md` 的「更正唯一正文」规则处理。
 
