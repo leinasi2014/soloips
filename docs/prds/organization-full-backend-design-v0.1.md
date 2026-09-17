@@ -61,18 +61,27 @@
 | `functionSource` | `'leader-defined' \| 'system-suggested'`〔建议〕 | 记录职能由部长定义还是系统建议后确认——便于审计「谁定义了职能」，代价一个字段 |
 | ~~`capabilities`~~ | **不新增** | 能力项走 `appointment.requiredCapabilities`（裁定第 2 条） |
 
-**权威归属：待登记进 `data-contract.md` §2（P2 落实）**——`data-contract.md` §2 **已有** `SoloipsTeamRecord` 目标类型，但 `function` / `functionSource` 是本文新增字段；P2 需把这两字段补进 §2 的 `SoloipsTeamRecord`，并注明「能力项不入本记录」。
+**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成）**——`SoloipsTeamRecord` 的 `function` / `functionSource`（+ 修正新增的 `confirmedBy`）与「能力项不入本记录」已写入；形状以该处为准。原「待登记」标记作废。
 
-**实体登记一览（6 个新实体，均为 P2 待登记项）**〔裁定第 4 条〕：
+**实体登记一览（6 个新实体）**〔裁定第 4 条〕：
 
-| # | 实体 | 位置 | `data-contract.md` §2 现状 | P2 待办 |
-| --- | --- | --- | --- | --- |
-| 1 | `Team`（+ `function`/`functionSource`） | §1.1 | 有类型、缺新字段 | 补两字段声明 |
-| 2 | `TeamSkillAssignment` | §2.1 | 无 | 补 id 品牌 + 记录 |
-| 3 | `TeamMcpIntent` | §2.2 | 无 | 补 id 品牌 + 记录 + `configRef` 域 |
-| 4 | `team_norm`（团队规范条目/版本） | §2.3 | 无 | 补 id 品牌 + 记录 + 与 `document_version` 分工 |
-| 5 | `NormAck`（阅读/确认状态） | §2.3 | 无 | 补记录 + `method` 判定语义 |
-| 6 | `AssemblyEvidence` | §2.4 | 无（§2 只有语义不同的 `ExecutionBinding`） | 补记录 + 与 `employee.assemblyEvidence` 分工 |
+> **状态更新（2026-09-18，PR #15 审查意见修正后）**：**6 个实体已全部登记进 [`data-contract.md` §2.2](../design/data-contract.md#22-新增实体登记2026-09-18-裁定全部待实现)**，权威形状**以该节为准**（本文下表保留为登记过程的留痕）。其中若干形状在该次修正中已**变更**，本文的示意代码**不再代表最终形态**：
+>
+> - `NormAck`：**主键改 `ackId`、append-only 事件流**（原以 `(employeeId, teamId, normVersionId)` 为主键的写法**已被取代**——见 `data-contract.md` §2.1.3「主键与追加语义」）；
+> - `Team`：新增 `confirmedBy` 字段，并写死「禁物理删除 + 语义三分（可用/不可用/归档）」（§2.1.1 P-7/P-8）；
+> - `TeamMcpIntent`：补**状态迁移矩阵**（§2.1.2，`revoked` 无出边）；
+> - `AssemblyEvidence`：升格为**不变量 INV-AE-1**（禁作 onboarding/permission/readiness 判定输入）。
+>
+> 下文各实体的 `interface` 代码块是**当时的提案示意**，引用时一律指 `data-contract.md` §2.1/§2.2。
+
+| # | 实体 | 位置 | `data-contract.md` §2 现状（2026-09-18 更新） |
+| --- | --- | --- | --- |
+| 1 | `Team`（+ `function`/`functionSource`/`confirmedBy`） | §1.1 | **已登记**（§2.1 `SoloipsTeamRecord`） |
+| 2 | `TeamSkillAssignment` | §2.1 | **已登记**（§2.1 + 品牌类型） |
+| 3 | `TeamMcpIntent` | §2.2 | **已登记**（§2.1 + 品牌类型 + §2.1.2 迁移矩阵） |
+| 4 | `team_norm`（团队规范条目/版本） | §2.3 | **已登记**（§2.1 + 两个品牌类型 + 与 `document_version` 分工） |
+| 5 | `NormAck`（阅读/确认状态） | §2.3 | **已登记**（§2.1 + `SoloipsNormAckId`；`ackId` 主键、append-only——见 §2.1.3） |
+| 6 | `AssemblyEvidence` | §2.4 | **已登记**（§2.1 + 与 `employee.assemblyEvidence` 分工 + INV-AE-1） |
 
 ### 1.2 编组算法：从职能到「编组建议 + 理由」
 
@@ -287,7 +296,7 @@ interface SoloipsTeamSkillAssignmentRecord {
 }
 ```
 
-**权威归属：待登记进 `data-contract.md` §2（P2 落实）**——本表为本文新引入的持久实体，`data-contract.md` §2 当前无对应类型；P2 需补 `SoloipsTeamSkillAssignmentId` 品牌类型与记录声明。
+**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成）**——`SoloipsTeamSkillAssignmentId` 品牌类型与记录声明已写入；形状以该处为准。
 
 **层 2 — 实际加载（观测事实，不能由分配推导）**：见 §2.4 的两案选型。
 
@@ -330,7 +339,7 @@ interface SoloipsTeamMcpIntentRecord {
 }
 ```
 
-**权威归属：待登记进 `data-contract.md` §2（P2 落实）**——`data-contract.md` §2 现无 MCP 相关类型；P2 需补 `SoloipsTeamMcpIntentId` 品牌类型与记录声明，并明确 `configRef` 指向的配置域（部署层，不含凭据本体）。
+**权威归属：已登记进 `data-contract.md` §2.1 + §2.1.2（2026-09-18 完成）**——`SoloipsTeamMcpIntentId` 品牌类型与记录声明、`configRef` 的配置域（部署层，不含凭据本体）已写入；**状态迁移矩阵**另见 §2.1.2（`revoked` 无出边）。形状以该处为准。
 
 **三条硬边界**〔约束，依据读源 + 项目红线〕：
 
@@ -348,10 +357,12 @@ interface SoloipsTeamMcpIntentRecord {
 - **推荐形态**：走 `01-departments.md` **LIB-01/LIB-02** 的资料室模型——「资料条目 + 版本」，条目有稳定 ID、标题、业务归属、当前版本引用；版本记录来源、创建者/任职引用、内容位置、不可变版本标识与摘要。
 - **关键**：LIB-02 明确「具体 URI 语法、序号或内容摘要选型由技术负责人决定，**不为此引入通用引用图服务**」。因此 M0.1 可以用**最小实现**：新表 `team_norm`（`teamId` + `versionId` + `content` + `digest` + `createdAt`），字段形态对齐 `document_version` 的既有纪律（内容 + `soloipsDigestOf` 摘要，`digest.ts`）。**不**建完整资料室。
 
-> **实体 4/6：`team_norm`**——**权威归属：待登记进 `data-contract.md` §2（P2 落实）**。§2 现无团队级资料条目类型；P2 需补 `SoloipsTeamNormId` / `SoloipsTeamNormVersionId` 品牌类型与记录声明，并说明它与 `document_version` 的分工（团队资料 vs 个人资产，`ownerId` 语义不同）。
+> **实体 4/6：`team_norm`**——**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成）**。`SoloipsTeamNormId` / `SoloipsTeamNormVersionId` 品牌类型与记录声明、与 `document_version` 的分工（团队资料 vs 个人资产，`ownerId` 语义不同）均已写入；形状以该处为准。
 - **归属**：规范属**团队**（业务归属 `teamId`），不属员工个人。因此**不能**塞进 `document_version`（其 `ownerId` 是 `employeeId`，`domain.ts:173-182`）——这是必须新表的理由，而不是重复建设。
 
 **阅读状态的取证形态**〔建议〕：
+
+> **⚠️〔已取代，2026-09-18〕** 下方示意**缺 `ackId` 主键**，已被 `data-contract.md` §2.1 的 `SoloipsNormAckRecord` **取代**——最终形态是 **append-only 事件流**（主键 `ackId`；重复装配**新增事件行**而非更新旧行）。理由见 §2.1.3「主键与追加语义」：三元组在**不同任职代际**会重复（撤职再任命），以其为主键会覆盖旧行。本块仅作过程留痕。
 
 ```ts
 interface SoloipsNormAckRecord {
@@ -364,7 +375,7 @@ interface SoloipsNormAckRecord {
 }
 ```
 
-**权威归属：待登记进 `data-contract.md` §2（P2 落实）**——`data-contract.md` §2 现无「阅读/确认状态」类型；P2 需补 `SoloipsNormAckRecord` 声明，并写明 `method` 的判定语义（弱证据不足以形成资格）。
+**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成；形状以该处为准）**——`SoloipsNormAckRecord` + `SoloipsNormAckId` 已声明，`method` 的判定语义（弱证据不足以形成资格）写在 §2.1.3。
 
 **★ 这一节最关键的设计判断**〔建议，依据 ORG-03〕：
 
@@ -423,7 +434,7 @@ interface SoloipsAssemblyEvidenceRecord {
 }
 ```
 
-**权威归属：待登记进 `data-contract.md` §2（P2 落实）**——`data-contract.md` §2 现无装配取证类型（§2 只有 `SoloipsExecutionBindingRecord`，语义不同：执行绑定是 Session↔员工↔任职的**活动**映射，本节新表是**装配动作的观测台账**）；P2 需补 `SoloipsAssemblyEvidenceRecord` 声明，并写明与 `employee.assemblyEvidence` 的分工（见下文「并存关系」与 R-2）。
+**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成）**——`SoloipsAssemblyEvidenceRecord` 声明、与 `employee.assemblyEvidence` 的分工、以及升格后的**不变量 INV-AE-1**（禁作 onboarding/permission/readiness 判定输入）已写入；形状以该处为准。
 
 #### 对比
 
@@ -632,6 +643,7 @@ interface SoloipsAssemblyEvidenceRecord {
 | 4 | **6 新实体登记预告** | 本文 §1.1（总表）+ §2.1/§2.2/§2.3(×2)/§2.4 | **采纳**。6 实体逐一加「**权威归属：待登记进 `data-contract.md` §2（P2 落实）**」，并在 §1.1 加汇总表（含 §2 现状与 P2 待办） |
 | 5a | **QA B5 强化补进 R3** | 本文 §6 R-3（改写）+ R-3b（分出） | **采纳并强化**。核实三层事实：`invalidRecords` 默认拒绝且 core spec 未声明（`domain.ts:240-244`）；**即便声明也是空操作**——`backupRecord` 只在 JSON 后端 per-record unit 实现（`storage-json/src/per-record-unit.ts:238`，`single-unit.ts` 与 `SqliteKvUnit` 均无），`defaultBackend=sqlite`（`contracts.ts:777`）⇒ 宿主回退到拒绝默认；原 R-3（subsidiary 无父）拆为 **R-3b**，引用同步更新 |
 | 5b | **工具名清单** | 首任 §4.1 BE-6（新增小节）→ 现**收敛至 `data-contract.md` §2.5** | **采纳，形态修正；清单已收敛**〔读源〕。**点号不能用于工具名**：DeepSeek 函数名称约定只允许 `[A-Za-z0-9_-]`（`mcp-client/src/tools.ts:50-51`），且全仓原生工具名**零个**含点号、官方 Team 工具全用下划线 ⇒ 形态为 **`soloips_<域>_<动作>`**，**刻意与 Remote 端点的点号形态不同形**。第三任曾据 M0.1 必需面给出 **16 行**建议清单（落盘于首任 BE-6 小节）；该清单**已被 `data-contract.md` §2.5 的 20 项表取代**（后者从权威命令面导出、覆盖面更全），本文档**不再维护第二份清单**，一律引用 §2.5。**命名差异已消解**：16 行版的 `soloips_company_tree`→§2.5 作 `soloips_company_get_tree`、`soloips_onboarding_check`→`soloips_employee_check_onboarding`、`soloips_grouping_suggest`→§2.5 无此项（编组建议暂无 kind，属〔待决〕） |
+| 6 | **PR #15 审查意见修正后的同步**（2026-09-18 补录，文档智能体） | 本文 §1.1（实体登记一览 + NormAck 示意） | **采纳同步**。`data-contract.md` 已完成 N-1…N-9 修正：6 实体**全部登记完成**（原「待登记」标记已失效，§1.1 表已改为「已登记」并加状态更新注）；`NormAck` 示意块标〔已取代〕（主键改 `ackId`、append-only）；`Team` 补 `confirmedBy`；`TeamMcpIntent` 补迁移矩阵；`AssemblyEvidence` 升格为 INV-AE-1。**本文各实体的 `interface` 代码块一律降级为过程留痕，引用时指 `data-contract.md` §2.1/§2.2** |
 
 **新增/变更的既有引用**：R-3 → R-3b（§3.2 内引用同步）；`team.create` 引用统一改为「BE-3 待新增 kind」（§1.2 已加注）。
 
