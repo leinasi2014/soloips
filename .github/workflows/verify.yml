@@ -3,32 +3,29 @@ name: verify
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
 permissions:
   contents: read
-  checks: write  # 必需：报告 CI 状态给 PR 的分支保护检查
+  checks: write
 
 concurrency:
-  group: verify-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
+    name: verify (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            shell: bash
-          - os: windows-latest
-            shell: pwsh
-
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -61,8 +58,5 @@ jobs:
 
       - name: Delivery load check
         run: pnpm run check:delivery-load
-        # Windows runner temp dir: C:\Users\RUNNER~1\AppData\Local\Temp
-        # Ubuntu runner temp dir: /tmp
-        # This check validates the package artifacts can be loaded correctly
         env:
           TMPDIR: ${{ runner.temp }}
