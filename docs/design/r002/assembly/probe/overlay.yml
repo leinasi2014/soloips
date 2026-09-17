@@ -1,6 +1,0 @@
-# --patch 覆盖层：向 profile 层刚插入的 group 内再 insert 一行。
-# 若层间可见性成立，这行应出现且不产生 warn；否则应 warn "entry not found"。
-- id: soloips-exp-group
-  insert:
-    - id: soloips-exp-child
-      name: '@deepseek-ai/dsh-tool-todo'

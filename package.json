@@ -13,10 +13,13 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint --type-aware",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "pack-artifacts": "node scripts/development/pack-delivery-artifacts.mjs",
+    "delivery-lock": "node scripts/development/generate-delivery-lock.mjs",
+    "check:delivery-load": "node scripts/development/check-delivery-load.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
@@ -24,6 +27,7 @@
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.6.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "yaml": "^2.9.1"
   }
 }

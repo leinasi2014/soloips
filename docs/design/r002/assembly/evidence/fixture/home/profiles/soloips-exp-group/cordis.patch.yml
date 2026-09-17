@@ -1,9 +1,0 @@
-# 机制探针 4：dump 的可见性边界。
-# P7: 插入一行，name 指向根本不存在的包 —— dump 是否会失败？
-# P8: 插入一行，name 指向存在但没有 apply 的包 —— dump 是否会失败？
-- insert:
-    - id: soloips-probe-bogus-module
-      name: 'soloips-does-not-exist-anywhere'
-
-    - id: soloips-probe-bogus-subpath
-      name: '@deepseek-ai/dsh-tools/nonexistent-subpath'
