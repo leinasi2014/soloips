@@ -16,17 +16,21 @@
     "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc -b",
+    "build": "tsc -b && tsdown",
     "pack-artifacts": "node scripts/development/pack-delivery-artifacts.mjs",
     "delivery-lock": "node scripts/development/generate-delivery-lock.mjs",
     "check:delivery-load": "node scripts/development/check-delivery-load.mjs",
-    "verify": "node scripts/development/verify-s0.mjs"
+    "verify": "node scripts/development/verify-s0.mjs",
+    "check:build-repro": "node scripts/development/check-build-reproducibility.mjs"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-typert-generator": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.1",
     "@types/node": "^22.19.0",
     "oxlint": "^1.0.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.6.0",
+    "tsdown": "0.22.2",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0",
     "yaml": "^2.9.1"

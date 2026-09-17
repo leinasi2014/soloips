@@ -135,6 +135,63 @@
           }
         ]
       }
+    },
+    {
+      // web 层 Host 半边（BE-0a）的**窄口径**依赖面豁免。
+      //
+      // 为什么需要：`packages/*/src/**` 的 import 禁令把全部 `@deepseek-ai/*`
+      // 与 `soloips-core*` 列为 error，唯一豁免原先只有 adapter-dsh。而 Host
+      // 半边必须 import cordis 的类型、typert-protocol 的 decorator/基类，并经
+      // `soloips-core/contracts` 消费业务命令载荷类型（BE-6）——这三项是
+      // `docs/prds/system-assistant-backend-design-v0.1.md` §3.2 第 3 条登记的
+      // 工程配置改动（〔约束〕：须在改动清单里登记）。
+      //
+      // 口径刻意**窄于** core 那条：core 是「只放行 cordis，其余全禁」，
+      // 本包是「只放行这三项，其余全禁」。放行面**不得**扩大——特别是
+      // 不得放行 `@deepseek-ai/**` 通配（那会让 web 层直接依赖任意官方能力包，
+      // 绕过 adapter 的收敛职责，DEV-04）。
+      //
+      // 〔约束〕写法与 core 那条一致：**一个** patterns 对象、一个 group，
+      // 例外写在数组前面、禁令压在后面（数组内顺序即优先级，后匹配者胜；
+      // 且只要有一个对象产生白名单命中，就会抑制同数组内其他对象已累积的诊断）。
+      "files": ["packages/web/src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@deepseek-ai/**",
+                  "!@deepseek-ai/cordis",
+                  "!@deepseek-ai/cordis/**",
+                  "!@deepseek-ai/dsh-typert-protocol",
+                  "!@deepseek-ai/dsh-typert-protocol/**",
+                  "@deepseek-ai/**/src",
+                  "@deepseek-ai/**/src/**",
+                  "@deepseek-ai/**/internal",
+                  "@deepseek-ai/**/internal/**",
+                  "soloips-core",
+                  "soloips-core/**",
+                  "!soloips-core/contracts",
+                  "soloips-adapter-dsh",
+                  "soloips-adapter-dsh/**",
+                  "soloips-web",
+                  "soloips-web/**",
+                  "!soloips-web/contracts",
+                  "soloips-bundle",
+                  "soloips-bundle/**",
+                  "soloips-tools-pv",
+                  "soloips-tools-pv/**",
+                  "**/packages/*/src/**",
+                  "soloips-*/src/**"
+                ],
+                "message": "web 层 Host 半边的依赖面只有 @deepseek-ai/cordis、@deepseek-ai/dsh-typert-protocol 与 soloips-core/contracts（类型）；不得经包名或相对路径依赖其他包实现（DEV-04）。"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

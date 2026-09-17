@@ -2,7 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "lib"
+    // Host 半边的 tsc 产物落在 `lib/types`，**不是** `lib`：
+    // `lib/` 归 tsdown（打包产物），两者混用会互相覆盖。
+    // 本形状与 DSH fork 的 UI 插件包一致（`packages/client/*/tsconfig.host.json`），
+    // 也是 Typert 生成器 `sourcePathForExport` 的期望形状（`lib/types/**` → `src/**`）。
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts"]
 }
