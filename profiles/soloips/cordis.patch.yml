@@ -11,12 +11,15 @@
 
 # ── soloips-core 部署配置 ─────────────────────────────────────────────────
 
-# soloips-core 需要 storageRoot 才能发布服务（fail-closed）。
+# soloips-core 需要 storageRoot 与 accountId 才能发布服务（fail-closed）。
 # ⚠️ 以下为占位值，实际部署时由环境变量或实例配置覆盖。
 - id: soloips-core
   config:
     enabled: true
     storageRoot: "" # 部署时由 DSH_HOME/profiles/soloips/cordis.patch.yml 或环境变量覆盖
+    # 账户绑定（data-contract §3.1 S0 过渡例外）：一个存储根只绑定一个账户。
+    # 缺失/空白/"seed" 一律不发布服务。换绑须显式重置或迁移数据根，不得静默改归。
+    accountId: "" # 部署时填入真实账户标识（非 "seed"）
     backend: "sqlite"
 
 # ── soloips-adapter-dsh 部署配置 ─────────────────────────────────────────────

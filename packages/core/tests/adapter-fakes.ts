@@ -13,6 +13,8 @@
 import type {
   SoloipsDomain,
   SoloipsDomainFacility,
+  SoloipsDomainGlobal,
+  SoloipsDomainGlobalHandleOf,
   SoloipsDomainSpec,
   SoloipsKvTable,
   SoloipsStoragePort,
@@ -35,6 +37,13 @@ export class FakeAdapterError extends Error {
 
 // root → table → key → value：模拟跨进程存活的介质。
 const media = new Map<string, Map<string, Map<string, unknown>>>();
+// root → 持久化的 global 单例（介质上的「已写入」值）；缺省即「从未写入」。
+//
+// 〔约束〕用 Map 的「键存在与否」承载「是否写过」，而不是用 undefined/null 当哨兵：
+// DSH 与 adapter 都拒绝声明一个接受 null 的 global schema（null 是介质层的
+// 「从未写入」哨兵），因此 core 的绑定 schema 不允许 null，替身也必须能区分
+// 「未写入」与「写入了一个值为 undefined 的东西」。
+const globalMedia = new Map<string, unknown>();
 // root → 当前持权代际：后来的 acquire 递增，旧 lease 的 assertHeld 失败。
 const leaseGenerations = new Map<string, number>();
 const events: string[] = [];
@@ -52,9 +61,15 @@ export function fakeLeaseAssertCount(): number {
 export function resetFakeAdapter(): void {
   // 清理所有 root 的媒体数据（确保 schema 变更后测试隔离）
   media.clear();
+  globalMedia.clear();
   leaseGenerations.clear();
   events.length = 0;
   assertCalls = 0;
+}
+
+/** 测试直达介质：读取介质上的 global（未写入即 undefined，区分于「写入的值」）。 */
+export function fakeGlobalMedium(root: string): unknown {
+  return globalMedia.get(root);
 }
 
 /** 测试直达介质（模拟损坏/注入未决操作）；仅测试可调用。 */
@@ -111,6 +126,15 @@ function fakeFacility(root: string): SoloipsDomainFacility {
         throw new FakeAdapterError("SOLOIPS_ADAPTER_DOMAIN_ALREADY_OPEN", `${spec.name} 已打开`);
       }
       openNames.add(spec.name);
+      // spec 字段校验：镜像宿主 defineDomain 与 adapter validateSpecFields 的检查，
+      // 特别是「global schema 不得接受 null」——core 的绑定 schema 若误写成可空，
+      // 必须在 open 前就失败（真实宿主的行为），而不是让替身悄悄放过。
+      if (spec.global !== undefined && spec.global.schema.safeParse(null).success) {
+        throw new FakeAdapterError(
+          "invalid-spec",
+          `domain '${spec.name}' global schema 不得接受 null（null 是介质的「从未写入」哨兵）`,
+        );
+      }
       // 存量记录校验：默认策略为整次 open 拒绝（权威数据）。
       for (const [name, tableSpec] of Object.entries(spec.tables)) {
         const map = fakeMediumTable(root, name);
@@ -118,6 +142,13 @@ function fakeFacility(root: string): SoloipsDomainFacility {
           if (!tableSpec.valueSchema.safeParse(value).success) {
             throw new FakeAdapterError("invalid-record", `存量记录 ${name}/${key} 不符合 schema`);
           }
+        }
+      }
+      // 存量 global 校验：介质上已写入即校验（与表记录同策略）。
+      const storedGlobal = globalMedia.get(root);
+      if (spec.global !== undefined && storedGlobal !== undefined) {
+        if (!spec.global.schema.safeParse(storedGlobal).success) {
+          throw new FakeAdapterError("invalid-record", `存量 global 不符合 schema`);
         }
       }
       return fakeDomain(root, spec, openNames);
@@ -138,11 +169,31 @@ function fakeDomain<S extends SoloipsDomainSpec>(
   spec: S,
   openNames: Set<string>,
 ): SoloipsDomain<S> {
+  const globalSpec = spec.global;
+  // global 句柄：镜像宿主的哨兵语义——介质无值即 spec.initial（「从未写入」），
+  // 有值即经 schema 校验后返回。core 的绑定元数据经此读写。
+  const globalHandle: SoloipsDomainGlobal<unknown> | undefined =
+    globalSpec === undefined
+      ? undefined
+      : {
+          get() {
+            const stored = globalMedia.get(root);
+            if (stored === undefined) return globalSpec.initial;
+            return validated(globalSpec.schema, stored, `${root}/global`);
+          },
+          async set(value) {
+            // 与表写同样记录 assert 计数，使「写前必有新断言」对 global 也成立。
+            events.push(`global-write:${spec.name}@assert=${assertCalls}`);
+            validated(globalSpec.schema, value, `${root}/global`);
+            globalMedia.set(root, value);
+          },
+        };
   return {
     name: spec.name,
-    // 无 global 槽的 spec 下契约把该成员类型定为 never——真实现不提供可调用
-    // 句柄；测试替身以 never 占位满足类型，core 的 spec 无 global，永不被访问。
-    global: undefined!,
+    // S 是泛型，条件类型 `SoloipsDomainGlobalHandleOf<S>` 在此不可解；句柄的
+    // 有无已由上面的分支按 spec.global 保证，故做**单次受控断言**收窄到该
+    // 条件类型（与 src/schema.ts 中同类做法一致，不使用 as unknown as）。
+    global: globalHandle as SoloipsDomainGlobalHandleOf<S>,
     table<N extends keyof S["tables"] & string>(name: N) {
       // 契约的 tables 是 Readonly<Record<...>>，在 noUncheckedIndexedAccess 下取值可能为
       // undefined。测试替身按「调用方保证该表已声明」的前提取值，缺失即抛出，

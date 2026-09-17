@@ -38,6 +38,18 @@ export function nextSeedOperationId(label: string): SoloipsOperationId {
   return asOperationId(`seed-${label}-${seedCounter}`);
 }
 
+/**
+ * 测试用的部署账户（模拟部署层经 config 注入的 `accountId`）。
+ *
+ * 〔约束〕刻意**不用** `"seed"`：该值是 BE-1 之前硬编码的**占位账户**，
+ * `openSoloipsCompanyStore` 会以 `SOLOIPS_CORE_CONFIG_INVALID` 拒绝它
+ * （存量占位数据不得被当作部署账户）。用别的值才能让测试反映真实部署形态。
+ */
+export const TEST_ACCOUNT_ID = "acct-test-primary";
+
+/** 另一个账户：用于「根内出现异账户公司记录即拒绝打开」的用例。 */
+export const TEST_OTHER_ACCOUNT_ID = "acct-test-foreign";
+
 /** 组建完整入职员工；skip 的项保持缺失。 */
 export async function seedOnboardedEmployee(
   service: SoloipsCoreService,

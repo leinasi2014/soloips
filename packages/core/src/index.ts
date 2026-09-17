@@ -71,6 +71,14 @@ export interface SoloipsCoreConfig {
   readonly enabled?: boolean;
   /** 已解析的绝对存储根；缺失或非绝对路径时服务不发布（fail-closed）。 */
   readonly storageRoot?: string;
+  /**
+   * 部署层注入的账户（S0 过渡例外，data-contract §3.1）。
+   *
+   * 〔约束〕缺失或为占位账户 `"seed"` 时服务不发布（fail-closed）：账户是根级
+   * 绑定事实的比对基准，缺省一个「安全默认账户」会让绑定校验退化成无校验。
+   * 业务命令面**不**承载该值（`SoloipsCreateCompanyInput` 无此字段）。
+   */
+  readonly accountId?: string;
   readonly backend?: string;
 }
 
@@ -80,10 +88,12 @@ function parseCoreConfig(raw: unknown): SoloipsCoreConfig | undefined {
   const value = raw as Record<string, unknown>;
   const enabled = typeof value["enabled"] === "boolean" ? value["enabled"] : undefined;
   const storageRoot = typeof value["storageRoot"] === "string" ? value["storageRoot"] : undefined;
+  const accountId = typeof value["accountId"] === "string" ? value["accountId"] : undefined;
   const backend = typeof value["backend"] === "string" ? value["backend"] : undefined;
   return {
     ...(enabled === undefined ? {} : { enabled }),
     ...(storageRoot === undefined ? {} : { storageRoot }),
+    ...(accountId === undefined ? {} : { accountId }),
     ...(backend === undefined ? {} : { backend }),
   };
 }
@@ -150,6 +160,14 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
       logger?.warn("soloipsCore 未发布：缺少 storageRoot 配置（需已解析的绝对路径）");
       return;
     }
+    const accountId = config.accountId;
+    if (accountId === undefined) {
+      logger?.warn(
+        "soloipsCore 未发布：缺少 accountId 配置（需部署层注入的账户标识；" +
+          "S0 过渡例外见 data-contract §3.1，须在实例 profile 的 soloips-core.config 覆写）",
+      );
+      return;
+    }
 
     let unloaded = false;
     let opened: SoloipsCoreService | undefined;
@@ -163,6 +181,7 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
         const service = await openSoloipsCompanyStore({
           storage,
           root,
+          accountId,
           ...(config.backend === undefined ? {} : { backend: config.backend }),
         });
         if (unloaded) {

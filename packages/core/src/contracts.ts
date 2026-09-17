@@ -35,6 +35,15 @@ export const SOLOIPS_COMPANY_DOMAIN_NAME = "soloips_company";
 /** 业务 domain 的当前格式版本；schema 变化时递增并声明兼容边界（DEV-08）。 */
 export const SOLOIPS_COMPANY_DOMAIN_VERSION = 1;
 
+/**
+ * 占位账户名：BE-1 之前 `createCompany` 硬编码写入的 `accountId`（历史数据标记）。
+ *
+ * 〔约束〕不得作为部署账户使用：`SoloipsCoreConfig.accountId` 与
+ * `openSoloipsCompanyStore` 的 `accountId` 都拒绝该值。根内存在该账户的公司记录
+ * 即按「存量占位数据」处置——**不认领、不自动改归**（data-contract §3.1）。
+ */
+export const SOLOIPS_PLACEHOLDER_ACCOUNT_ID = "seed";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // §1 身份（core 自有品牌类型；构造只能经 src/ids.ts 的受控工厂）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,6 +198,44 @@ export type SoloipsOperationRecord = {
   /** 已提交时的结果；status 为 committed 时必须存在。 */
   readonly result?: SoloipsOperationResult;
 };
+
+/**
+ * 根级绑定元数据（data-contract §3.1「数据根绑定的持久事实」）：
+ * 存储根内的绑定记录，记 `accountId` 与绑定代际/时间。
+ *
+ * 〔约束〕判别联合而非「可空账户」：`state` 显式区分「未绑定」与「已绑定」，
+ * 不靠 `undefined` / `null` 隐式表达。理由有两条，缺一不可：
+ *  1. 介质层用 `null` 作「从未写入」哨兵，且 DSH `defineDomain` 与 adapter 的
+ *     spec 校验都**拒绝**声明一个接受 `null` 的 global schema
+ *     （storage-domain `src/spec.ts` 的 `defineDomain`；adapter
+ *     `ports/storage.ts` 的 `validateSpecFields`）。可空 schema 无法与
+ *     「未写入」区分，故「未绑定」必须由**显式标记**承载。
+ *  2. 「未绑定」与「已绑定」是两种不同的事实：前者允许首次绑定，后者必须
+ *     逐次比对（绑定不符即拒）。把它们折成「accountId 缺省」会让
+ *     「根被绑到空账户」与「根从未绑定」不可区分。
+ *
+ * 〔约束〕绑定一旦写入即**不再改写**（本阶段无换绑入口）：换绑后的旧操作重放
+ * 必须被拒绝，而不是把旧意图作用于新账户的根（data-contract §3.1）。
+ */
+export type SoloipsRootBindingRecord =
+  | {
+      /** 从未绑定：首次成功打开时写入当前账户。 */
+      readonly state: "unbound";
+    }
+  | {
+      readonly state: "bound";
+      /** 绑定的账户：此后任何异账户打开一律拒绝（fail-closed）。 */
+      readonly accountId: string;
+      /**
+       * 绑定代际：从 1 开始；同一根重新绑定时递增（供审计与后续迁移切片使用）。
+       *
+       * 〔约束〕本阶段不提供换绑写路径——代际字段是**审计事实**，
+       * 不是「可以改绑」的暗示：写入后即冻结（见上条）。
+       */
+      readonly generation: number;
+      /** 绑定时刻（ISO 8601）；「何时绑到哪个账户」可审计。 */
+      readonly boundAt: string;
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §4 入职/准入判定（ORG-03 完整必要入职；SOLO-ACC-04 三路径共用）
@@ -501,5 +548,16 @@ export type SoloipsCoreErrorCode =
   | "SOLOIPS_CORE_PRECONDITION"
   /** operationId 被不同种类的操作复用。 */
   | "SOLOIPS_CORE_CONFLICT"
+  /**
+   * 账户绑定不符（fail-closed，打开即拒、不发布服务）。
+   *
+   * 三种触发面共用本码，`message` 区分具体是哪一个（`code` 是契约、`message` 是诊断）：
+   *  1. 根级绑定元数据已绑定到别的账户（含「换绑后旧 operation 重放」——绑定不符即拒，
+   *     旧操作的意图**不会**作用于新账户的根）；
+   *  2. 根内公司记录的 `accountId` 与部署账户不符；
+   *  3. 根内存在占位账户（`SOLOIPS_PLACEHOLDER_ACCOUNT_ID`）的存量记录——
+   *     **不认领、不自动改归**（data-contract §3.1），须人工处置。
+   */
+  | "SOLOIPS_CORE_ACCOUNT_MISMATCH"
   /** 持久记录不符合声明 schema（介质数据损坏的信号）。 */
   | "SOLOIPS_CORE_RECORD_INVALID";

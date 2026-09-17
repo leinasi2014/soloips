@@ -51,9 +51,9 @@ describe("core assembly declaration matches its implementation", () => {
   });
 
   it("declares every config key the implementation actually reads", () => {
-    // 实现从 config 读 enabled / storageRoot / backend；patch 必须全部给出，
-    // 否则键缺失会走到 fail-closed 分支（storageRoot 缺失即不发布服务）。
-    const implementationKeys = ["enabled", "storageRoot", "backend"];
+    // 实现从 config 读 enabled / storageRoot / accountId / backend；patch 必须全部给出，
+    // 否则键缺失会走到 fail-closed 分支（storageRoot 或 accountId 缺失即不发布服务）。
+    const implementationKeys = ["enabled", "storageRoot", "accountId", "backend"];
     for (const key of implementationKeys) {
       expect(
         Object.keys(declaredConfig ?? {}),
@@ -63,8 +63,9 @@ describe("core assembly declaration matches its implementation", () => {
   });
 
   it("keeps environment-specific values out of the product patch", () => {
-    // storageRoot 是部署值：产品定义只给空初值占位，实际根由部署层覆写
+    // storageRoot 与 accountId 都是部署值：产品定义只给空初值占位，实际值由部署层覆写
     // （design.md §5.4/§5.6：产品定义必须与环境无关）。
     expect(declaredConfig?.["storageRoot"]).toBe("");
+    expect(declaredConfig?.["accountId"]).toBe("");
   });
 });

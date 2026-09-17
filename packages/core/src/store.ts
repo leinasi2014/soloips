@@ -6,16 +6,26 @@
  *   2. createStack({root})——backend 与 facility 由同一 canonical root 构造；
  *   3. requireFacility(stack.facility)——facility 必须显式传入；类型层无回退，
  *      本文件（以及 core 全部源码）不存在 `ctx.storageDomain` 回退（SEAM-X1）；
- *   4. facility.open(SPEC)——租约窗口内打开业务 domain（唯一 opener）。
+ *   4. facility.open(SPEC)——租约窗口内打开业务 domain（唯一 opener）；
+ *   5. 账户绑定校验（§3.1）——读根级绑定元数据与公司记录，不符即拒（fail-closed）。
+ *      必须在 open **之后**：两类事实都只能经已打开的 domain 读取（无旁路读路径）。
  *   释放逆序：domain.close() → stack.dispose() → lease.dispose()。
  *
  * 失败语义：任一步失败即释放已建立部分并抛出，服务不发布（fail-closed）。
  * 崩溃遗留的未决操作不自动清理，交由接管方经 listPendingOperations 核对
  * （SOLO-FENCE-01 §3/§4：不按文件年龄擅自清锁，在线入口不绕过停写边界）。
+ *
+ * 〔裁定〕§3.1「判据的字段落点」〔待决〕项——本切片实现裁定为**打开时校验**：
+ * 不给 operation 记录加绑定代际字段，而在打开时按绑定元数据整根拒绝。
+ * 理由：绑定不符时**整个根**都不属于当前账户，此时任何 operation（含换绑前的）
+ * 都不应重放——按根拒绝比逐条给 operation 打代际标记更强且更简单，且不需要
+ * 改动 operation schema（避免一次破坏性 schema 变更，见 R-3 的迁移边界）。
+ * 「换绑后重放换绑后 operationId」按常规语义返回原结果：绑定未变即不受影响。
  */
 
 import type {
   SoloipsDomain,
+  SoloipsDomainGlobal,
   SoloipsStoragePort,
   SoloipsStorageStack,
   SoloipsWriterLease,
@@ -54,6 +64,7 @@ import type {
   SoloipsRequiredDocumentType,
   SoloipsRevokeAppointmentInput,
   SoloipsRevokeAppointmentResult,
+  SoloipsRootBindingRecord,
   SoloipsSaveDocumentInput,
   SoloipsSaveDocumentResult,
   SoloipsVerifyCapabilityInput,
@@ -63,10 +74,11 @@ import type {
   SoloipsWorkEntryOrigin,
   SoloipsWorkEntryOutcome,
 } from "./contracts.js";
+import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_PLACEHOLDER_ACCOUNT_ID } from "./contracts.js";
 import { SoloipsCommitGate } from "./commit-gate.js";
 import { SOLOIPS_COMPANY_DOMAIN_SPEC } from "./domain.js";
 import { soloipsDigestOf } from "./digest.js";
-import { SoloipsCoreError } from "./errors.js";
+import { SoloipsCoreError, wrapLeaseFailure } from "./errors.js";
 import {
   asOperationId,
   isAppointmentId,
@@ -88,6 +100,14 @@ export interface SoloipsStoreOpenOptions {
   readonly storage: SoloipsStoragePort;
   /** 已解析的绝对存储根；adapter 不做 home 解析，core 不接受相对路径。 */
   readonly root: string;
+  /**
+   * 部署层注入的账户（S0 过渡例外：config 注入而非 Session 派生，data-contract §3.1）。
+   *
+   * 〔约束〕必填。缺失/空白/占位账户（`SOLOIPS_PLACEHOLDER_ACCOUNT_ID`）一律
+   * `SOLOIPS_CORE_CONFIG_INVALID`——账户是**根级绑定事实**的比对基准，
+   * 缺省一个「安全默认账户」会让绑定校验退化成无校验。
+   */
+  readonly accountId: string;
   readonly backend?: string;
 }
 
@@ -105,6 +125,148 @@ function validateRoot(root: string): void {
       "SOLOIPS_CORE_CONFIG_INVALID",
       "storageRoot 必须是已解析、无首尾空白的绝对路径",
     );
+  }
+}
+
+/**
+ * 账户形状校验（部署注入值）。
+ *
+ * 拒绝空白与**占位账户** `"seed"`：后者是 BE-1 之前 `createCompany` 硬编码写入的
+ * 历史标记，把它当部署账户会让「存量占位数据」与「部署账户」同名，
+ * 从而使 §3.1 的「不认领、不自动改归」在运行期不可判定。
+ */
+function validateAccountId(accountId: string): void {
+  if (accountId.length === 0 || accountId.trim() !== accountId) {
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_CONFIG_INVALID",
+      "accountId 必须是非空、无首尾空白的字符串（由部署层经 config 注入）",
+    );
+  }
+  if (accountId === SOLOIPS_PLACEHOLDER_ACCOUNT_ID) {
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_CONFIG_INVALID",
+      `accountId 不得为占位账户 "${SOLOIPS_PLACEHOLDER_ACCOUNT_ID}"：该值是 BE-1 之前硬编码的存量标记，` +
+        "部署层须注入真实账户标识（如 DSH_HOME/cordis.patch.yml 的 soloips-core.config.accountId）",
+    );
+  }
+}
+
+/** 占位账户记录的人工处置指引：给出具体重置路径（错误消息必须可行动）。 */
+function placeholderResetGuidance(root: string): string {
+  return (
+    `按 data-contract §3.1 的「不认领、不自动改归」，core 不自动迁移。` +
+    `处置：若旧数据无需保留，重置数据根（删除 ${root} 下的 ${SOLOIPS_COMPANY_DOMAIN_NAME}.db 或 ` +
+    `${SOLOIPS_COMPANY_DOMAIN_NAME}/ 目录，以及根内同域的绑定与租约文件）后重新启动；` +
+    `若需保留，须经独立切片的显式迁移脚本改归目标账户并留痕`
+  );
+}
+
+/**
+ * 取出 domain 的 global 单例句柄，并确认它可用（fail-closed）。
+ *
+ * 为什么需要运行期确认：core 的 spec **声明了** global 槽，因此契约要求 domain
+ * 暴露可用的句柄（真实 adapter 的 `wrapHostDomain` 在 spec 有 global 时一律转发
+ * 宿主句柄）。一个「spec 有 global 却不给句柄」的 storage 端口不符合冻结契约，
+ * 此时**不能**降级为「跳过绑定校验」——那会让账户绑定静默失效。
+ * 故以 `SOLOIPS_CORE_ADAPTER_INVALID`（端口不合契约）拒绝，并给出可行动说明。
+ *
+ * 该分支在实践中由不合规的测试替身触发（手写的 fake domain 忘记实现 global 槽），
+ * 真实 adapter 路径不会走到这里。
+ */
+function requireGlobalHandle(
+  domain: SoloipsDomain<typeof SOLOIPS_COMPANY_DOMAIN_SPEC>,
+): SoloipsDomainGlobal<SoloipsRootBindingRecord> {
+  // 静态类型已保证句柄存在（spec 声明了 global）；此处补**运行期**确认，
+  // 因为 storage 端口在运行期可能不合契约（静态类型不设防）。
+  const handle: unknown = domain.global;
+  const probe = handle as { readonly get?: unknown; readonly set?: unknown } | null | undefined;
+  if (typeof handle !== "object" || handle === null) {
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_ADAPTER_INVALID",
+      "domain 未提供 global 单例句柄：core 的 spec 声明了根级绑定元数据槽，" +
+        "storage 端口必须转发该句柄（否则账户绑定无法校验）；拒绝打开而不降级为「跳过绑定校验」",
+    );
+  }
+  if (typeof probe?.get !== "function" || typeof probe.set !== "function") {
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_ADAPTER_INVALID",
+      "domain 的 global 单例句柄缺少 get/set：不符合冻结契约（SoloipsDomainGlobal）；拒绝打开",
+    );
+  }
+  // 受控单次断言：上面已运行期证明 get/set 均为函数（契约要求的全部成员）。
+  return handle as SoloipsDomainGlobal<SoloipsRootBindingRecord>;
+}
+
+/**
+ * 打开时校验账户绑定（data-contract §3.1）——在 domain open **之后**、发布服务之前。
+ *
+ * 为什么必须在 open 之后：绑定元数据与公司记录都只能经**已打开**的 domain 读取
+ * （core 不存在绕过 opener 的读路径，SEAM-X1）。因此「先 open、再校验、失败即逆序
+ * 释放并抛出」是本设计的固有顺序；校验失败时服务不发布（fail-closed）。
+ *
+ * 三条判据（任一不符即 `SOLOIPS_CORE_ACCOUNT_MISMATCH`，且**不写任何状态**）：
+ *  1. **绑定元数据**：已绑定且账户不符 → 拒绝。这条覆盖「换绑后旧 operation 重放」：
+ *     绑定不符即拒，旧操作的意图不会作用于新账户的根（§3.1 换绑规则表）。
+ *  2. **存量占位数据**：根内任何公司记录的 `accountId` 为占位账户 → 拒绝 + 处置指引。
+ *     不静默认领为部署账户的数据。
+ *  3. **异账户公司记录**：根内任何公司记录的 `accountId` 与部署账户不符 → 拒绝
+ *     （「一个业务存储根只绑定一个账户」）。
+ *
+ * 首次打开（未绑定）时写入绑定元数据：**先校验根内记录、再写绑定**，避免
+ * 「校验失败却已留下绑定」的半途状态。该写入与业务写同样受写权约束——
+ * 写前复核租约（binding 是介质上的持久事实，不得成为绕过 fence 的写路径）。
+ */
+async function verifyAccountBinding(
+  domain: SoloipsDomain<typeof SOLOIPS_COMPANY_DOMAIN_SPEC>,
+  root: string,
+  accountId: string,
+  lease: SoloipsWriterLease,
+): Promise<void> {
+  const globalHandle = requireGlobalHandle(domain);
+
+  // 1. 绑定元数据先行（「打开时先读绑定元数据再校验根内公司记录」）。
+  const binding = globalHandle.get();
+  if (binding.state === "bound" && binding.accountId !== accountId) {
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_ACCOUNT_MISMATCH",
+      `存储根已绑定账户 "${binding.accountId}"（代际 ${binding.generation}，绑定于 ${binding.boundAt}），` +
+        `与部署账户 "${accountId}" 不符；拒绝打开。` +
+        "换绑后旧 operationId 不得重放（data-contract §3.1），" +
+        "如需换绑请显式重置或迁移数据根",
+    );
+  }
+
+  // 2/3. 根内公司记录逐条比对（§3.1「根内出现其他账户的公司记录即拒绝打开」）。
+  for (const [id, record] of domain.table("company").entries()) {
+    if (record.accountId === accountId) continue;
+    if (record.accountId === SOLOIPS_PLACEHOLDER_ACCOUNT_ID) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_ACCOUNT_MISMATCH",
+        `公司 ${id} 属于占位账户 "${SOLOIPS_PLACEHOLDER_ACCOUNT_ID}"（BE-1 之前的硬编码占位数据），` +
+          `与部署账户 "${accountId}" 不符；拒绝打开。${placeholderResetGuidance(root)}`,
+      );
+    }
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_ACCOUNT_MISMATCH",
+      `公司 ${id} 属于账户 "${record.accountId}"，与部署账户 "${accountId}" 不符；` +
+        `一个业务存储根只绑定一个账户（data-contract §3.1），拒绝打开。` +
+        `根：${root}`,
+    );
+  }
+
+  // 4. 首次打开（未绑定）：校验通过后写入绑定事实（写前复核写权）。
+  if (binding.state === "unbound") {
+    try {
+      await lease.assertHeld();
+    } catch (error) {
+      throw wrapLeaseFailure("account-binding", error);
+    }
+    await domain.global.set({
+      state: "bound",
+      accountId,
+      generation: 1,
+      boundAt: new Date().toISOString(),
+    });
   }
 }
 
@@ -144,11 +306,17 @@ const WORK_ENTRY_ORIGINS: readonly SoloipsWorkEntryOrigin[] = [
 /**
  * 打开公司存储（唯一 opener 路径）。顺序契约见文件头。
  * 返回的 service 不暴露 domain/表句柄：一切持久写都经提交门。
+ *
+ * 账户绑定（data-contract §3.1）在 open **之后**、发布服务之前校验：
+ * 校验所需的两类事实（根级绑定元数据、公司记录）都只能经已打开的 domain 读取，
+ * 故顺序为 lease → stack → facility → open → 绑定校验 → 发布。任一不符即逆序释放
+ * 并抛出（fail-closed，服务不发布、无业务状态变更）。
  */
 export async function openSoloipsCompanyStore(
   options: SoloipsStoreOpenOptions,
 ): Promise<SoloipsCoreService> {
   validateRoot(options.root);
+  validateAccountId(options.accountId);
 
   // 1. 跨进程写权先行（ORG-06 / SOLO-FENCE-01 §2）。
   const lease = await options.storage.acquireWriterLease({ root: options.root });
@@ -181,7 +349,24 @@ export async function openSoloipsCompanyStore(
     throw error;
   }
 
-  return new SoloipsCompanyStore(domain, stack, lease);
+  try {
+    // 5. 账户绑定校验 + 首次绑定写入（§3.1）；不符即拒（fail-closed）。
+    await verifyAccountBinding(domain, options.root, options.accountId, lease);
+  } catch (error) {
+    // 校验失败：逆序释放已建立的 domain/stack/lease，服务不发布。
+    try {
+      await domain.close();
+    } finally {
+      try {
+        await stack.dispose();
+      } finally {
+        await lease.dispose();
+      }
+    }
+    throw error;
+  }
+
+  return new SoloipsCompanyStore(domain, stack, lease, options.accountId);
 }
 
 class SoloipsCompanyStore implements SoloipsCoreService {
@@ -190,15 +375,25 @@ class SoloipsCompanyStore implements SoloipsCoreService {
   readonly #stack: SoloipsStorageStack;
   readonly #lease: SoloipsWriterLease;
   readonly #gate: SoloipsCommitGate;
+  /**
+   * 部署层注入的账户（S0 过渡例外，data-contract §3.1）。
+   *
+   * 〔约束〕**只读且不暴露为命令入参**：业务命令、UI、模型不得逐次传入或覆盖
+   * accountId（§3.1 命令面）。它只在 store 内部用于写入公司归属与（后续切片的）
+   * 归属比对——命令面不存在承载它的字段。
+   */
+  readonly #accountId: string;
 
   constructor(
     domain: SoloipsDomain<typeof SOLOIPS_COMPANY_DOMAIN_SPEC>,
     stack: SoloipsStorageStack,
     lease: SoloipsWriterLease,
+    accountId: string,
   ) {
     this.#domain = domain;
     this.#stack = stack;
     this.#lease = lease;
+    this.#accountId = accountId;
     this.#gate = new SoloipsCommitGate(domain, lease);
   }
 
@@ -369,9 +564,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
         const id = newCompanyId();
         await publish.put("company", id, {
           id,
-          // accountId 由 Host 层注入（SoloipsCoreService 接口契约）
-          // 测试场景使用 "seed" 占位
-          accountId: "seed",
+          // 账户来自部署注入（构造期绑定，非命令入参）：SoloipsCreateCompanyInput
+          // 刻意**不含** accountId，业务命令不得传入或覆盖（data-contract §3.1 命令面）。
+          accountId: this.#accountId,
           ...(input.parentCompanyId !== undefined
             ? { parentCompanyId: input.parentCompanyId }
             : {}),
