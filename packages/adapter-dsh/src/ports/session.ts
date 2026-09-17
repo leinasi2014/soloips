@@ -41,14 +41,14 @@ import {
   type SoloipsSessionReadResult,
   type SoloipsSessionSnapshot,
   SoloipsRevision,
-} from "../contracts";
+} from "../contracts.js";
 import {
   hostSessionId,
   mapHostError,
   soloipsSessionId,
   toSoloipsSessionEvent,
   type HostSessionEvent,
-} from "./shared";
+} from "./shared.js";
 
 /** 宿主 append/校验函数所期望的事件数组类型（经公开面派生）。 */
 type HostSessionEvents = Parameters<typeof validateStoredEvents>[1];

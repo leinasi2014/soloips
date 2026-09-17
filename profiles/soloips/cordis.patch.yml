@@ -1,7 +1,5 @@
 # SoloIPs profile 用户层 patch
 #
-cordis.patch.yml
-#
 # 层位置：本文件在 bundle 层**之后**、home 层与 --patch 覆盖层之前生效
 # （0.1.6 实测 allPatches 顺序 = bundlePatches → profile.patches → homePatches → overlays）。
 # 因此本层可以覆写任何 bundle 层已插入的行。
@@ -32,6 +30,10 @@ cordis.patch.yml
 # 每个候选目标的完整键清单见 design.md §4 与 evidence/official-rows.txt。
 # 覆写前必须先在 L2 dump 上核对目标行的**当前**键集合（可能已被其他层改过）。
 #
+# 〔约束〕本文件顶层必须是 YAML **数组**（loader 的 parsePatchList 强制）。
+# 下面每条部署级覆写都是注释示例；当本层暂无生效覆写时，必须保留这个空数组，
+# 否则文件解析为 null 并抛「must be a top-level YAML array of loader patch entries」。
+[]
 # ── 启动语义提醒 ──────────────────────────────────────────────────────────────
 #
 # `patchReload: startup` 是 **package.json 的 manifest 字段**，不在本文件表达。

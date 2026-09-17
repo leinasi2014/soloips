@@ -30,7 +30,7 @@ import {
   type SoloipsSessionEvent,
   type SoloipsSessionId,
   type SoloipsSubagentResult,
-} from "../contracts";
+} from "../contracts.js";
 
 // ── 宿主类型派生（只经各包公开 exports，不 import 私有路径） ──────────────────
 

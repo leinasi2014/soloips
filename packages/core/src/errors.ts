@@ -3,7 +3,7 @@
  * （DEV-06：错误通过稳定错误码与可行动说明传递，包装保留去敏后的原因）。
  */
 
-import type { SoloipsCoreErrorCode } from "./contracts";
+import type { SoloipsCoreErrorCode } from "./contracts.js";
 
 export class SoloipsCoreError extends Error {
   override readonly name = "SoloipsCoreError";

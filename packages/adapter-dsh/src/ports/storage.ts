@@ -43,8 +43,8 @@ import {
   type SoloipsStorageStackOptions,
   type SoloipsValueSchema,
   type SoloipsWriterLease,
-} from "../contracts";
-import { mapHostError } from "./shared";
+} from "../contracts.js";
+import { mapHostError } from "./shared.js";
 
 /** 租约文件名（置于数据根下；锁文件是其 `.lock` 兄弟）。 */
 const LEASE_FILE_NAME = ".soloips-writer-lease.json";

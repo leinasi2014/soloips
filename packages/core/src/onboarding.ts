@@ -20,8 +20,8 @@ import type {
   SoloipsOnboardingGap,
   SoloipsOnboardingStatus,
   SoloipsRequiredDocumentType,
-} from "./contracts";
-import { soloipsDigestOf } from "./digest";
+} from "./contracts.js";
+import { soloipsDigestOf } from "./digest.js";
 
 /** 判定所需的只读投影（由 store 提供；sync 读面与 adapter 契约一致）。 */
 export interface SoloipsOnboardingReadModel {

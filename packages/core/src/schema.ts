@@ -7,8 +7,8 @@
  * （durable 边界只回写声明字段）。对象装配处的单次受控断言有注释说明。
  */
 
-import type { SoloipsJsonValue, SoloipsOperationIntent } from "./contracts";
-import { SoloipsCoreError } from "./errors";
+import type { SoloipsJsonValue, SoloipsOperationIntent } from "./contracts.js";
+import { SoloipsCoreError } from "./errors.js";
 
 export interface SoloipsSchemaIssue {
   readonly path: string;

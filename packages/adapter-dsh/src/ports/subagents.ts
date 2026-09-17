@@ -31,7 +31,7 @@ import {
   type SoloipsSubagentPort,
   type SoloipsSubagentRun,
   type SoloipsContinuableStartSpec,
-} from "../contracts";
+} from "../contracts.js";
 import {
   hostSessionId,
   mapHostError,
@@ -39,7 +39,7 @@ import {
   soloipsSessionId,
   toHostBlocks,
   toSoloipsSubagentResult,
-} from "./shared";
+} from "./shared.js";
 
 function requireSubagents(ctx: Context): SubagentRuntime {
   const subagents = ctx.get("subagents");

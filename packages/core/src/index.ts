@@ -22,14 +22,14 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { SoloipsAdapter, SoloipsStoragePort } from "soloips-adapter-dsh/contracts";
 
 import { SOLOIPS_ADAPTER_SERVICE_NAME } from "soloips-adapter-dsh/contracts";
-import type { SoloipsCoreService } from "./contracts";
-import { SOLOIPS_CORE_SERVICE_NAME } from "./contracts";
-import { SoloipsCoreError } from "./errors";
-import { openSoloipsCompanyStore } from "./store";
+import type { SoloipsCoreService } from "./contracts.js";
+import { SOLOIPS_CORE_SERVICE_NAME } from "./contracts.js";
+import { SoloipsCoreError } from "./errors.js";
+import { openSoloipsCompanyStore } from "./store.js";
 
-export type { SoloipsCoreService } from "./contracts";
-export { SoloipsCoreError } from "./errors";
-export { openSoloipsCompanyStore } from "./store";
+export type { SoloipsCoreService } from "./contracts.js";
+export { SoloipsCoreError } from "./errors.js";
+export { openSoloipsCompanyStore } from "./store.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Host 上下文：由**官方 cordis 类型**派生，不手抄宿主签名

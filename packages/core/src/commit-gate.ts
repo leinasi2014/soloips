@@ -32,9 +32,9 @@ import type {
   SoloipsOperationIntent,
   SoloipsOperationKind,
   SoloipsOperationRecord,
-} from "./contracts";
-import { SoloipsCoreError, wrapLeaseFailure } from "./errors";
-import { SOLOIPS_COMPANY_DOMAIN_SPEC, type SoloipsCompanyTableName } from "./domain";
+} from "./contracts.js";
+import { SoloipsCoreError, wrapLeaseFailure } from "./errors.js";
+import { SOLOIPS_COMPANY_DOMAIN_SPEC, type SoloipsCompanyTableName } from "./domain.js";
 
 /** 提交门对外暴露的唯一写面：每次调用即一个持久发布点。 */
 export interface SoloipsCompanyPublisher {

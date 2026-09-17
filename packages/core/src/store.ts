@@ -62,11 +62,11 @@ import type {
   SoloipsWorkEntryInput,
   SoloipsWorkEntryOrigin,
   SoloipsWorkEntryOutcome,
-} from "./contracts";
-import { SoloipsCommitGate } from "./commit-gate";
-import { SOLOIPS_COMPANY_DOMAIN_SPEC } from "./domain";
-import { soloipsDigestOf } from "./digest";
-import { SoloipsCoreError } from "./errors";
+} from "./contracts.js";
+import { SoloipsCommitGate } from "./commit-gate.js";
+import { SOLOIPS_COMPANY_DOMAIN_SPEC } from "./domain.js";
+import { soloipsDigestOf } from "./digest.js";
+import { SoloipsCoreError } from "./errors.js";
 import {
   asOperationId,
   isAppointmentId,
@@ -80,8 +80,8 @@ import {
   newDepartmentId,
   newEmployeeId,
   newDocumentVersionId,
-} from "./ids";
-import { evaluateOnboarding, type SoloipsOnboardingReadModel } from "./onboarding";
+} from "./ids.js";
+import { evaluateOnboarding, type SoloipsOnboardingReadModel } from "./onboarding.js";
 
 export interface SoloipsStoreOpenOptions {
   /** adapter 的 storage 端口（插件层已结构校验；测试注入 fake）。 */

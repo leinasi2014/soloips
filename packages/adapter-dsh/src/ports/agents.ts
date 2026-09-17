@@ -17,8 +17,8 @@ import {
   type SoloipsAgentRef,
   type SoloipsAgentsPort,
   type SoloipsSessionId,
-} from "../contracts";
-import { hostSessionId, toSoloipsAgentRef } from "./shared";
+} from "../contracts.js";
+import { hostSessionId, toSoloipsAgentRef } from "./shared.js";
 
 function requireAgents(ctx: Context): AgentRegistry {
   const agents = ctx.get("agents");

@@ -19,7 +19,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -73,7 +73,13 @@ function main() {
   }
   const artifactDir = resolve(options.artifacts);
   const outDir = resolve(options.out);
-  if (outDir.startsWith(repoRoot)) {
+  // 用**路径边界**判断，而不是字符串前缀：`D:\ws\soloips-t04-verify` 以
+  // `D:\ws\soloips` 为前缀，却并不在仓库内——前缀比较会误拒合法的兄弟目录。
+  const isInsideRepo = (candidate) => {
+    const rel = relative(repoRoot, candidate);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  };
+  if (isInsideRepo(outDir)) {
     fail(`--out 不得落在源码仓库内：${outDir}\n交付上下文是生成物，不入库。`);
   }
   if (!existsSync(join(artifactDir, "soloips-artifacts.json"))) {
@@ -99,7 +105,19 @@ function main() {
     dependencies[name] = `file:./artifacts/${entry.file}`;
     writeFileSync(join(outArtifacts, entry.file), readFileSync(join(artifactDir, entry.file)));
   }
-  const deliveryManifest = { ...source, dependencies };
+  // 〔约束〕必须把**包间依赖**也钉回工件，用 pnpm.overrides。
+  //
+  // 原因（装配验证实测出的缺陷）：包间依赖写的是 `workspace:*`，pnpm 在 `pack` 时会把它
+  // 改写成具体版本（如 `soloips-adapter-dsh: 0.0.0`）。消费方从 tarball 安装时，那个版本号
+  // 会被拿去 npm registry 解析，而 SoloIPs 包**不在 registry 上** → ERR_PNPM_FETCH_404，
+  // 交付定义根本装不上。overrides 把每个包名强制指回本地工件，依赖闭包才成立。
+  const overrides = { ...(source.pnpm?.overrides ?? {}) };
+  for (const name of packages) overrides[name] = dependencies[name];
+  const deliveryManifest = {
+    ...source,
+    dependencies,
+    pnpm: { ...(source.pnpm ?? {}), overrides },
+  };
   writeFileSync(join(outDir, "package.json"), `${JSON.stringify(deliveryManifest, null, 2)}\n`);
   for (const file of ["cordis.patch.yml", "pnpm-workspace.yaml"]) {
     writeFileSync(join(outDir, file), readFileSync(join(profileSource, file)));

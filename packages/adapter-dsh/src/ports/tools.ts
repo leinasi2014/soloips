@@ -32,7 +32,7 @@ import {
   type SoloipsToolPresentationMode,
   type SoloipsToolRestriction,
   type SoloipsToolsPort,
-} from "../contracts";
+} from "../contracts.js";
 import {
   hostToolCallId,
   mapHostError,
@@ -40,7 +40,7 @@ import {
   toHostBlocks,
   toSoloipsAgentRef,
   toSoloipsBlocks,
-} from "./shared";
+} from "./shared.js";
 
 function requireTools(ctx: Context): ToolRuntime {
   const tools = ctx.get("tools");

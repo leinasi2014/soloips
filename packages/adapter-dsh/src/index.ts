@@ -31,18 +31,18 @@ import {
   type SoloipsAdapterConfig,
   type SoloipsAdapterConfigSummary,
   type SoloipsAdapterReadiness,
-} from "./contracts";
-import { createAgentsPort } from "./ports/agents";
-import { createEventsPort, wireEventTranslations } from "./ports/events";
-import { createSessionPort } from "./ports/session";
-import { createStoragePort } from "./ports/storage";
-import { createSubagentsPort } from "./ports/subagents";
-import { createTeamPort } from "./ports/team";
-import { createToolsPort } from "./ports/tools";
+} from "./contracts.js";
+import { createAgentsPort } from "./ports/agents.js";
+import { createEventsPort, wireEventTranslations } from "./ports/events.js";
+import { createSessionPort } from "./ports/session.js";
+import { createStoragePort } from "./ports/storage.js";
+import { createSubagentsPort } from "./ports/subagents.js";
+import { createTeamPort } from "./ports/team.js";
+import { createToolsPort } from "./ports/tools.js";
 
 // SEAM-01：入口只做装配 + re-export；类型与常量的权威在 src/contracts.ts
 // （冻结面）。包边界以公开 exports 消费（DEV-04）。
-export * from "./contracts";
+export * from "./contracts.js";
 
 // ── 服务名模块增强（SEAM-02；形状与探针 service-augmentation.ts 一致） ────────
 

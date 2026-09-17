@@ -14,7 +14,7 @@ import type {
   SoloipsDocumentVersionId,
   SoloipsEmployeeId,
   SoloipsOperationId,
-} from "./contracts";
+} from "./contracts.js";
 
 /** 单次受控断言：从校验过的普通字符串收窄为品牌 id（唯一断言点）。 */
 function asId<Id extends string>(value: string): Id {

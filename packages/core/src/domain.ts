@@ -24,8 +24,8 @@ import type {
   SoloipsEmployeeRecord,
   SoloipsOperationId,
   SoloipsOperationRecord,
-} from "./contracts";
-import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_COMPANY_DOMAIN_VERSION } from "./contracts";
+} from "./contracts.js";
+import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_COMPANY_DOMAIN_VERSION } from "./contracts.js";
 import {
   arraySchema,
   booleanSchema,
@@ -38,7 +38,7 @@ import {
   positiveIntegerSchema,
   stringSchema,
   type SoloipsSchema,
-} from "./schema";
+} from "./schema.js";
 import {
   isAppointmentId,
   isCompanyId,
@@ -46,7 +46,7 @@ import {
   isDocumentVersionId,
   isEmployeeId,
   isOperationIdShape,
-} from "./ids";
+} from "./ids.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 记录 schema（与 contracts.ts 的 *Record 一一对应；字段锚点注释为推导证据）

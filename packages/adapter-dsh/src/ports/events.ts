@@ -19,8 +19,8 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import type { SoloipsEventMap, SoloipsEventsPort } from "../contracts";
-import { soloipsSessionId, toSoloipsBlocks } from "./shared";
+import type { SoloipsEventMap, SoloipsEventsPort } from "../contracts.js";
+import { soloipsSessionId, toSoloipsBlocks } from "./shared.js";
 
 /** 端口可见的事件键（= `keyof SoloipsEventMap`）。 */
 type SoloipsEventKey = keyof SoloipsEventMap;

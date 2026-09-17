@@ -25,14 +25,14 @@
  * - core 不得依赖本端口的成员名（§7.2 消费者纪律）。
  */
 
-import { SoloipsAdapterError } from "../contracts";
+import { SoloipsAdapterError } from "../contracts.js";
 import type {
   SoloipsAgentRef,
   SoloipsContentBlock,
   SoloipsTeamMemberView,
   SoloipsTeamPort,
   SoloipsTeamTaskView,
-} from "../contracts";
+} from "../contracts.js";
 
 function teamError(): SoloipsAdapterError {
   return new SoloipsAdapterError(

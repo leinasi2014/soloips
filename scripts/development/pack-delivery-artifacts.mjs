@@ -27,7 +27,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,7 +90,13 @@ function main() {
     );
   }
   const outDir = resolve(options.out);
-  if (outDir.startsWith(repoRoot)) {
+  // 用**路径边界**判断，而不是字符串前缀：`D:\ws\soloips-t04-verify` 以
+  // `D:\ws\soloips` 为前缀，却并不在仓库内——前缀比较会误拒合法的兄弟目录。
+  const isInsideRepo = (candidate) => {
+    const rel = relative(repoRoot, candidate);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  };
+  if (isInsideRepo(outDir)) {
     fail(
       `--out 不得落在源码仓库内：${outDir}\n` +
         "工件是构建产物，会随代码改动失效；入库会让「锁引用的工件」与「仓库内容」纠缠不清。",
