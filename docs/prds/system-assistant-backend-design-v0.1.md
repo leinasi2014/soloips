@@ -291,7 +291,9 @@ DSH 会话（系统助理 agent）
 
 **BE-6 的前置未知**〔未验证〕：soloips 仓库当前 `build` 只有 `tsc -b`，无 `tsdown`、无 React/Vite 客户端工具链〔`package.json:17-25`；根 `node_modules` 无 react/tsdown〕。Typert 生成是 **tsdown 插件**，因此 BE-6 实际包含「引入客户端构建工具链」这一隐式子片。该子片与 UI 智能体的界面工作**共用**，须在合并前对齐（QA 阶段）。
 
-#### BE-6 系统助理工具名建议清单〔建议，供 UI 侧对齐（QA 裁定 A4）〕
+#### BE-6 工具名形态与清单引用〔建议；清单权威已移至 `data-contract.md` §2.5〕
+
+> **命名提示**：本节曾在第三任以「A4 工具名清单」之名被派单引用；文档内实际标题下方可见。清单本体已收敛，见下文。
 
 **★ 命名形态修正（本次读源发现，与提议的 `soloips.company.create` 形态不符）**：
 
@@ -303,33 +305,27 @@ DSH 会话（系统助理 agent）
 | 〔读源确认：全仓 `name: '...'` 字面量检索〕 | **零个**原生工具名含点号；`@deepseek-ai/dsh-experimental-tool-agent-team` 的十个工具全部用 `lowercase_with_underscores`（`spawn_teammate`/`send_message`/`list_agents`/`wait_agent`/`interrupt_agent`/`team_task_create`/`team_task_list`/`team_task_get`/`team_task_update`），`tool-skill` 用 `skill` |
 | 〔`AGENTS.md` 命名风格〕 | 项目自身用 kebab-case 标识包名；DSH 工具词汇用下划线 |
 
-⇒ **建议形态：`<包前缀>_<域>_<动作>`，全部小写 + 下划线**，与 DSH 既有工具词汇一致、且与命令 kind 的语义一一对齐（kind 用点号是**持久台账**的命名空间，工具名用下划线是**模型可见**的函数名，两者刻意不同形，通过下表逐行对应）。
+⇒ **建议形态：`<包前缀>_<域>_<动作>`，全部小写 + 下划线**，与 DSH 既有工具词汇一致、且与命令 kind 的语义一一对齐（kind 用点号是**持久台账**的命名空间，工具名用下划线是**模型可见**的函数名，两者刻意不同形）。
 
-| 建议工具名 | 对应命令 kind | 语义 | 备注 |
-| --- | --- | --- | --- |
-| `soloips_company_create` | `company.create` | 建公司（含 `type`/`parentCompanyId`） | M0.1 验收出口所需 |
-| `soloips_company_get` | （无 kind，读） | 读公司 | 读面不产生 kind |
-| `soloips_company_tree` | （无 kind，读） | 读公司树/子公司 | 复用 `getCompanyTree`/`listSubsidiaries` |
-| `soloips_department_create` | `department.create` | 建部门 | |
-| `soloips_department_list` | （无 kind，读） | 列部门 | |
-| `soloips_employee_create` | `employee.create` | 建员工 | |
-| `soloips_appointment_create` | `appointment.create` | 建任职（含 `scope`/`role`/`requiredCapabilities`） | 总助理/部长/组长/成员均经此 |
-| `soloips_appointment_revoke` | `appointment.revoke` | 撤任职 | |
-| `soloips_document_save` | `document.save` | 存文档（CAS + `outcome`） | 员工配置页写路径 |
-| `soloips_onboarding_check` | （无 kind，读） | 读入职状态/缺项 | 只读判定 |
-| `soloips_grouping_suggest` | （无 kind，读） | 生成编组建议（组织全景 §1.2） | **纯读**：产建议不写状态 |
-| `soloips_team_create` | `team.create`〔BE-3 新增〕 | 建团队（含 `function`） | **依赖 BE-3 的 kind** |
-| `soloips_team_update_function` | `team.update-function`〔BE-3 新增〕 | 改团队职能 | 同上 |
-| `soloips_team_close` | `team.close`〔BE-3 新增〕 | 归档团队 | 同上 |
-| `soloips_team_list` | （无 kind，读） | 列团队/读团队 | |
-| `soloips_work_entry_request` | `work-entry.request` | 请求工作准入 | 返回 `admitted`/`refused`/`unknown` |
+**★ 清单已收敛（2026-09-18 对齐）**：本节原给出 16 行建议清单；该清单**已被 [`data-contract.md`](../design/data-contract.md) **§2.5「工具名（模型工具面，2026-09-18 登记）」的 20 项表取代**——后者从**权威命令面**导出（覆盖全部 10 个已登记 kind + 10 个只读服务方法）、并同时给出 `@Remote` 方法列。
+
+> **本文档不再维护第二份工具名清单**（避免第二事实来源）。请一律引用 `data-contract.md` §2.5。
+
+**原 16 行版与 §2.5 的差异（已消解，登记备查）**：本表曾含三个 §2.5 中不存在或异名的项——命名差异已按 §2.5 为准消解，但**语义缺口须保留可见**：
+
+| 原 16 行版 | §2.5 的对应 | 处置 |
+| --- | --- | --- |
+| `soloips_company_tree` | `soloips_company_get_tree` | **改名**（对齐服务方法名 `getCompanyTree`）；`listSubsidiaries` 另有 `soloips_company_list_subsidiaries` |
+| `soloips_onboarding_check` | `soloips_employee_check_onboarding` | **改名**（对齐服务方法名 `checkOnboarding`） |
+| `soloips_grouping_suggest` | **§2.5 无此项** | ★ **语义缺口，非命名问题**：编组建议是**纯读**（产建议不写状态、无 kind），§2.5 的 20 项覆盖的是已登记 kind 与既有服务方法，**不含**组织全景 §1.2 的编组建议面。该项属**待 BE-3/编组切片一并登记**的〔待决〕项 |
+| `soloips_team_create` / `soloips_team_update_function` / `soloips_team_close` / `soloips_team_list` | **§2.5 无 team 项** | ★ **D-T1 边界**：`SoloipsOperationKind` 当前无 `team.*` ⇒ 这些工具名**待 BE-3 新增 kind 后才成立，不得定稿**（与 §2.5 边界 2 一致） |
 
 **四条纪律**〔建议〕：
 
 1. **工具名与 kind 的对应表是显式契约**：每个写工具**必须**对应一个已存在的 kind；无 kind 的动作（读面、建议生成）**不得**暴露为写工具。这条已写入 BE-6 验收⑤。
-2. **`soloips_` 前缀是命名空间隔离**，避免与官方工具（`spawn_teammate`/`send_message`/`team_task_*`）撞名——工具重名在作用域内注册失败〔`adapter-dsh/src/contracts.ts:524-525`〕。注意**不要**用 `team_` 开头（会与官方 `team_task_*` 视觉混淆），故建议 `soloips_team_*`。
-3. **工具数控制在 ~16 个以内**：工具面越大，模型选择错误率越高；上表已按 M0.1 必需面裁剪（不含配额、审计、MCP、skill 分配等面）。
-4. **本清单**〔未验证〕**未与 UI 侧对齐**——UI 侧可能按 `@Remote` 的 namespace 形态（点号合法，如 `soloips/company-create`）设计浏览器调用面。**两套命名刻意不同形**：Remote 端点是 Cordis 服务 + 方法（点号/斜杠可用），工具名是模型可见函数名（下划线）。QA 阶段需确认 UI 侧引用的是哪一面。
+2. **`soloips_` 前缀是命名空间隔离**，避免与官方工具（`spawn_teammate`/`send_message`/`team_task_*`）撞名——工具重名在作用域内注册失败〔`adapter-dsh/src/contracts.ts:524-525`〕。注意**不要**用 `team_` 开头（会与官方 `team_task_*` 视觉混淆），故用 `soloips_team_*`。
+3. **工具面按需增长**：原 16 行版曾建议「控制在 ~16 个以内」；§2.5 的 20 项含 10 个只读投影，**只读项不增加写路径风险**，但确实增加模型选择面。若 M0.1 需要裁剪，**裁剪落在「哪些只读投影暴露为工具」**这一层，**不动**与 kind 一一对应的写工具。
+4. **两套命名面刻意不同形**：模型工具名 = 下划线 `soloips_<域>_<动作>`；`@Remote` 调用面 = 点号 `ctx.remote.soloips.<method>`。**禁止混用**——UI 侧引用哪一面须在 QA 确认（完整两面见 `data-contract.md` §2.5 与 `organization-full-ui-design-v0.1.md` §9b.1）。
 
 ### 4.2 明确不做（留给后续里程碑）
 
@@ -379,7 +375,7 @@ M0.1 出口是「能在 DSH Web 中创建公司」〔`web-ui-fork.md` §1、`dat
 | C-8 | `defineDomain` 示例改为**本项目实际 spec 形态**（`SoloipsValueSchema` 组合子，参照 `core/domain.ts`） | `data-contract.md` §5.1 |
 | C-9 | §0 补**已实现能力面清单**（`listSubsidiaries`/`getCompanyTree`/`saveEmployeeDocument` 等） | `data-contract.md` §0 |
 
-**本附录自身修正的一条**：§3.1 的「工具名必须带 `soloips-` 前缀」已按裁定改为**下划线 `soloips_`**，并引用 UI 设计 §9b 推导表（原连字符形态会导致工具名不符 DeepSeek 函数名约定）。
+**本附录自身修正的一条**：§3.1 的「工具名必须带 `soloips-` 前缀」已按裁定改为**下划线 `soloips_`**；工具名清单权威现为 [`data-contract.md`](../design/data-contract.md) **§2.5**（原引「UI 设计 §9b 推导表」为中间产物，已在第四任收敛）（原连字符形态会导致工具名不符 DeepSeek 函数名约定）。
 
 **本文未改动**：§1.4 的冲突清单原样保留为**过程留痕**（它记录的是裁定前的落差发现），结论以 `data-contract.md` 为准。
 
@@ -425,3 +421,4 @@ M0.1 出口是「能在 DSH Web 中创建公司」〔`web-ui-fork.md` §1、`dat
 | --- | --- | --- | --- |
 | 2026-09-18 | 新增 §5「C-1…C-9 处置记录」：9 条冲突点逐条登记裁定结论与 `data-contract.md` 落点 | 文档智能体 | P2 设计裁定落实（指挥派发） |
 | 2026-09-18 | §3.1 工具名前缀由 `soloips-` 连字符更正为下划线 `soloips_`，补 DeepSeek 函数名约定事实与 §9b/`data-contract.md` §2.5 引用 | 文档智能体 | 名形态裁定：点号不符 DSH 函数名约定 |
+| 2026-09-18 | **BE-6 工具名清单收敛**：删除本节 16 行建议表，改为引用 `data-contract.md` §2.5 的 20 项表；保留形态依据与四条纪律，并登记原 16 行版与 §2.5 的差异（3 项改名 + `soloips_grouping_suggest` 语义缺口 + team 项 D-T1 边界） | 常驻后端智能体（第四任） | 消除第二份工具名清单造成的双事实来源；与 UI 侧 §9b 对齐 |
