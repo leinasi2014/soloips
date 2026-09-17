@@ -19,7 +19,6 @@
  * 透传，不把它当作跨进程 fence——跨进程写权只经 storage 端口的 writer lease。
  */
 
-import { createHash } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
 import type {
   SessionHandle,
@@ -41,6 +40,7 @@ import {
   type SoloipsSessionPersistence,
   type SoloipsSessionReadResult,
   type SoloipsSessionSnapshot,
+  SoloipsRevision,
 } from "../contracts";
 import {
   hostSessionId,
@@ -65,28 +65,19 @@ function requirePersistence(ctx: Context): SessionPersistence {
 }
 
 /**
- * 契约/宿主形状失配的桥接点（**如实记录**，不掩盖）：
- *
- * 契约 `SoloipsSessionSnapshot.revision: number`（冻结），但 0.1.6-alpha.1 的
- * `SessionPersistenceRevision` 是**不透明字符串品牌**（dsh-session-persistence
- * `lib/types/revision.d.ts`：`Branded<'SessionPersistenceRevision'>` = string），
- * 且由 backend 自行铸造。不存在保真的 string→number 映射；这里用 sha256 折叠
- * 到 53 位安全整数：
- *  - **保等**：同一宿主 token 恒得同一数值（契约只承诺同实例同 id 可比较）；
- *  - **不保序**：契约从未承诺 revision 可排序；
- *  - **理论碰撞**：不同 token 折叠同值会使「未变更」被误判，概率 ~2^-53 级。
- * 若 Lead 裁定改契约（string 化），此处应整体删除、原样透传。
+ * 契约的 `revision` 是不透明品牌 `SoloipsRevision`，宿主的是 backend 铸造的
+ * 不透明字符串品牌 `SessionPersistenceRevision`。**原样保留完整 token 装箱**——
+ * 不做哈希折叠，因为折叠会把精确的身份比较降为概率性比较
+ * （碰撞即「已变化」被误判为「未变化」）。
  */
-function revisionToken(token: SessionPersistenceSnapshot["revision"]): number {
-  const digest = createHash("sha256").update(token).digest();
-  // 53 位安全整数折叠（高 32 位 << 21 | 低 32 位的高 21 位）。
-  return digest.readUInt32BE(0) * 2 ** 21 + (digest.readUInt32BE(4) >>> 11);
+function toSoloipsRevision(token: SessionPersistenceSnapshot["revision"]): SoloipsRevision {
+  return SoloipsRevision(token);
 }
 
 function toSoloipsSnapshot(snapshot: SessionPersistenceSnapshot): SoloipsSessionSnapshot {
   return {
     id: soloipsSessionId(snapshot.header.id),
-    revision: revisionToken(snapshot.revision),
+    revision: toSoloipsRevision(snapshot.revision),
     ...(snapshot.eventCount !== undefined ? { eventCount: snapshot.eventCount } : {}),
     ...(snapshot.sizeBytes !== undefined ? { sizeBytes: snapshot.sizeBytes } : {}),
   };

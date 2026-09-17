@@ -32,6 +32,28 @@ export type SoloipsBranded<Name extends string> = string & { readonly [soloipsBr
 
 /** 一次持久化会话的身份。 */
 export type SoloipsSessionId = SoloipsBranded<"SoloipsSessionId">;
+
+/**
+ * 一次持久化观察的**不透明修订令牌**。
+ *
+ * 〔破坏性变更，2026-09-17〕原为 `number`。宿主 `SessionPersistenceRevision` 实际是
+ * backend 铸造的**不透明字符串品牌**（`dsh-session-persistence/lib/types/revision.d.ts`），
+ * 不存在保真的 string→number 映射；原实现用 sha256 折叠到 53 位整数，把**精确的身份比较
+ * 降为概率性比较**（碰撞即「已变化」被误判为「未变化」），没有必要承担该损失。
+ *
+ * 现改为 SoloIPs 自有的不透明品牌：adapter 在边界保留宿主 token 的**完整字符串**，
+ * 消费者（core 等）只依赖本契约，不需要 DSH 品牌包。
+ *
+ * 〔语义〕仍只可与**同一服务实例、同一 id** 的 revision 比较——单一品牌本身不保证这点。
+ * 变更性质：返回类型变更属 §7.1 的破坏性变更，须队长确认并通知全部消费方
+ * （当时 core 已实现但**零使用**该字段，迁移成本为零）。
+ */
+export type SoloipsRevision = SoloipsBranded<"SoloipsRevision">;
+
+/** 把一个 backend 铸造的不透明令牌装箱为契约品牌；adapter 边界专用。 */
+export function SoloipsRevision(token: string): SoloipsRevision {
+  return token as SoloipsRevision;
+}
 /** 一个 domain 记录变更事件的顺序号（不透明）。 */
 export type SoloipsSessionLogOffset = number & {
   readonly [soloipsBrand]: "SoloipsSessionLogOffset";
@@ -256,7 +278,7 @@ export interface SoloipsWriterLease {
 export interface SoloipsSessionSnapshot {
   readonly id: SoloipsSessionId;
   /** 不透明变更令牌；只可与同一服务实例、同一 id 的 revision 比较。 */
-  readonly revision: number;
+  readonly revision: SoloipsRevision;
   readonly eventCount?: number;
   readonly sizeBytes?: number;
 }
