@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
+import type { Storage, StorageBackend } from "@deepseek-ai/dsh-storage";
 import {
   SoloipsAdapterError,
   type SoloipsDomainSpec,
@@ -24,11 +25,17 @@ import { createStoragePort } from "../src/ports/storage";
  */
 function stubContextWithHub(): { context: Context; registered: string[]; unregistered: number } {
   const registered: string[] = [];
-  const backends = new Map<string, unknown>();
+  const backends = new Map<string, StorageBackend>();
   const state = { unregistered: 0 };
+  // 显式声明本替身**实际模拟**的官方成员面，并从中派生约束类型：
+  // 参数会得到上下文类型（而不只是事后推断），未使用的成员（Storage 的
+  // forms/mount/form/domain 等）无需伪造。
+  type StorageUsedSurface = {
+    backend: Pick<Storage["backend"], "register" | "get" | "names">;
+  };
   const storage = {
     backend: {
-      register(name: string, backend: unknown) {
+      register(name: string, backend: StorageBackend) {
         registered.push(name);
         backends.set(name, backend);
         return () => {
@@ -36,8 +43,12 @@ function stubContextWithHub(): { context: Context; registered: string[]; unregis
           backends.delete(name);
         };
       },
-      get(name: string) {
-        return backends.get(name);
+      get(name: string): StorageBackend {
+        // 真实 BackendRegistry.get 返回非可选 StorageBackend（缺失时由宿主抛错）。
+        // 桩按同一签名；缺失即抛，不静默返回 undefined。
+        const found = backends.get(name);
+        if (found === undefined) throw new Error(`[test-stub] 未注册的 backend：${name}`);
+        return found;
       },
       names() {
         return [...backends.keys()];
@@ -55,10 +66,11 @@ function stubContextWithHub(): { context: Context; registered: string[]; unregis
       return name === "storage" ? storage : undefined;
     },
   };
-  // `satisfies` 检查**已完整实现**的成员签名（`get`/`emit`）；`storage` 是刻意的
-  // 部分替身（只实现被测路径用到的 backend 子面），故不纳入该检查——把它纳入只会
-  // 逼着伪造 Storage 的其余 10 个成员。下方一处 `as unknown as` 仍只表达完整性缺口。
-  const stubSatisfiesUsedSurface = stub satisfies Pick<Context, "get" | "emit">;
+  // 让每个**实际模拟的**官方成员都受派生类型约束：`storage` 用上面声明窄面，
+  // `get`/`emit` 直接取自 Context。签名写错即在这里编译失败。
+  const stubSatisfiesUsedSurface = stub satisfies Pick<Context, "get" | "emit"> & {
+    storage: StorageUsedSurface;
+  };
   return {
     context: stubSatisfiesUsedSurface as unknown as Context,
     registered,
