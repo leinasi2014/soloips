@@ -213,7 +213,10 @@ DSH 会话（系统助理 agent）
 **关键约束（读源）**：
 - 工具返回值必须是 JSON 可表示值（`SoloipsToolDefinition.execute → Promise<unknown>`，但输出 schema 要过 `assertSupportedJsonSchema`，`ports/tools.ts:93-102`）。
 - 工具参数面同样要过 `assertObjectJsonSchema`；即「宽松 JSON Schema」实际受宿主子集约束〔`ports/tools.ts:8-17, 93-102`〕。
-- 工具名冲突在同作用域内失败〔`contracts.ts:524-525`〕，因此工具名必须带 `soloips-` 前缀〔建议〕。
+- 工具名冲突在同作用域内失败〔`contracts.ts:524-525`〕，因此工具名必须带前缀。**前缀为下划线形态 `soloips_`**（2026-09-18 更正：原稿写 `soloips-` 连字符）：
+  - 〔源码事实〕DeepSeek 函数名约定**只允许 `[A-Za-z0-9_-]`**、≤64 字符；点号属「不允许」字符（fork `abdfeb4831` / `0.1.6-alpha.1`，`packages/mcp/mcp-client/src/tools.ts:48,51,54,81-86`）。
+  - 形态为 **`soloips_<域>_<动作>`**（如 `soloips_company_create`），**刻意与 `@Remote` 端点的点号形态不同形**，禁止混用。
+  - 完整推导表（20 项）与两条命名面见 [`organization-full-ui-design-v0.1.md`](organization-full-ui-design-v0.1.md) §9b；已登记进 [`data-contract.md`](../design/data-contract.md) §2.5。
 
 **「员工自主生成资料完成入职」的现实边界**：员工（AI）若通过自己的会话写资料，其身份链要求 `Session → Host Binding → Employee`（ORG-05），而 `ExecutionBinding` **未实现**（§0）。M0.1 的可行形态是：**系统助理（或用户）代表员工调用 `saveEmployeeDocument`**，`onboarding` 判定仍只认内容有效性与版本读回，因此**不伪造**入职事实〔建议〕。**不得**把「模型自称已生成资料」当作 ORG-03 的装配证据——`recordAssemblyEvidence` 只接受指向本人已保存版本的证据（`store.ts:585-591`）。
 
@@ -360,6 +363,28 @@ M0.1 出口是「能在 DSH Web 中创建公司」〔`web-ui-fork.md` §1、`dat
 
 ---
 
+## 5. C-1…C-9 处置记录（2026-09-18）
+
+本文 §1.4 的 9 条冲突点（C-1…C-9）经 QA 统审后由指挥裁定，**已全部落实进 [`data-contract.md`](../design/data-contract.md)**。逐条落点如下（供复核）：
+
+| ID | 处置 | 落点 |
+| --- | --- | --- |
+| C-1 | **M0.1 做 Free 1/0 的提交门计数（不建表、不用乐观锁）；完整 Entitlement 记录与 `quota` 表形态属 M0.2**。两处口径统一为此表述 | `data-contract.md` §0「C-1 配额口径」+ §6.1 注 + §4.3 |
+| C-2 | `SOLOIPS_CORE_ACCOUNT_MISMATCH` 的引用改为「**〔待实现〕BE-1 交付**」——代码不存在是事实，不当既有契约引 | `data-contract.md` §3.1（表内 + 注） |
+| C-3 | 注明「除 `id`/`displayName` 外，§2 目标字段（`email`/`modelConfig`/`status`/`createdAt`）与实现字段**不重叠**；以 `contracts.ts` 为准」 | `data-contract.md` §0 Employee 行 + §2.1 记录注 |
+| C-4 | 裁定 **`scope` 先可选**（3 条默认推断规则照录）+ **收紧必填的 4 项前置条件**（P1 当前不满足） | `data-contract.md` §2.3 |
+| C-5 | M0.1 纯数据层 Team 的**组长落点 = `Team` 记录 `leadAppointmentId`**（`role: 'lead'\|'teammate'` 契约面） | `data-contract.md` §2.1 `SoloipsTeamRecord` |
+| C-6 | §1.1 补注「**M0.1 只有 Team 无 TeamBinding 的中间态合法**」及其语义 | `data-contract.md` §1.2 |
+| C-7 | §4.2 的 `domain.table('quota')` 示例改为 **M0.1 提交门计数口径** + M0.2 表形态标〔待实现〕 | `data-contract.md` §4.2（标〔待实现〕）+ 新增 §4.3 |
+| C-8 | `defineDomain` 示例改为**本项目实际 spec 形态**（`SoloipsValueSchema` 组合子，参照 `core/domain.ts`） | `data-contract.md` §5.1 |
+| C-9 | §0 补**已实现能力面清单**（`listSubsidiaries`/`getCompanyTree`/`saveEmployeeDocument` 等） | `data-contract.md` §0 |
+
+**本附录自身修正的一条**：§3.1 的「工具名必须带 `soloips-` 前缀」已按裁定改为**下划线 `soloips_`**，并引用 UI 设计 §9b 推导表（原连字符形态会导致工具名不符 DeepSeek 函数名约定）。
+
+**本文未改动**：§1.4 的冲突清单原样保留为**过程留痕**（它记录的是裁定前的落差发现），结论以 `data-contract.md` 为准。
+
+---
+
 ## 附录 A：证据范围
 
 **实际读源（全文或指定区间）**：
@@ -391,3 +416,12 @@ M0.1 出口是「能在 DSH Web 中创建公司」〔`web-ui-fork.md` §1、`dat
 - 系统助理人设（agent preset / system prompt / Skill）如何注入其会话——本文只设计后端链路，未核对 preset 装配面
 
 **本文不蕴含**：登记设计等于已实现；读源结论等于运行验收；`data-contract.md` §0 的「未实现」已被本文解决。
+
+---
+
+## 变更历史
+
+| 日期 | 变更 | 变更者 | 原因 |
+| --- | --- | --- | --- |
+| 2026-09-18 | 新增 §5「C-1…C-9 处置记录」：9 条冲突点逐条登记裁定结论与 `data-contract.md` 落点 | 文档智能体 | P2 设计裁定落实（指挥派发） |
+| 2026-09-18 | §3.1 工具名前缀由 `soloips-` 连字符更正为下划线 `soloips_`，补 DeepSeek 函数名约定事实与 §9b/`data-contract.md` §2.5 引用 | 文档智能体 | 名形态裁定：点号不符 DSH 函数名约定 |
