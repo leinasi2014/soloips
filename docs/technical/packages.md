@@ -7,10 +7,12 @@
 | 包 | 职责 | 状态归属 | 依赖 |
 |---|---|---|---|
 | soloips-bundle | 装配声明，patch 覆写顺序 | 无 | 无运行时依赖 |
-| soloips-adapter-dsh | DSH 适配，收敛全部 `@deepseek-ai/*` | 无业务状态 | DSH 官方包 |
+| soloips-adapter-dsh | DSH 适配，收敛全部 `@deepseek-ai/*`；支持 SQLite/JSON 存储后端 | 无业务状态 | DSH 官方包 |
 | soloips-core | **通用业务状态（公司层级、组织结构、文档模型）** | 各业务插件的共享基础 | adapter |
 | soloips-web | **界面层（Web + 3D 双版本）** | 只读投影 | core |
 | soloips-tools-pv | **业务插件（PV 制作）** | PV 任务状态 | adapter + core |
+
+> **存储后端**：默认 SQLite（Drizzle + better-sqlite3）；可选 JSON。后期可迁移 PostgreSQL。
 
 > **实现程度（2026-09-17）**：`adapter-dsh` 只差 `team` 端口（fail-closed）；`core` 已实现六表 CRUD 与提交门；
 > `web` 目前只有包边界与工具链，**尚未接入 core、也没有 React/Zustand/3D 实现**；`tools-pv` 属 S1，未创建。

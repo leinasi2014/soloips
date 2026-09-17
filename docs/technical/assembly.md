@@ -14,6 +14,24 @@ bundle patches → profile patch → home patch → launcher patch
 - **层内 patch 按列表遍历**：后写者覆盖先写者
 - **服务激活由 inject/service 就绪决定**：不由数组位次保证
 
+## 存储后端
+
+### 支持的后端
+
+| 后端 | 说明 | 迁移路径 |
+|---|---|---|
+| `sqlite` | **默认**。SQLite + Drizzle ORM + better-sqlite3。事务支持（WAL 模式）。后期可迁移 PostgreSQL。 | 只需改 drizzle driver |
+| `json` | JSON 文件存储。向后兼容。 | — |
+
+### 切换后端
+
+```yaml
+# profiles/soloips/cordis.patch.yml
+- id: soloips-adapter-dsh
+  config:
+    defaultBackend: "sqlite"  # 或 "json"
+```
+
 ## Patch 语义
 
 ### 顶层字段替换

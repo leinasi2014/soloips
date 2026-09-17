@@ -45,11 +45,12 @@ import {
   type SoloipsWriterLease,
 } from "../contracts.js";
 import { mapHostError } from "./shared.js";
+import { SqliteStorageBackend } from "./storage-sqlite.js";
 
 /** 租约文件名（置于数据根下；锁文件是其 `.lock` 兄弟）。 */
 const LEASE_FILE_NAME = ".soloips-writer-lease.json";
-/** 本适配层能自行构造的 backend 名（dsh-storage-json）。 */
-const CONSTRUCTIBLE_BACKEND = "json";
+/** 本适配层能自行构造的 backend 名。 */
+const CONSTRUCTIBLE_BACKENDS = ["json", "sqlite"] as const;
 
 /** 本端口运行期所需的解析后配置。 */
 export interface StoragePortConfig {
@@ -363,10 +364,10 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
     /** 用同一个 canonical root 构造 backend 与 facility（SEAM-11）。 */
     async createStack(options: SoloipsStorageStackOptions): Promise<SoloipsStorageStack> {
       const backend = options.backend ?? config.defaultBackend;
-      if (backend !== CONSTRUCTIBLE_BACKEND) {
+      if (!CONSTRUCTIBLE_BACKENDS.includes(backend as "json" | "sqlite")) {
         throw new SoloipsAdapterError(
           "SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE",
-          `backend '${backend}' is not constructible by this adapter (only '${CONSTRUCTIBLE_BACKEND}'); the stack requires a backend built from the same canonical root`,
+          `backend '${backend}' is not constructible by this adapter (only ${CONSTRUCTIBLE_BACKENDS.join(", ")}); the stack requires a backend built from the same canonical root`,
         );
       }
       const root = canonicalRoot(options.root);
@@ -378,10 +379,18 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
         );
       }
       const registryName = `soloips-${backend}-${createHash("sha256").update(root).digest("hex").slice(0, 16)}`;
-      const jsonBackend = new JsonStorageBackend(root);
+
+      // 根据 backend 类型创建对应的存储后端
+      let backendInstance: JsonStorageBackend | SqliteStorageBackend;
+      if (backend === "sqlite") {
+        backendInstance = new SqliteStorageBackend(root);
+      } else {
+        backendInstance = new JsonStorageBackend(root);
+      }
+
       let unregister: () => void;
       try {
-        unregister = storage.backend.register(registryName, jsonBackend);
+        unregister = storage.backend.register(registryName, backendInstance);
       } catch (error: unknown) {
         throw mapHostError(
           `storage.createStack: registering backend '${registryName}' for root '${root}'`,
@@ -402,7 +411,7 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
               await facility.closeAll();
             } finally {
               unregister();
-              await jsonBackend.close();
+              await backendInstance.close();
             }
           } catch (error: unknown) {
             throw mapHostError(`storage.stack.dispose('${root}')`, error);

@@ -64,10 +64,10 @@ export type SoloipsDocumentType = SoloipsRequiredDocumentType | "work";
 
 /** 公司类型：区分 SoloIPS 平台/运营公司与用户公司/子公司 */
 export type SoloipsCompanyType =
-  | "platform"    // SoloIPS 平台公司（SoloIPS 官方）
-  | "operation"   // SoloIPS 运营子公司（SoloIPS 官方，业务平台如漫画/视频网站）
-  | "enterprise"  // 用户企业公司（用户创建）
-  | "subsidiary";  // 用户子公司（用户创建，属于用户企业公司）
+  | "platform" // SoloIPS 平台公司（SoloIPS 官方）
+  | "operation" // SoloIPS 运营子公司（SoloIPS 官方，业务平台如漫画/视频网站）
+  | "enterprise" // 用户企业公司（用户创建）
+  | "subsidiary"; // 用户子公司（用户创建，属于用户企业公司）
 
 /**
  * SOLO-ACC-04 要求三条工作路径共用同一准入判定：

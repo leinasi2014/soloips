@@ -11,7 +11,29 @@
 - 其他包只能读投影或经服务请求
 - 投影不回写，不是第二事实来源
 
-## 状态归属表
+## 状态归属
+
+| 状态类型 | 归属包 | 存储后端 | 说明 |
+|---|---|---|---|
+| 公司层级树（platform/operation/enterprise/subsidiary） | soloips-core | SQLite（默认） | 公司树结构与层级关系 |
+| 部门/员工/文档 | soloips-core | SQLite | 组织结构和文档模型的写权威 |
+| PV 任务/分镜 | soloips-tools-pv | 待定 | PV 领域的写权威（业务插件） |
+| 会话/任务 | DSH（经 adapter） | — | 由 DSH 管理 |
+| 工具/资源 | DSH（经 adapter） | — | 由 DSH 管理 |
+
+### 存储后端
+
+SoloIPs 支持两种存储后端：
+
+| 后端 | 特点 | 适用场景 |
+|---|---|---|
+| **SQLite**（默认） | 单文件、事务支持、WAL 并发 | 开发、单机部署 |
+| **JSON** | 简单、无依赖 | 快速原型、向后兼容 |
+
+**后期迁移 PostgreSQL**：
+- 只需修改 Drizzle driver（`drizzle-orm/postgres-js`）
+- Schema 定义不变
+- Core 代码不需改动表
 
 | 状态类型 | 归属包 | 说明 |
 |---|---|---|
@@ -25,7 +47,7 @@
 
 | 规则 | 说明 |
 |------|------|
-| **SoloIPs 平台公司** | `type='platform'`，accountId='soloips_official'，SoloIPS 官方持有 |
+| **SoloIPs 平台公司** | `type='platform'`，SoloIPS 官方持有；accountId 由部署层注入，不硬编码 |
 | **SoloIPs 运营子公司** | `type='operation'`，parentCompanyId=平台公司ID，SoloIPS 官方持有 |
 | **用户公司** | `type='enterprise'`，无 parentCompanyId，用户持有 |
 | **用户子公司** | `type='subsidiary'`，parentCompanyId=用户公司ID，用户持有 |

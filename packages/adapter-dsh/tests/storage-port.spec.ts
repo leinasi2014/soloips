@@ -199,11 +199,11 @@ describe("storage port · createStack / facility（SEAM-11/14、SEAM-X1）", () 
     expect(hub.unregistered).toBe(1);
   });
 
-  it("非 json backend 以 SERVICE_UNAVAILABLE fail-closed（本工件集只构造 json）", async () => {
+  it("非支持 backend 以 SERVICE_UNAVAILABLE fail-closed（本工件集支持 json/sqlite）", async () => {
     const root = await newTempRoot();
     const hub = stubContextWithHub();
     const port = createStoragePort(hub.context, { defaultBackend: "json", leaseWaitMs: 200 });
-    await expect(port.createStack({ root, backend: "sqlite" })).rejects.toMatchObject({
+    await expect(port.createStack({ root, backend: "postgres" })).rejects.toMatchObject({
       code: "SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE",
     });
   });

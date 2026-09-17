@@ -585,7 +585,7 @@ M0 完成后，且：
 ## 附录 A：参考来源
 
 - [dsh-agent-swarm project-binding.yaml](D:\Source\workspace\dsh-agent-swarm\docs\governance\project-binding.yaml)
-- [dsh-agent-swarm document-registry.yaml](D:\Source\workspace\dsh-agent-swarm\.worktree\group-chat-delivery\docs\governance\document-registry.yaml)
+- [dsh-agent-swarm document-registry.yaml](D:\Source\workspace\dsh-agent-swarm\docs\governance\document-registry.yaml)
 - [dsh-agent-swarm testing-verification](D:\Source\workspace\dsh-agent-swarm\docs\08-testing-verification.md)
 - [team-delivery-leadership skill](D:\Source\workspace\soloips\.agents\skills\team-delivery-leadership\SKILL.md)
 - [SoloIPs architecture.md](D:\Source\workspace\soloips\docs\architecture.md)

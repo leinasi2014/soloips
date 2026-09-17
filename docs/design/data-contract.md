@@ -10,15 +10,19 @@
 
 ## 0. 实现状态（对照代码事实，2026-09-17）
 
-> 本文档是**目标数据契约**；下表给出它与 `packages/` 当前代码的差距。
+> 本文档是**目标数据契约**；下表给出它与 `packages/core/src/contracts.ts` 当前代码的差距。
 > 「未实现」是实现目标，不代表已交付能力。文档之间冲突时以本文档为准。
+>
+> **存储后端**：SQLite（Drizzle + better-sqlite3）为默认；可选 JSON。后期可迁移 PostgreSQL。
 
-| 模型 / 能力 | 代码状态 | 说明 |
+| 模型 / 能力 | 代码状态 | 代码实际字段 |
 |---|---|---|
-| `SoloipsCompanyRecord`（`accountId`/`parentCompanyId`/`type`/`status`） | **已实现** | `packages/core/src/contracts.ts`、`store.ts`；公司树深度上限 10 |
-| 部门 / 员工 / 任职 / 文档版本 / 操作台账 | **已实现** | 六表 domain `soloips_company` v1；写路径唯一经 `commit-gate` |
-| `SoloipsDepartmentRecord` 的 `leaderAppointmentId`/`description`/`parentDepartmentId`/`status` | **未实现** | 代码只有 `id`/`companyId`/`name` |
-| `SoloipsAppointmentRecord` 的 `scope`(判别联合) 与 `role` | **未实现** | 代码是 `employeeId` + `departmentId` + `requiredCapabilities` + `generation` |
+| `SoloipsCompanyRecord`（`accountId`/`parentCompanyId`/`type`/`name`/`status`/`createdAt`） | **已实现** | `contracts.ts` §3 |
+| `SoloipsDepartmentRecord` | **已实现（部分字段）** | 只有 `id`/`companyId`/`name`；`description`/`leaderAppointmentId`/`parentDepartmentId`/`status` 见 §2 设计稿 |
+| `SoloipsEmployeeRecord` | **已实现** | `id`/`displayName`/`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/`verifiedCapabilities` |
+| `SoloipsAppointmentRecord` | **已实现（部分字段）** | `id`/`employeeId`/`departmentId`/`requiredCapabilities`/`generation`/`status`；`scope`(判别联合) 与 `role` 见 §2 设计稿 |
+| `SoloipsDocumentVersionRecord` | **已实现** | `versionId`/`ownerId`/`documentType`/`content`/`digest`/`previousVersionId?`/`appointmentId?` |
+| `SoloipsOperationRecord` | **已实现** | `id`/`kind`/`status`/`employeeId?`/`intent`/`result?` |
 | 文档类型 `ip_summary` / `storyboard` | **未实现** | 代码枚举只有 `profile`/`avatar`/`soul`/`operating`/`work` |
 | `SoloipsEntitlement*` 与三层配额（§3/§4） | **未实现** | 目标设计；S0 不校验配额 |
 | `SoloipsAuthContext` / `SoloipsPermissionService` | **未实现** | S0 用部署账户绑定替代，见 §3.1 临时例外 |
@@ -27,9 +31,9 @@
 | `SoloipsAuditRecord` | **未实现** | 审计落库属 M3 里程碑 |
 | 跨账户拒绝 / 并发配额 / 多租户隔离验收 | **未实现** | 属「S0 多公司基础」，尚未通过 |
 
-- 术语以本文档为准：持久记录一律用 `Soloips*` 前缀（如 `SoloipsCompanyRecord`），
-  架构概览里的短名（`CompanyRecord`）只是示意。
+- 术语以本文档为准：持久记录一律用 `Soloips*` 前缀（如 `SoloipsCompanyRecord`），架构概览里的短名（`CompanyRecord`）只是示意。
 - 与 `multi-company-organization.md` / `multi-company-implementation.md` 的冲突已由本文档取代（见文档注册表）。
+- §2 权威数据模型列出的是**目标设计**；字段已实现时以 `packages/core/src/contracts.ts` 为准。
 
 ---
 
@@ -134,16 +138,17 @@ export type SoloipsCompanyId = SoloipsCoreId<'company'>;
 
 /**
  * 部门（公司内组织）
+ * ⚠️ 以下为目标设计；代码只有 id/companyId/name，description/leaderAppointmentId/parentDepartmentId/status 待实现
  */
 export interface SoloipsDepartmentRecord {
   readonly id: SoloipsDepartmentId;
   readonly companyId: SoloipsCompanyId;    // 必须归属公司
   readonly name: string;
-  readonly description?: string;
-  readonly leaderAppointmentId?: SoloipsAppointmentId;  // 通过任职引用负责人
-  readonly parentDepartmentId?: SoloipsDepartmentId;    // 支持子部门
-  readonly status: 'active' | 'paused' | 'archived';
-  readonly createdAt: string;
+  readonly description?: string;           // 待实现
+  readonly leaderAppointmentId?: SoloipsAppointmentId;  // 待实现
+  readonly parentDepartmentId?: SoloipsDepartmentId;    // 待实现
+  readonly status?: 'active' | 'paused' | 'archived';   // 待实现
+  readonly createdAt?: string;             // 待实现
 }
 
 export type SoloipsDepartmentId = SoloipsCoreId<'department'>;
@@ -169,16 +174,19 @@ export type SoloipsAppointmentRole =
 
 /**
  * 任职记录
- * 员工到组织单元的关联，通过任职表达权限
+ * ⚠️ 以下为目标设计；代码用 departmentId/requiredCapabilities，scope(判别联合) 与 role 待实现
  */
 export interface SoloipsAppointmentRecord {
   readonly id: SoloipsAppointmentId;
   readonly employeeId: SoloipsEmployeeId;
-  readonly scope: SoloipsAppointmentScope;    // 任职作用域
-  readonly role: SoloipsAppointmentRole;      // 任职角色
-  readonly generation: number;                // 权限代际（用于撤职后失效）
+  // 当前已实现字段：
+  readonly departmentId: SoloipsDepartmentId;
+  readonly requiredCapabilities: readonly string[];
+  // 待实现字段：
+  readonly scope?: SoloipsAppointmentScope;     // 任职作用域（判别联合）
+  readonly role?: SoloipsAppointmentRole;       // 任职角色
+  readonly generation: number;                   // 权限代际（用于撤职后失效）
   readonly status: 'active' | 'revoked';
-  readonly createdAt: string;
   readonly revokedAt?: string;
 }
 

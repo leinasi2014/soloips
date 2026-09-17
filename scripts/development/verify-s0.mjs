@@ -89,8 +89,12 @@ function fakeStoragePort() {
       return {
         generation: gen,
         storageId: `verify:${root}`,
-        async assertHeld() { /* OK */ },
-        async dispose() { /* OK */ },
+        async assertHeld() {
+          /* OK */
+        },
+        async dispose() {
+          /* OK */
+        },
       };
     },
     async createStack({ root }) {
@@ -102,13 +106,19 @@ function fakeStoragePort() {
               table(name) {
                 return createFakeTable(name);
               },
-              async close() { /* OK */ },
+              async close() {
+                /* OK */
+              },
             };
           },
-          async closeAll() { /* OK */ },
+          async closeAll() {
+            /* OK */
+          },
         },
         binding: { backend: "verify", root, storageId: `verify:${root}` },
-        async dispose() { /* OK */ },
+        async dispose() {
+          /* OK */
+        },
       };
     },
     requireFacility(f) {
@@ -133,6 +143,7 @@ async function run() {
     const service1 = await openSoloipsCompanyStore({
       storage: fakeStoragePort(),
       root: ROOT,
+      accountId: "verify-test-account", // 测试用账户 ID
     });
 
     const company = await service1.createCompany({
@@ -171,6 +182,7 @@ async function run() {
     const service2 = await openSoloipsCompanyStore({
       storage: fakeStoragePort(),
       root: ROOT,
+      accountId: "verify-test-account",
     });
 
     const recoveredCompany = service2.getCompany(company.result.companyId);
@@ -204,7 +216,11 @@ async function run() {
       displayName: "李四（编剧）",
     });
     assert.equal(emp2Replay.status, "replayed", "同一 operationId 应返回 replayed");
-    assert.equal(emp2Replay.result.employeeId, emp2.result.employeeId, "replayed 应返回相同员工 ID");
+    assert.equal(
+      emp2Replay.result.employeeId,
+      emp2.result.employeeId,
+      "replayed 应返回相同员工 ID",
+    );
     console.log(`  ✓ 同会话幂等：replayed 状态正确`);
 
     await service2.close();
@@ -215,6 +231,7 @@ async function run() {
     const service3 = await openSoloipsCompanyStore({
       storage: fakeStoragePort(),
       root: ROOT,
+      accountId: "verify-test-account",
     });
 
     // 复用之前的 operationId 应返回 replayed
@@ -226,7 +243,7 @@ async function run() {
     assert.equal(
       acrossRestart.result.employeeId,
       emp2.result.employeeId,
-      "replayed 应返回相同员工 ID（跨重启）"
+      "replayed 应返回相同员工 ID（跨重启）",
     );
     console.log(`  ✓ 跨重启幂等：replayed 状态正确`);
 

@@ -1,27 +1,24 @@
 {
-  "name": "dsh-profile-soloips",
+  "name": "soloips-profile",
   "version": "0.0.0",
   "private": true,
-  "description": "SoloIPs 交付 profile 定义（版本控制内的可移植清单；实际运行目录为 $DSH_HOME/profiles/soloips）",
+  "description": "SoloIPs DSH profile：以 dsh-base + dsh-web-app 为基础，叠加 soloips 业务插件",
   "dsh": {
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "@deepseek-ai/dsh-experimental-agent-team-profile",
-        "@deepseek-ai/dsh-experimental-agent-team-web-profile",
         "soloips-adapter-dsh",
         "soloips-core",
         "soloips-web",
         "soloips-bundle"
-      ],
-      "patchReload": "startup"
+      ]
     }
   },
   "dependencies": {
-    "soloips-adapter-dsh": "file:../../packages/adapter-dsh",
-    "soloips-core": "file:../../packages/core",
-    "soloips-web": "file:../../packages/web",
-    "soloips-bundle": "file:../../packages/bundle"
+    "soloips-adapter-dsh": "workspace:*",
+    "soloips-core": "workspace:*",
+    "soloips-web": "workspace:*",
+    "soloips-bundle": "workspace:*"
   }
 }

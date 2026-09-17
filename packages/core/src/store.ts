@@ -360,7 +360,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
         intent: {
           name: input.name,
           type: companyType,
-          ...(input.parentCompanyId !== undefined ? { parentCompanyId: input.parentCompanyId } : {}),
+          ...(input.parentCompanyId !== undefined
+            ? { parentCompanyId: input.parentCompanyId }
+            : {}),
         },
       },
       async (publish) => {
@@ -370,7 +372,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
           // accountId 由 Host 层注入（SoloipsCoreService 接口契约）
           // 测试场景使用 "seed" 占位
           accountId: "seed",
-          ...(input.parentCompanyId !== undefined ? { parentCompanyId: input.parentCompanyId } : {}),
+          ...(input.parentCompanyId !== undefined
+            ? { parentCompanyId: input.parentCompanyId }
+            : {}),
           type: companyType,
           name: input.name,
           status: "active",

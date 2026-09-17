@@ -506,7 +506,7 @@ S0-T02: soloips-adapter-dsh 适配层
 ```
 
 **验收标准**:
-- [ ] 8 个端口接口定义完整
+- [ ] 7 个端口接口定义完整（storage/session/agents/subagents/team/tools/events；shared.ts 非端口）
 - [ ] 骨架实现可编译
 - [ ] 接口与 DSH 官方文档一致
 - [ ] 通过 `pnpm run typecheck`

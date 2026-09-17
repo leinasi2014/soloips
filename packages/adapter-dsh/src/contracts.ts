@@ -774,7 +774,7 @@ export const SOLOIPS_ADAPTER_CONFIG_DEFAULTS: Required<Omit<SoloipsAdapterConfig
   readonly enabled: boolean;
 } = {
   enabled: true,
-  defaultBackend: "json",
+  defaultBackend: "sqlite",
   leaseWaitMs: 5_000,
   teamEnabled: false,
 };

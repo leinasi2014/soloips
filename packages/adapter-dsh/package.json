@@ -37,6 +37,12 @@
     "@deepseek-ai/dsh-subagent": "0.1.6-alpha.1",
     "@deepseek-ai/dsh-tools": "0.1.6-alpha.1",
     "@deepseek-ai/dsh-agent": "0.1.6-alpha.1",
-    "@deepseek-ai/dsh-settings": "0.1.6-alpha.1"
+    "@deepseek-ai/dsh-settings": "0.1.6-alpha.1",
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.38.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "drizzle-kit": "^0.30.0"
   }
 }

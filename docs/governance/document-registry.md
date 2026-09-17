@@ -81,8 +81,7 @@
 | 旧引用 | 现状 | 现行指向 |
 |---|---|---|
 | `docs/governance/document-registry.yaml` | 文件不存在（实为 `.md`） | `docs/governance/document-registry.md` |
-| `docs/design/r002/adapter/contracts-design.md`（简称 `contracts-design §X`） | 文件已不在仓库 | `docs/technical-architecture.md`、`docs/reference/rewrite-seam-client.md` 等 |
-| `docs/governance/agent-readable-documentation.md` | 文件不在仓库 | `docs/governance/doc-format.md` |
+| `docs/governance/agent-readable-documentation.md` | 文件不存在 | `docs/governance/doc-format.md` |
 | `multi-company-*.md` 的数据模型与配额 | 已被取代 | `docs/design/data-contract.md` |
 
 ## 简化说明

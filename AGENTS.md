@@ -8,7 +8,7 @@
 |---|---|
 | 项目 | SoloIPs |
 | 框架 | DSH（DeepSeek Harness）插件 + profile 组合交付 |
-| 当前阶段 | S0 多公司基础 / M0.1（S0 接通已通过 9 项验收；配额/权限/执行绑定未实现） |
+| 当前阶段 | S0 多公司基础 / M0.1（详见 [`docs/design/data-contract.md` §0](../docs/design/data-contract.md#0-实现状态对照代码事实2026-09-17)） |
 | 负责人 | product-owner |
 
 ## 快速入口
@@ -57,7 +57,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明，patch 覆写顺序
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型、公司层级）
-├── web/                     # soloips-web：界面层（Web + 3D 双版本，共享 Zustand；当前为包边界骨架）
+├── web/                     # soloips-web：界面层（Web + 3D 双版本；⚠️ 当前为包边界骨架，无实现代码）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，由用户/SoloIPS开发团队维护）
 ```
 

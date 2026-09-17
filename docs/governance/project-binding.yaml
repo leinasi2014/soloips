@@ -57,8 +57,8 @@ deliveryTarget:
 
 documentation:
   schemaVersion: 1
-  registry: docs/governance/document-registry.yaml
-  formatAuthority: docs/governance/agent-readable-documentation.md
+  registry: docs/governance/document-registry.md
+  formatAuthority: docs/governance/doc-format.md
   layoutPolicy: adapt-existing
   primaryReader: agent
   humanReadable: secondary-by-structure
@@ -71,9 +71,9 @@ technical:
   architectureAuthority: docs/technical-architecture.md
   developmentAuthority: docs/governance/code-development-standard.md
   completeArchitecture: docs/architecture-complete.md
-  multiCompanyDesign: docs/design/multi-company-organization.md
-  multiCompanyImpl: docs/design/multi-company-implementation.md
-  note: 技术裁定与验收设计见技术架构；具体依赖锁定与运行兼容证据在获授权的实现切片补齐；UI双版本、多公司模型、总助理、日志系统设计见 architecture-complete.md
+  multiCompanyDesign: docs/design/data-contract.md  # 权威数据模型；三层公司、配额见该文档 §2/§3
+  multiCompanyImpl: docs/design/data-contract.md     # 权限链路、配额原子操作见该文档 §4
+  note: 技术裁定与验收设计见技术架构；多公司数据模型与配额以 data-contract.md 为唯一权威；multi-company-organization.md 和 multi-company-implementation.md 已标〔已取代〕
 
 redLines:
   - user-is-sole-business-decision-authority
