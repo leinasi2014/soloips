@@ -5,7 +5,7 @@
 | 身份 | `SOLO-PRD-SA-01`；系统助理 M0.1 PRD **草稿** v1.0 |
 | 目的 | 把已定的产品方向（系统助理 = M0.1 交互载体，链式引导旅程，对话式优先）整理为可澄清、可验收、可分期的需求文档，并**显式暴露当前的信息缺口** |
 | 范围 | 系统助理的产品需求、设计决策、验收标准、执行阶段。**不含**代码 |
-| 依据 | 产品经理已定方向（2026-09-17 本会话派单）；**用户三项澄清答复（2026-09-17，经指挥传达）**；[`data-contract.md`](../design/data-contract.md) §0/§2/§3/§4/§6.1；[`web-ui-fork.md`](../decisions/web-ui-fork.md) SOLO-UI-FORK-01；[`docs/refactoring/02-company-contract.md`](../refactoring/02-company-contract.md)（招募流程权威，DEP-R01–R04 / ORG-01–04）；[`architecture-summary.md`](../architecture-summary.md) 里程碑表；[`docs/technical/acceptance.md`](../technical/acceptance.md)；[`docs/technical/failure.md`](../technical/failure.md)；`packages/core/src/contracts.ts`（命令面事实）；界面插件全景检索报告（2026-09-17）；DSH `@deepseek-ai/dsh-client-locale`（i18n 机制）；配套设计稿 [`system-assistant-ui-design-v0.1.md`](system-assistant-ui-design-v0.1.md) |
+| 依据 | 产品经理已定方向（2026-09-17 本会话派单）；**用户三项澄清答复（2026-09-17，经指挥传达）**；[`data-contract.md`](../design/data-contract.md) §0/§2/§3/§4/§6.1；[`dsh-design-language-v0.1.md`](dsh-design-language-v0.1.md)（**主题一致性权威** `SOLO-UI-DL-01`）；[`web-ui-fork.md`](../decisions/web-ui-fork.md) SOLO-UI-FORK-01；[`docs/refactoring/02-company-contract.md`](../refactoring/02-company-contract.md)（招募流程权威，DEP-R01–R04 / ORG-01–04）；[`architecture-summary.md`](../architecture-summary.md) 里程碑表；[`docs/technical/acceptance.md`](../technical/acceptance.md)；[`docs/technical/failure.md`](../technical/failure.md)；`packages/core/src/contracts.ts`（命令面事实）；后端设计（BE-1..BE-7）；DSH fork 席位源码（slot 事实重核）；配套设计稿 [`system-assistant-ui-design-v0.1.md`](system-assistant-ui-design-v0.1.md)、[`organization-full-ui-design-v0.1.md`](organization-full-ui-design-v0.1.md) |
 | 决策状态 | **草稿，未批准**。清晰度 **86/100 < 90**（Q1/Q2/Q6 答复后自 71 上调，评分见 §6），按 `requirements-clarity` 要求本 PRD **仍不得进入实现**，须先完成 §5 剩余澄清 |
 | 反面声明 | 本文不证明：系统助理已实现、配额校验已生效、Team 能力可用、i18n 已接入、M0.1 已验收。`data-contract.md` §0 明列配额/权限/Team/执行绑定/审计**均未实现** |
 | 变更权 | product-owner；澄清问题回答后由 product-owner 收敛，收敛前不得作为开发依据 |
@@ -29,7 +29,7 @@ M0.1 里程碑的目标是「Web 版基础：公司/部门/团队 CRUD」，验�
 5. **招募是一条四阶段流程**（〔需求〕用户 Q2 答复 + `02-company-contract.md`）：**先定义职业（岗位）→ 招募 → 员工（AI）自主生成资料 → 用户在员工配置页修改**；且**招募操作员是总助理（公司级，兼人事）或部门管理员（部门级，限本部门）**（ORG-02）。
 6. **入职是准入门槛**：`checkOnboarding` 要求四类文档（`profile`/`avatar`/`soul`/`operating`）+ 记忆初始化 + 能力验证 + 装配证据齐备才算就绪（`contracts.ts:197-244`）。
 7. 组织结构不是扁平列表，而是**公司与子公司构成的树**（`parentCompanyId`，有 `MAX_TREE_DEPTH` 限制）。
-8. **三项能力无数据承载**：「组队/指定组长」（无 `team.create`、`Team` 实体未实现）、「独立岗位实体」（`appointment` 只有 `requiredCapabilities`，无岗位名）、「两层招募权限」（`role`/`scope` 待实现）。
+8. **三项能力无数据承载**：「独立岗位实体」（`appointment` 只有 `requiredCapabilities`，无岗位名）、「两层招募权限」（`role`/`scope` 待实现）、「编组后的任务面」（任务/attempt 归 DSH Team，SoloIPs 侧只建 `team` 数据表）。**注（QA 裁定 2）**：Team **数据层**在 M0.1 建立（BE-3），故「组队」不再是"无实体"，但**任务面仍不可达**。
 
 一个裸 CRUD 界面会把这些约束甩给用户。**系统助理的价值主张是：把「理解 SoloIPs 组织模型」的成本从用户转移到对话**——用对话解释每一步为什么、用结构化卡片收口必填字段、用失败边界守住数据契约。
 
@@ -103,6 +103,7 @@ M0.1 里程碑的目标是「Web 版基础：公司/部门/团队 CRUD」，验�
 | S-11 三级链推进 | 总助理在公司内创建部门、招募部长 | 系统助理工作台**只读**同步组织树进度（不逐步引导） |
 | S-12 用户问「怎么组团队」 | 用户要求创建团队 / 指定组长 | 诚实说明能力未开放，不伪造（B-1）；团队节点显示未就绪占位 |
 | S-13 用户看层级差异 | 用户切换「公司总览」与「本部门工作台」 | 两个视图**构成与命名不同**（静态差异），但**不出现**任何权限判定提示（§3.5） |
+| S-14 用户切换明暗主题 | 用户在 DSH 设置切 light/dark | 界面**两套主题下均层级可辨**：浅色下靠 **0.5px 发丝线 + elevation**（**不靠背景色差**——浅色下 base/layer-1/2/3 同为 `bluish-00`）；强调色不反色（底册 §3.4/§4.3） |
 
 ### 1.3 Detailed Requirements
 
@@ -117,7 +118,7 @@ M0.1 里程碑的目标是「Web 版基础：公司/部门/团队 CRUD」，验�
 | ② | `createAppointment` | `operationId`、`employeeId`、`departmentId`、`requiredCapabilities?` | `appointmentId`；落库 `SoloipsAppointmentRecord`：`id`/`employeeId`/`departmentId`/`requiredCapabilities`/`generation`/`status='active'`<br>〔约束〕**总助理的「公司级」角色无字段承载**——`appointment.create` 无 `role`/`scope`（B-3）。且 ② 阶段**尚无部门**，`departmentId` 从何而来是**未解问题**（见 Q5g(c)） |
 | ④ | 同上（招募部长） | 同上 | 同上；`departmentId` = 目标部门。**角色同样无承载** |
 | ③ | `createDepartment` | `operationId`、`companyId`、`name`（非空） | `departmentId`；落库 `SoloipsDepartmentRecord`（**实际仅 3 字段**：`id`/`companyId`/`name`） |
-| ⑤⑥ | — | — | ❌ **无落点**：Team 实体与 `team.create` 不存在（B-1） |
+| ⑤⑥ | 团队创建 + 成员关系 | `team` 表（BE-3）+ `scope.kind='team'` 任职（BE-2） | ⚠️ **QA 裁定 2 修正**：团队**数据层 M0.1 建立**，可创建与读回；**但任务/attempt/审核归 DSH Team**（CUR-03，adapter `team` 端口 fail-closed）→ 团队**不能凭此接活** |
 | 配置（员工/总助理） | `saveEmployeeDocument`（`kind: "document.save"`） | `operationId`、`ownerId`(员工)、`documentType`(∈ `profile`/`avatar`/`soul`/`operating`/`work`)、`content`、`appointmentId?` | 落库 `SoloipsDocumentVersionRecord`：`versionId`/`ownerId`/`documentType`/`content`/`digest`/`previousVersionId?`/`appointmentId?`<br>〔约束〕**不可变版本链**：修改 = 存新版本，不覆盖 |
 | 配置 | `initializeEmployeeMemory` | `operationId`、`employeeId` | 置 `memoryInitialized` |
 | 配置 | `verifyEmployeeCapability` | `operationId`、`employeeId`、`capability` | 追加 `verifiedCapabilities` |
@@ -205,10 +206,10 @@ M0.1 里程碑的目标是「Web 版基础：公司/部门/团队 CRUD」，验�
 | 决策 | 内容 | 状态 |
 |---|---|---|
 | D-1 两层解耦（**核心技术结论**） | **品牌层** = fork 承接 `@deepseek-ai/dsh-web-app` 代表的浏览器界面面（web patch + glue，须整体承接）；**业务层** = **soloips 自建客户端插件包走 Slots 注入，不动官方源码**。**系统助理全部属业务层** | 〔需求〕`SOLO-UI-FORK-01` + 〔源码事实〕检索报告 |
-| D-2 业务层插件形态 | 包内含 Host 半边 + `src/client` 浏览器半边；Host 经 `@Remote` 暴露公司/部门/员工 CRUD；浏览器半边 `ctx.slots.inject(...)`。约束：`dsh.client.platform='web'`、`exports` 含 `"./client"`、**不能值导入其他 feature 包（只能 `import type`）** | 〔约束〕检索报告 |
+| D-2 业务层插件形态 | 包内含 Host 半边 + `src/client` 浏览器半边；Host 经 `@Remote` 暴露 CRUD 与只读投影；浏览器半边 `ctx.slots.inject(...)`。约束：`dsh.client.platform='web'`；**exports 三项**（`./client` + `./typert` + `./remote`）；**tsdown + Typert 生成**；**api-remotes 挂载登记**；**不能值导入其他 feature 包（只能 `import type`）** | 〔约束〕检索报告 + 后端 BE-6 |
 | D-3 呈现形态 | **对话式优先 + 结构化卡片**。`conversation` 是 DSH 界面**第一公民**，架构天然对齐。落点：`conversation.view`（加装视图）+ `tool.call.toolview`（卡片，按工具名分派，新名 `replaceRisk: none`）+ `main` 新键 + `sidebar.panellist` + `settings.section` | 〔需求〕方向已定；**组合待决（Q3）** |
 | D-4 改动做薄 | 优先 `replaceRisk: none` 的席位；业务层**零官方源码改动**；fork 改动面收敛到品牌层 | 〔约束〕`web-ui-fork.md` §2.2 |
-| D-5 视觉语言 | 沿用上游灰阶 + 弱描边 + 大圆角；**不引入** `architecture-complete.md` §5.3 的「青色发光」方案（该节属已推迟的自研路线） | 〔建议〕(Q3b) |
+| D-5 视觉语言 | **全部视觉规格引用底册** [`dsh-design-language-v0.1.md`](dsh-design-language-v0.1.md)：只用 `--dsw-alias-*`、卡片走底册 §2.2 配方、几何落 §3.2/§3.3 刻度；**不引入** `architecture-complete.md` §5.3 的「青色发光」方案（属已推迟自研路线）；**三条禁止项**：不把品牌蓝绑 `brand-primary`、不用背景色差表达层级、不复制 14 个未定义 token | 〔约束〕`SOLO-UI-DL-01`；底册 §6.1 C5/C6/C10 |
 | D-6 数据写入 | 只经 Host 半边 `@Remote` 暴露的既有命令；浏览器半边是**纯消费方**；界面不新增写入路径、不直写 storage | 〔约束〕`data-contract.md` §5.1 + 检索报告 |
 | D-7 推进条件 | 每步以**读回确认**为推进条件 | 〔约束〕`acceptance.md` 验收分层 |
 | D-8 未实现能力 | 显式呈现为「未就绪」，不静默缺失、不伪造 | 〔建议〕(Q5) |
@@ -228,7 +229,7 @@ M0.1 里程碑的目标是「Web 版基础：公司/部门/团队 CRUD」，验�
 | **总助理**（公司级，招募产生，最大权限） | `data-contract.md` §1.1「总助理复用任职机制」= **公司级任职** `general_assistant`（M2 设计）；`architecture-complete.md` §3.3 职责 | ⚠️ `role`/`scope` **待实现** |
 | **「总助理招募部长」** | **回答了 `02-company-contract.md` DEP-O01「尚无管理员时由谁任命」**（原为〔待决〕，由产品负责人确认） | 〔需求〕本次确认 |
 | **部长**（部门级，组团队） | `02-company-contract.md` DEP-R01 的**部门管理员**；招募权**仅限本部门范围**（ORG-02） | ⚠️ 角色无数据承载 |
-| **团队**（多个并存，组长 + 员工） | `data-contract.md` §2 的独立 **`SoloipsTeamRecord`** + **`SoloipsTeamBindingRecord`**；「组长 + 员工」对应 Team 成员角色 | ❌ **两个实体均未实现**；`SoloipsOperationKind` 无 `team.create` |
+| **团队**（多个并存，组长 + 员工） | `data-contract.md` §2 的独立 **`SoloipsTeamRecord`** + **`SoloipsTeamBindingRecord`** | ⚠️ **QA 裁定 2**：`team` **数据层 M0.1 建立**（BE-3，含 team 命令 kind）；`scope.kind='team'` 的 `team_lead`/`member` 由 BE-2 落地。**任务/attempt 状态仍归 DSH Team**（CUR-03），`SoloipsTeamBindingRecord` 待 Team 端口接入 |
 
 **链路时序（〔需求〕）**
 
@@ -247,22 +248,32 @@ flowchart LR
 
 〔待决〕**链路在 M0.1 的可达终点**：总助理（C）以「员工 + 任职」形式**可写入**；但**部长（E）与团队（F/G）无角色数据、无 Team 实体**。M0.1 是否只到 C，还是把 E 也做成「员工 + 任职」（无角色区分）？→ Q5g。
 
-〔约束〕**「自动组成」不改变 M0.1**：无论 Q13 答案，`Team` 实体与 `team.create` 在 M0.1 均不存在，故该问题只决定 M0.2+ 方向。
+〔约束〕**「自动组成」不改变 M0.1 的任务面**：**Q13 已由用户裁定为 B 方案**（系统按职能与组员职业自动匹配编入）。Team **数据层**在 M0.1 建立（BE-3），但**编组算法 + 自动入职三步**依赖后端 §1.2/§2.4；**任务/attempt 仍归 DSH Team**（CUR-03）。→ 界面设计移交 [`organization-full-ui-design-v0.1.md`](organization-full-ui-design-v0.1.md) §3。
 
 **§2.1.1 Slot 席位映射**（替换原 R1–R8〔待检索〕清单）
 
-〔源码事实〕slot 目录共 **63 个 key**，可**运行时查询**（`cordis_inspect`）。与本 PRD 相关的席位：
+〔源码事实〕slot 目录的**口径化规模**（**不使用无口径数字**）：
 
-| 需求 | Slot 席位 | 类型 | 替换风险 | 用途 |
-|---|---|---|---|---|
-| 组织管理整页 | `settings.section` | list / root | **none** | 「公司管理」新 tab 页——**零替换风险的整页席位** |
-| 公司工作台主面板 | `main` | keyed / root | 官方占 `conversation` 键 | 注册**新键**加装自研面板，**不动官方聊天** |
-| 侧栏入口 | `sidebar.panellist` | list | — | 侧栏图标 + 与 `main` 新键配套 |
-| 会话内视图 | `conversation.view` | list / session | — | 在 `chat`/`trajectory` 之外加装「引导/组织」视图 |
-| 会话头部动作 | `conversation.session.header.actions` | — | — | 顶栏按钮 |
-| 全局浮层 | `shell.overlay` | — | — | 配额/阻断错误条 |
-| 结构化卡片 | `tool.call.toolview` | 按**名称分派** | 新名 **none** | 卡片渲染；或自研组件 |
-| 空态/欢迎页 | **未见席位** | — | — | ⚠️ **唯一未获落点的需求**，见 §2.3 R-8 |
+| 口径 | 数字 | 方法 |
+|---|---|---|
+| **严格口径**（推荐引用） | **60 个 key** | `grep -rhoE "^\s*'[a-z][a-zA-Z0-9._]*':\s*\{" --include=*.ts ui-*/src \| grep -oE "'[a-z][a-zA-Z0-9._]*'" \| sort -u`（在 `deepseek-harness/packages/client/` 执行，三次重跑均得 60） |
+| 上限口径 | ~65 | 放宽到全部 `ui-*/src`，含动态注册点与多行声明 |
+| ~~官方 63 之说~~ | **不可复现** | 首任引用的「检索报告 63 key」**本次重核未复现**；按 `doc-format.md` 改用上表口径 |
+
+〔约束〕**key 数量不是设计依据，`kind`/`scope` 语义才是**。
+
+与本 PRD 相关的席位：
+
+| 需求 | Slot 席位 | kind / scope | 语义与风险 |
+|---|---|---|---|
+| 组织管理整页 | `settings.section` | `list` / `root` | **可追加** → 零替换风险的整页席位 |
+| 公司工作台主面板 | `main` 新键 | `keyed` / `root` | **keyed** → 注册新键，不动官方 `conversation` 键 |
+| 侧栏入口 | `sidebar.panellist` | `list` | 可追加 |
+| 会话内视图 | `conversation.view` | `list` / `session` | 在 `chat`/`trajectory` 之外**加装** |
+| 会话头部动作 | `conversation.session.header.actions` | `list` / `session` | 可追加 |
+| 全局浮层 | `shell.overlay` | — | — |
+| 结构化卡片 | `tool.call.toolview` | **`keyed`** / `session` | 按 key 分派；**新键 = 新工具名 → 无替换风险** |
+| **欢迎态**〔**B6 更正**〕 | **`conversation.hero.workspace` / `.brand.mark` / `.agentPreset`** | **`single`** / `root` | ⚠️ **席位存在**（截图「探索未至之境」区），但 **`single` = 接管语义**（同一时刻仅一个占用者），**不是追加**。见 §2.3 R-8 |
 
 **Key Components**
 
@@ -295,7 +306,7 @@ flowchart LR
 | C-5 不虚构未实现能力 | 配额/Team/审计/执行绑定在 §0 明标未实现；UI 不得承诺 | `data-contract.md` §0 |
 | C-6 证据分层 | 安装 ≠ 调用、构建 ≠ 验收、源码 ≠ 运行版本 | `acceptance.md` |
 | C-7 代码规范 | TypeScript + ESM、`strict`、禁 `any`/`@ts-ignore`、两空格缩进 | `AGENTS.md` |
-| C-8 插件包形态 | 双半边（Host + `src/client`）；`dsh.client.platform='web'`；`exports` 含 `"./client"` | 〔约束〕检索报告 |
+| C-8 插件包形态（**BE-6 补齐版**） | 双半边（Host + `src/client`）；`dsh.client.platform='web'`；**exports 须含 `"./client"` + `"./typert"`（Host 生成物）+ `"./remote"`（有 `@Remote` 方法时）**，`files` 含对应产物；**Typert 生成经 tsdown 插件**（`@deepseek-ai/dsh-typert-generator`）；**api-remotes 挂载须在 Client 组合中显式登记**。漏任一项 → **建包必然构建失败** | 〔约束〕检索报告 + 后端 BE-6；首任 §6.2 补齐 |
 | C-9 **禁 feature 包值导入** | 浏览器半边**不能值导入**其他 feature 包，只能 `import type`；故界面不得直接依赖 `soloips-core` 运行时值，数据一律经 Host 半边 `@Remote` | 〔约束〕检索报告；与 `AGENTS.md`「禁止跨包直接导入」同向且更强 |
 | C-10 优先 `replaceRisk: none` 席位 | `settings.section`（整页）、`main` 新键、`toolview` 新名 | 〔约束〕`web-ui-fork.md` §2.2 的落实方式 |
 | **C-11 不新造 i18n** | 文案走 DSH locale 机制；不引入第三方 i18n 库、不自建语言切换器、不写第二份字典格式。双语齐备为编译期强制 | 〔需求〕Q6 + 〔源码事实〕locale 包 |
@@ -314,7 +325,7 @@ flowchart LR
 | R-5 **fork diff 面积失控** | 上游同步成本上升，违背 SOLO-UI-FORK-01 | **风险显著下降**：业务层零官方源码改动；品牌层 fork 面固定（492+301+88 行）。每项改动仍须登记 |
 | R-6 **M0.1 验收出口过窄** | 「能创建公司」**不覆盖**部门/招募/员工配置；本 PRD 的验收面比里程碑出口宽 | 澄清 Q11：系统助理的验收是否独立于 M0.1 出口 |
 | R-7 上游 API 失败即整体不可用 | 系统助理对话依赖模型；模型不可用则引导流全停 | 与 C-1 一致；**不设计降级为纯表单**（会绕过停线红线） |
-| R-8 **空态/欢迎页无 slot 席位** | 若首次进入引导依赖空态嵌入，该路径**未被证实**；影响 Q2(b)/Q3 的答案空间 | Phase 1 Task 1.5 核实：`main` 新键是否可在无会话时作为默认视图（**此为推断，不得当结论**）。若不成立，首次进入改由侧栏入口承担 |
+| R-8 **欢迎态席位语义受限**（**B6 更正**） | `conversation.hero.*` **三个席位存在**，但均为 `kind: 'single'` → **注入即接管**，不是追加；hero 仅无会话时存在（无持久性）；`.brand.mark` 是 `ui-brand-official` 官方占用点 | **降级为「席位存在但语义待验」**：三方向重估见设计稿 §6.5——**C3 会话内首条消息引导为推荐默认**（零席位风险）；C2 `conversation.input.dock` 加装待冷启动验证；C1 接管 hero 需用户确认接管官方品牌位 |
 | R-9 **Slot 席位语义假设未运行时验证** | `replaceRisk: none` 与「按名称分派」为**静态检索结论**，未经运行实例验证 | Phase 1 Task 1.2 用 `cordis_inspect` 在真实运行实例中核对，再开发 |
 | R-10 **新增插件包的装配登记位置未定** | 新包如何进 profile bundles 未裁定，影响「能跑起来」 | Phase 1 Task 1.6 与 architecture-owner 确认；本文不裁定 |
 | **R-11 独立岗位实体缺失** | 〔需求〕用户要求「先定义职业（岗位）」，但 `appointment` 无岗位名字段 → 需求无法完整满足 | 澄清 Q5(e) 定交付口径；M0.1 降级为「岗位能力项」（B-2，C-14） |
@@ -368,7 +379,7 @@ flowchart LR
 - [ ] AC-16 fork 改动逐项登记在「soloips 改动清单」（`web-ui-fork.md` §2.2 / §5）；**业务层应有零官方源码改动**
 - [ ] AC-17 无跨包相对导入；界面不直写 storage，只经 Host 半边 `@Remote` 契约
 - [ ] AC-18 上游 API 失败路径符合 `failure.md` 红线（停线 + 通知 + 不重试）
-- [ ] AC-23 插件包形态符合 C-8：双半边、`dsh.client.platform='web'`、`exports` 含 `"./client"`
+- [ ] AC-23 插件包形态符合 C-8（**BE-6 补齐版**）：双半边、`dsh.client.platform='web'`、**exports 含 `"./client"` / `"./typert"` / `"./remote"` 三项**且 `files` 含产物、**tsdown + Typert 生成管线可用**、**api-remotes 挂载已登记**
 - [ ] AC-24 符合 C-9：浏览器半边无对 feature 包的**值导入**（只 `import type`）；代码检查可验证
 - [ ] AC-25 所有新增界面均落在已核实的 slot 席位上（`cordis_inspect` 运行时核对），无未登记席位
 - [ ] **AC-35** i18n 符合 C-11：字典经 `ctx.locale.register('soloips', { zh, en })` 注册；**无第三方 i18n 库**；无自建语言切换器
@@ -380,10 +391,12 @@ flowchart LR
 
 - [ ] AC-19 用户不阅读任何文档即可完成引导全程（建公司→建部门→定义岗位→招募→员工配置）（可用性走查，至少 1 名未接触过项目的人）
 - [ ] AC-20 每个失败态都有可理解的文案，且**保留用户已填输入**
-- [ ] AC-21 视觉与上游 DSH Web 一致（灰阶 + 弱描边 + 大圆角），无突兀的第三方风格
+- [ ] AC-21 视觉**符合底册** `SOLO-UI-DL-01`：只用 `--dsw-alias-*`、零字面色值、卡片符合底册 §2.2 配方、几何落底册 §3.2/§3.3 刻度、强调色占比 ≤ 底册验收基线（V15 ≤10%）；**且不触犯三条禁止项**（P1 品牌蓝绑 `brand-primary`、P2 背景色差表达层级、P3 未定义 token）
 - [ ] AC-22 由用户确认：M0.1 结束时「引导全程走完」的体验是否满足预期（含组队、独立岗位实体缺失的说明）⌛（依赖 Q5）
 - [ ] AC-26 官方既有界面（聊天流、会话列表、轨迹 tab）**行为未被改变**——加装不动原键
 - [ ] **AC-39** 在 DSH 设置中切换语言（zh ↔ en）后，系统助理全部文案**即时切换**，无残留、无需要重启（E11）
+- [ ] **AC-46** 视觉规格**全部引用底册** `SOLO-UI-DL-01`，且经底册 §7.1 的自动化项校验：V1（零硬编码色值）、V2（零未定义 token 引用）、V3（无「中性边框 + elevation」配对）、V4（中性实线边框 0.5px）、V5（全圆配 `corner-shape: round`） ⌛（脚本需新建，见底册 §7.1 V1）
+- [ ] **AC-47** 明暗**双主题**下层级均可辨：浅色主题不依赖背景色差（靠发丝线 + elevation）；品牌/强调色在两套主题下**语义一致、不反色**（底册 V13/V14/V16）
 - [ ] **AC-40** 用户能辨认「系统助理」与「总助理」不是同一东西（Q1 澄清的落地检验）
 
 ---
@@ -396,7 +409,7 @@ flowchart LR
 
 **Goal**: 消除信息缺口，把清晰度提升到 ≥ 90，并核实技术落点
 - [ ] Task 0.1: 完成 §5 全部澄清问题（Q1–Q11），尤其 Q1/Q3/Q5/Q7/Q8
-- [ ] Task 0.2: **已部分完成**——界面插件全景检索报告已回收，落点已写入 §2.1 / §2.1.1 与设计稿 §6；剩余缺口 = 空态席位（R-8）、装配登记位置（R-10）
+- [ ] Task 0.2: **已部分完成**——界面插件全景检索报告已回收，落点已写入 §2.1 / §2.1.1 与设计稿 §6；**B6 更正已折入**（欢迎态席位存在但为 `single`）；剩余缺口 = 欢迎态接管语义裁决（R-8）、装配登记位置（R-10）
 - [ ] Task 0.3: 确定呈现形态组合（设计稿 §6.4 的组合方案 A+B+C 降级）与「+ 新会话」语义
 - [ ] Task 0.4: 确认 `subsidiary` 选项在 Free 下的呈现策略（隐藏 vs 禁用说明）
 - [ ] Task 0.5: 与 architecture-owner 对齐：①「界面不新增写入路径」边界；②**新增插件包的装配登记位置**（R-10）
@@ -410,7 +423,7 @@ flowchart LR
 **Goal**: 把**静态检索结论**在**真实运行实例**上证实，并打通一条端到端命令链。**先证伪再开发**（C-6 证据分层）
 - [ ] Task 1.1: 起环境并核实 slot 目录（见下方命令链）
 - [ ] Task 1.2: 用 `cordis_inspect` 在运行实例中核对本 PRD §2.1.1 的 7 个席位：键是否存在、`conversation` 键是否被官方占用、`replaceRisk` 是否确为 none（**关闭 R-9**）
-- [ ] Task 1.3: 建 soloips 客户端插件包骨架（Host 半边 + `src/client`），满足 C-8 四项形态约束
+- [ ] Task 1.3: 建 soloips 客户端插件包骨架（Host 半边 + `src/client`），满足 C-8（**BE-6 补齐版**）全部形态约束，含 `./typert`/`./remote` 与 tsdown 管线
 - [ ] Task 1.4: 打通**一条**端到端命令链（`company.create`）：Host 半边 `@Remote` 暴露 → 浏览器半边注入的一个席位组件调用 → 读回确认（关闭 R-4 残余）
 - [ ] Task 1.5: 核实空态/欢迎页是否有可用席位或替代路径（**关闭 R-8**，直接决定 Q2(b)/Q3 的答案空间）
 - [ ] Task 1.6: 确认新包在 profile bundles 中的登记位置（关闭 R-10）
@@ -528,17 +541,17 @@ pnpm dsh web
 **背景**：设计稿 §6.4 已按 slot 席位事实重估三个候选的代价结构（**取代**原 §3.1 的初评）：
 - A 专用会话类型（**推荐**；`conversation.view` 可加装视图，`tool.call.toolview` 承载卡片，新名 `replaceRisk: none`）
 - B 左栏入口 + 专用主面板（**原「fork diff 大」的代价基本消失**：`main` 新键 + `sidebar.panellist` + `settings.section` 整页，全部走 Slots，零官方源码改动）
-- C 欢迎页/空态向导（首进入体验好，但**新增不确定性**：检索报告的 63 个 slot key 中未见空态席位）
+- C 欢迎页/空态向导（席位**确实存在**，但为 `single` 接管语义 → 见 R-8 与设计稿 §6.5）
 
 **问题**：
 - (a) 是否采纳设计稿 §6.4 的组合方案（A 为核心 + B 承载持久视图 + C 降级待确认）？
-- (b) 视觉是**沿用上游灰阶语言**（推荐，符合改动做薄），还是引入品牌化（如设计稿提到的青色发光方案，属已推迟自研路线）？
+- (b) 视觉是否**全部引用底册**（推荐：`SOLO-UI-DL-01` 已给出 token/配方/禁止项），还是需要品牌化？（品牌色**唯一合法路径**是底册 BR4 的 alias 覆写、覆写 `button-info-fill`/`state-business-primary` 一族且**必须双明暗值**；**不得**绑 `brand-primary`——底册 §4.3 实证它为中性色）
 - (c) 卡片落在 `tool.call.toolview`（按工具名分派）还是自研组件？
 - (d) 持久组织概览放在 `settings.section` 整页（`replaceRisk: none`，但需用户主动进设置）还是 `main` 新键「公司工作台」（更显眼，但占据一个主面板键位）？
 
 **影响**：决定改动登记清单的条目与 AC-21/AC-26 的判定基准。
 
-**依赖**：R-8（空态席位）与 R-9（席位语义未运行时验证）。**R-8 未闭合前，(a) 中候选 C 的取舍无法定论。**
+**依赖**：R-8（欢迎态 `single` 接管语义）与 R-9（席位语义未运行时验证）。**R-8 已降级为"语义待验"**——候选 C 按设计稿 §6.5 三方向处理（C3 为默认）。
 
 ---
 
@@ -558,7 +571,7 @@ pnpm dsh web
 ### Q5〔范围 - 最关键〕系统助理引导段的交付到什么程度？
 
 **背景**：〔源码事实〕
-- `SoloipsTeamRecord` / `SoloipsTeamBindingRecord` **不存在**；`SoloipsOperationKind` **无** `team.create`；adapter `team` 端口为 fail-closed 占位（`data-contract.md` §0）。
+- `SoloipsTeamRecord` / `SoloipsTeamBindingRecord`：**〔QA 裁定 2〕`team` 数据层在 M0.1 建立**（BE-3）；`SoloipsTeamBindingRecord` 待 Team 端口接入。**任务/attempt/审核仍归 DSH Team**（CUR-03，adapter `team` 端口 fail-closed）。
 - `appointment.create` **无** `role` / `scope` 入参；`data-contract.md` §2 的 `role`（`department_lead`/`team_lead`/`member`）与 `scope` 均标「待实现」。
 - 因此「组队」「选组长」「任命部门负责人」在 M0.1 **均不可写入**。
 - 另：`revokeAppointment` 命令**存在**，但「撤职使执行失效」的验收未覆盖（`SoloipsExecutionBindingRecord` 未实现）。
@@ -570,7 +583,7 @@ pnpm dsh web
 - (d) 是否在 M0.1 暴露**撤职** UI（命令存在但验收未覆盖）？
 - **(e)**〔新〕**「定义职业（岗位）」在无独立岗位实体下如何交付**？`appointment` 只有 `requiredCapabilities`，**无岗位名字段**（B-2）。是接受降级（只填能力项），还是需在 M0.1 新增岗位实体（属契约扩展）？同理，**三层权限链的 `role`/`scope` 也待实现**（B-3）——M0.1 是否只做文案表达？
 - **(f)**〔新〕**「员工自主生成资料」由谁编排**？Q2 明确了流程（员工自主生成），但**无对应命令**；`document.save` 存在但触发方未明。是 core/员工侧自动编排（界面只显示进行态），还是需界面触发？这决定**员工配置页是「修改」还是「也负责生成」**（R-13）。
-- **(g)**〔新〕**三级权限链（总助理 → 部长 → 团队）在 M0.1 交付到哪一级**？用户 2026-09-17 补充的链路是：总助理创建部门并招募**部长** → 部长**为本部门组建多个团队** → 团队由**组长和员工**构成。其中「部长」= DEP-R01 的部门管理员、「团队」= `data-contract.md` 的独立 Team + TeamBinding（**均未实现**）。M0.1 可达的只有「公司 + 部门 + 员工 + 任职」——**总助理/部长/团队三级中的哪几级在 M0.1 真正可写入**？
+- **(g)** **三级权限链（总助理 → 部长 → 团队）在 M0.1 交付到哪一级**？用户 2026-09-17 补充的链路是：总助理创建部门并招募**部长** → 部长**为本部门组建多个团队** → 团队由**组长和员工**构成。其中「部长」= DEP-R01 的部门管理员（**BE-2 的 `role`/`scope` 落地**）、「团队」= `team` 数据层（**BE-3，M0.1 建立**）。**M0.1 可达终点**：公司 + 部门 + 员工 + 任职 + **团队数据层**；**任务面不可达**。
 
 **影响**：这是**范围决策**，直接决定 Phase 2 的任务量与「引导旅程」是否名副其实。**(g) 影响最大**——它决定整条权限链在 M0.1 的可达终点。
 
@@ -744,8 +757,8 @@ pnpm dsh web
 | — User interaction defined | 10 | 8 | **链式旅程已定**（公司→总助理→部门→部长→团队），四阶段招募流程对齐权威文档，员工配置页已定义；扣分：**呈现形态 A/B/C 未决**（Q3），候选 C 受 R-8 阻塞 |
 | — Success criteria stated | 10 | 7 | M0.1 出口明确 + AC-27–AC-40 补齐（岗位降级、权限链、i18n、员工配置）；扣分：系统助理自身验收口径未定（Q11） |
 | **Technical Specificity** | 25 | **22** | |
-| — Technology stack mentioned | 8 | 8 | 两层解耦已定（品牌层 fork / 业务层 Slots）；插件包形态、platform、exports 均明确 |
-| — Integration points identified | 8 | 7 | 7 个 slot 席位已映射到具体需求，含 `replaceRisk`；扣分：**席位语义未经运行实例验证**（R-9），空态席位缺失（R-8） |
+| — Technology stack mentioned | 8 | 8 | 两层解耦已定（品牌层 fork / 业务层 Slots）；插件包形态、platform、**exports 三项、tsdown/Typert 管线、api-remotes 挂载**均明确 |
+| — Integration points identified | 8 | 7 | slot 席位已映射到具体需求，含 `kind`/`scope` 语义与口径化规模（60 key）；扣分：**席位语义未经运行实例验证**（R-9），欢迎态 `single` 接管语义待裁决（R-8） |
 | — Constraints specified | 9 | 7 | fork 薄改动、失败红线、S0 账户边界、代码规范、值导入禁令、i18n 禁令、助理层级、招募顺序、能力降级——共 14 条 C |
 | **Implementation Completeness** | 25 | **22** | |
 | — Edge cases considered | 8 | 8 | E1–E14 十四条边界，含半成功态、三项能力降级、版本链、只读装配证据、i18n 缺键 |
@@ -759,7 +772,7 @@ pnpm dsh web
 ### 未达 90 的原因（三点）
 
 1. **〔阻塞级〕Q5g(c)：招募总助理缺 `departmentId`**（R-16）。`createAppointment` 强制要求 `departmentId` 且校验部门存在，但链式旅程中招募总助理时**尚无部门** → **设计稿 §4.2 无法落地**。这是新发现的结构矛盾，**不解决则链式旅程第一步断裂**，且四候选出路涉及范围/契约决策。**本项单独就足以阻止进入实现。**
-2. **呈现形态未决 + 一个席位缺口**（Q3 / R-8）。`main` 新键与 `settings.section` 已可用，但**首次进入路径未证实**，且 (a)(c)(d) 三个子问未答。
+2. **呈现形态未决**（Q3 / R-8）。`main` 新键与 `settings.section` 已可用，**欢迎态席位已确认存在**（B6 更正）但为 `single` 接管语义，须在设计稿 §6.5 三方向中选一；且 (a)(c)(d) 三个子问未答。
 3. **范围决策未定**：三级权限链的 M0.1 终点（Q5g）、配额 UI（Q7）、`role`/`scope` 是否纳入（Q10b）。**Q5g(a) 影响最大**——它决定整条链的可达终点与 Phase 2 任务量。
 
 ### 达到 ≥ 90 的条件
@@ -769,7 +782,7 @@ pnpm dsh web
 | **Q5g(c) 招募总助理的 `departmentId` 出路裁定**（阻塞级） | **+3（Completeness +2 / Functional +1）** |
 | Q5g(a) 可达终点 + Q3 呈现形态组合确定 | +5（Functional +3 / Business +2） |
 | Q7 配额策略、Q10(b) 权限差异依据、Q8 重名策略三项答复 | +4（Completeness +3 / Functional +1） |
-| R-8 空态席位与 R-9 席位语义在真实实例核实（Phase 1 Task 1.2/1.5） | +2（Technical +2） |
+| R-8 欢迎态 `single` 接管语义裁决与 R-9 席位语义在真实实例核实（Phase 1 Task 1.2/1.5） | +2（Technical +2） |
 | Q5(e)(f) 岗位实体与自主生成编排归属确认 | +2（Completeness +2） |
 | Q11 验收口径、Q12 服务端文案、Q13 团队自动组成、Q14 语气 | +2（Functional +1 / Business +1） |
 | **合计** | **→ 104（封顶 100）→ 达成 ≥ 90** |
@@ -801,7 +814,7 @@ pnpm dsh web
 | 配额/Team/执行绑定/审计/`role`/`scope`/独立岗位实体未实现 | 〔源码事实〕 | `data-contract.md` §0；`contracts.ts` §3/§5 |
 | 消息流已有 Markdown 渲染、面板已有卡片形态、会话已有 tab | 〔读图确认〕 | 用户提供两张 DSH Web 截图，2026-09-17 |
 | locale 机制（`register(ns, {zh,en})`、双语编译期强制、热更新、`$DSH_HOME/settings.yaml`） | 〔源码事实〕 | `deepseek-harness/packages/client/locale/` README，2026-09-17 |
-| slot 席位映射（63 key、7 席位、`replaceRisk`） | 〔源码事实〕 | 界面插件全景检索报告 |
+| slot 席位映射（**严格口径 60 key**、`kind`/`scope` 语义） | 〔源码事实〕 | 界面插件全景检索报告 + 本次 DSH fork 席位源码重核（2026-09-17） |
 | 呈现形态候选 A/B/C、卡片设计、状态机、失败呈现四原则、三项能力降级 | 〔建议〕 | 本 PRD 与设计稿作者 |
 | Q2–Q5、Q5g、Q7–Q14 未决事项 | 〔待决〕 | 见 §5 |
 
@@ -823,3 +836,4 @@ pnpm dsh web
 | 2026-09-17 | 折入 slots 技术落点：§2.1 两层解耦 + §2.1.1 席位映射（替换 R1–R8）+ R-8/R-9/R-10 + AC-23–26 + Phase 1 实证命令链 | 常驻 UI/UX 智能体（据指挥补给检索报告） |
 | 2026-09-17 | 折入用户三答复（Q1 层级 / Q2 招募流程 / Q6 i18n）：F1–F9 重构、D-10–D-13、C-11–C-14、E11–E14、AC-27–AC-40、R-11–R-15、新增 Q12/Q14；清晰度 71→86 | 常驻 UI/UX 智能体（据指挥传达） |
 | 2026-09-17 | 折入三级权限链（总助理→部长→团队）与「团队自动组成」：D-14 权威对照（含解决 DEP-O01）、§2.1.2 链路图、Q5(g)、新增 Q5g/Q13、Phase 2 任务链重排、AC-41–AC-45、**新发现 Q5g(c) 阻塞项（招募总助理缺 `departmentId`）**与 R-16–R-18 | 常驻 UI/UX 智能体（据指挥传达 + 本 PRD 自查） |
+| 2026-09-18 | **第三任 QA 统审修正**：①D-5/AC-21/AC-46/AC-47 **主题一致性改为引用底册**（`SOLO-UI-DL-01`：`--dsw-alias-*`、卡片配方、三禁止项、强调色纪律、BR1–BR7、底册 §7.1 自动化项）；②**C-8/AC-23/D-2/Task 1.3 补插件包形态**（`./typert`+`./remote`+tsdown+api-remotes）；③**§2.1.1 更正 slot 事实**（严格口径 60 key、欢迎态 `single` 接管语义）+ **R-8 降级**为「席位存在但语义待验」；④**Team 数据层修正**（BE-3 进 M0.1，任务面仍归 DSH Team）——涉及 §1.1 第 8 条、§1.3、§2.1.2、Q5(g)、Q13、§7 决策追溯；⑤S-14 新增明暗双主题场景 | 常驻 UI/UX 智能体（第三任） |
