@@ -396,6 +396,21 @@ if (settings === undefined) {
 | `SoloipsAdapterReadiness` 的字段 | 纯诊断面，不承担门禁 | 不得用于业务判断 |
 | `SoloipsAdapterConfig.teamEnabled` | T02 保留字段、无实现（Lead 已采纳「Team 面不做最小占位」） | assembly-dev 可写入 patch，但不得据其断言 Team 已适配 |
 
+---
+
+### 7.1.1 破坏性变更登记：`SoloipsSessionSnapshot.revision`
+
+**〔破坏性变更，2026-09-17，用户已批准〕** 按 §7.1「删除或改签名属破坏性变更，须队长确认并通知全部消费方」，此处登记本次变更。
+
+| 项 | 内容 |
+| --- | --- |
+| 变更 | `SoloipsSessionSnapshot.revision`：`number` → `SoloipsRevision`（SoloIPs 自有的不透明 `string` 品牌；新增同名装箱函数） |
+| 原因 | 宿主 `SessionPersistenceRevision` 是 backend 铸造的**不透明字符串品牌**（`dsh-session-persistence/lib/types/revision.d.ts`）。不存在保真的 string→number 映射；原实现用 sha256 折叠到 53 位安全整数，把**精确的身份比较降为概率性比较**（碰撞即「已变化」被误判为「未变化」）。契约注释本就写「不透明…只可与同实例同 id 比较」，语义上不需要 `number` |
+| 属破坏性变更的依据 | §7.1 明确「返回类型」在冻结范围内，改类型即破坏性变更。「当前无消费方使用该字段」只说明**迁移成本为零**，不改变变更性质 |
+| 迁移影响 | 实施时 core（T03）已实现但对该字段**零使用**（grep 确认）；`flow-dev` / `web-dev` 尚未消费该字段，**消费方无需改代码** |
+| 消费方通知 | 批 2 的 `core-dev` / `flow-dev` / `web-dev`（§7.1 的冻结基线消费方）；本次会话直接执行，通知记录在交付报告与 PR，不使用 DSH Task |
+| 验证 | 无哈希折叠残留（`createHash` / `readUInt32BE` 零命中）；adapter 的 session 端口改为**原样装箱宿主完整 token** |
+
 ### 7.3 依赖方向（DEV-04）
 
 ```text
