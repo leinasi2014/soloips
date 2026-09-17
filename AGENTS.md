@@ -8,7 +8,7 @@
 |---|---|
 | 项目 | SoloIPs |
 | 框架 | DSH（DeepSeek Harness）插件 + profile 组合交付 |
-| 当前阶段 | S0 多公司基础 / M0.1（详见 [`docs/design/data-contract.md` §0](../docs/design/data-contract.md#0-实现状态对照代码事实2026-09-17)） |
+| 当前阶段 | S0 多公司基础 / M0.1（详见 [`docs/design/data-contract.md` §0](docs/design/data-contract.md#0-实现状态对照代码事实2026-09-17)） |
 | 负责人 | product-owner |
 
 ## 快速入口
@@ -20,7 +20,7 @@
 | **写代码** | `docs/governance/code-development-standard.md` | 怎么写、怎么验证 |
 | **多智能体开发** | `docs/governance/multi-agent-development.md` | **团队配置、任务拆分、Agent 派发、开发流程** |
 | 写文档 | `docs/governance/doc-format.md` | 怎么标注、怎么引用 |
-| 完整架构 | `docs/architecture-complete.md` | UI双版本、多公司模型、总助理、日志系统 |
+| 完整架构 | `docs/architecture-complete.md` | 多公司模型、总助理、日志系统（UI 双版本章节已标〔已取代〕，见 `docs/decisions/web-ui-fork.md`） |
 | 查装配规则 | `docs/technical/assembly.md` | bundle/patch/profile 怎么组合 |
 | 查架构决策 | `docs/decisions/` | 哪些是已确认决定 |
 | 环境与工具 | `docs/operations/environment-handoff.md` | 本机路径、版本、命令 |
@@ -44,6 +44,26 @@
 7. 对外发布（push、PR、发布）
 8. 需要新的业务决策
 
+### 技术自主决策（2026-09-18 用户授权）
+
+**〔需求〕用户 2026-09-18 授权：设计冲突、架构不完善、功能缺失类问题不属「Envelope 外」，由多智能体讨论定方案，不事前请示。**
+
+**定方案流程**：相关领域智能体出候选 → QA / 独立评审检验 → 指挥裁定。
+
+**决策后向用户通报结论**（做了什么、依据、影响），不等事前批准。
+
+**红线——不得偏离平台核心方向**：
+
+- AI 公司元框架：用户供 runtime + 资源；框架供结构 + 身份 + 任务协议；员工自主驱动
+- 三层公司生态（`platform` / `operation` / `enterprise` / `subsidiary`）
+- 个人 IP 公司平台定位
+
+**疑似偏离上述方向 → 停下问用户。**
+
+**仍必须问用户**（不因本条授权而放宽）：产品方向变更、对外发布、不可逆操作、付费/配额的商业语义。
+
+> **与项目红线第 5 条的关系**：第 5 条管**证据**（断言是否核到职能层），本条管**决策权**（技术方案由谁定）；两条独立生效、不互相替代。本条只解释第 8 条中「业务决策」与「技术决策」的边界，第 1–7 条继续成立。
+
 ### 判定规则
 
 - 环境状态变化 **不能** 创建或扩大授权
@@ -57,7 +77,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明，patch 覆写顺序
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型、公司层级）
-├── web/                     # soloips-web：界面层（Web + 3D 双版本；⚠️ 当前为包边界骨架，无实现代码）
+├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件改造版；官方 DSH 源码不动，见 docs/decisions/web-ui-fork.md）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，由用户/SoloIPS开发团队维护）
 ```
 
@@ -65,7 +85,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 - `core` 是组织结构和文档模型的写权威；业务插件（如 tools-pv）各自持有领域写权威
 - 禁止跨包相对导入（用 `exports` 和服务契约）
 - 新增持久状态包需满足：自有 schema、独立写权威、独立升级节奏
-- **UI 双版本**：Web + 3D 通过 DSH Client Slots 扩展，共享状态
+- **UI 路线**：V1 复制官方 Web 插件改造为 `soloips-web`（profile bundles 替换官方 Web 行），上游 bug 修正持续同步未改动区域；原「自研 Web + 3D 双版本」推迟（〔待决〕解冻时点），见 [`docs/decisions/web-ui-fork.md`](docs/decisions/web-ui-fork.md)
 
 ## 公司生态架构
 
@@ -164,6 +184,7 @@ type: feat | fix | docs | test | refactor | chore
 2. **凭据保护**：不经用户明确授权，不执行凭据操作
 3. **证据分层**：安装 ≠ 调用、构建 ≠ 验收、源码 ≠ 运行版本
 4. **用户决定**：产品目标与验收权归用户，智能体只执行和反馈
+5. **事实核验**：断言写入交付物前须核到职能层（包读 README/description/src 入口，行为读实现或实测）；「文件存在 + 名字匹配」不构成确认；转交子智能体的材料逐条标注〔实测/读源确认/推断/未验证〕，推断与未验证条目要求接收方复核
 
 ## 变更历史
 
@@ -172,3 +193,6 @@ type: feat | fix | docs | test | refactor | chore
 | 2026-09-17 | 重构精简版：合并多文档、减少标注维度、简化元数据 | 主会话 |
 | 2026-09-17 | 新增多智能体开发入口 | 主会话 |
 | 2026-09-17 | 按用户确认的产品准则统一文档：DSH 更正为 DeepSeek Harness；当前阶段更新为 S0 多公司基础/M0.1；包结构图改为实际目录名 | 主会话 |
+| 2026-09-17 | 写入 V1 UI 决策：web 行改为「复制官方 Web 插件 fork 改造版」，UI 路线说明替换原「双版本」表述并指向 `docs/decisions/web-ui-fork.md` | 文档智能体 |
+| 2026-09-17 | 新增事实核验红线（项目红线第 5 条）；修正身份表 data-contract 链接相对路径 | 用户指令，经指挥派发 |
+| 2026-09-18 | 授权边界新增「技术自主决策」小节：设计冲突/架构不完善/功能缺失类问题不属 Envelope 外，由多智能体讨论定方案（领域智能体出候选 → QA 独立评审 → 指挥裁定），决策后通报；列平台核心方向红线与仍需问用户的四类事项 | 用户指令，经指挥派发 |

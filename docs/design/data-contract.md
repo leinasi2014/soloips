@@ -13,7 +13,9 @@
 > 本文档是**目标数据契约**；下表给出它与 `packages/core/src/contracts.ts` 当前代码的差距。
 > 「未实现」是实现目标，不代表已交付能力。文档之间冲突时以本文档为准。
 >
-> **存储后端**：SQLite（Drizzle + better-sqlite3）为默认；可选 JSON。后期可迁移 PostgreSQL。
+> **存储后端**：SQLite（Drizzle 0.38 查询构造 + better-sqlite3 driver，见
+> `packages/adapter-dsh/src/ports/storage-sqlite.ts`）为默认；可选 JSON。后期可迁移 PostgreSQL
+> 〔建议〕迁移面见 `docs/technical/state.md`「后期迁移 PostgreSQL」。
 
 | 模型 / 能力 | 代码状态 | 代码实际字段 |
 |---|---|---|
@@ -780,6 +782,8 @@ export function register(client: ClientModules): void {
 | **M2 总助理** | AI 驱动运营 | 对话完成日常事务 |
 | **M3 日志监测** | 三层日志 | 能查询审计记录 |
 
+> **界面路线注记（2026-09-17）**：上表切片口径不变。M0.1「Web 基础」的界面来源为**复制官方 Web 插件 fork 改造的 `soloips-web`**（验收出口「创建公司成功」不变）；M0.3（3D 基础）与 M1（双版本联调）随原「自研 Web+3D 双版本」路线**推迟**，解冻时点〔待决〕。见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+
 ---
 
 ## 7. 变更历史
@@ -796,3 +800,4 @@ export function register(client: ClientModules): void {
 | 2026-09-17 | 添加 §3.1 S0 临时账户绑定例外 | 批准部署层注入 accountId；P1 Auth 前不得声称多租户隔离 |
 | 2026-09-17 | 修正 createCompany（补 `type`/`parentCompanyId`）、任职作用域判定、`apply` 的 async、跨表事务表述 | 消除契约内部自相矛盾 |
 | 2026-09-17 | 里程碑代号 Sonnet→M2（总助理）、Opus→M3（日志监测） | 用户裁定：原代号借用模型档位名、与里程碑内容无关，易致多套含义漂移 |
+| 2026-09-17 | §6.1 加界面路线注记：M0.1 界面来源改为官方 Web fork 改造版；M0.3/M1 随自研双版本推迟 | 用户 2026-09-17 两轮确认的 V1 UI 决策，见 `docs/decisions/web-ui-fork.md` |

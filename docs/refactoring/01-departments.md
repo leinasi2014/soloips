@@ -7,7 +7,7 @@
 | 决策状态 | 本文标为〔定稿设计〕的组织边界与资料室 v1 由统筹依据用户授权定稿；明确列出的员工及业务待决项不在批准范围内 |
 | 生效边界 | 文档候选经项目审查、集成和读回后成为仓库规范；设计定稿不代替该流程 |
 | 实现证据 | 尚无本文完整能力的运行时验收证据；源码观察只适用于下列固定基线，不能称功能已交付 |
-| 负责人 | 沿用[文档注册表](../governance/document-registry.yaml)的 architecture-owner |
+| 负责人 | 沿用[文档注册表](../governance/document-registry.md)的 architecture-owner |
 | 依据 | [重构入口](README.md)、[公司与员工合同](02-company-contract.md)、[重构交付与验收](03-delivery-and-acceptance.md)；旧协议与工作区说明仅作参考 |
 
 **核心：部门管理长期职责、任职和资料归属；Team 管协作；Session 管执行；资料室提供长期资料的保存、登记和访问入口。各域保留自己的事实来源。**

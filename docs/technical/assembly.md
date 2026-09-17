@@ -20,7 +20,7 @@ bundle patches → profile patch → home patch → launcher patch
 
 | 后端 | 说明 | 迁移路径 |
 |---|---|---|
-| `sqlite` | **默认**。SQLite + Drizzle ORM + better-sqlite3。事务支持（WAL 模式）。后期可迁移 PostgreSQL。 | 只需改 drizzle driver |
+| `sqlite` | **默认**。Drizzle 0.38 查询构造 + better-sqlite3 driver（实现见 `packages/adapter-dsh/src/ports/storage-sqlite.ts`）。WAL 模式与 PRAGMA 由 better-sqlite3 承担。 | 〔建议〕换 `drizzle-orm/postgres-js` driver + 重写连接层（PRAGMA/checkpoint 不直接迁移）+ 重新设计写权协调 + 存量数据导出导入核对；见 `docs/technical/state.md` |
 | `json` | JSON 文件存储。向后兼容。 | — |
 
 ### 切换后端
@@ -67,6 +67,8 @@ soloips-tools-pv       # S1 加入
 soloips-web
 soloips-bundle         # 装配层，最后加载
 ```
+
+> **〔待实现〕2026-09-17**：V1 界面决策要求把官方 Web 行（`@deepseek-ai/dsh-web-app`）**替换为** `soloips-web`（官方 Web 的 fork 改造版）。上表为**当前**装配；替换以装配行完成，不改官方包内容、不 monkey patch 运行时。见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
 ## Profile 三件套
 

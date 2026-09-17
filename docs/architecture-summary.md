@@ -13,7 +13,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明，patch 覆写顺序
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型、公司层级）
-├── web/                     # soloips-web：界面层（⚠️ 当前为包边界骨架，无实现代码）
+├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件 fork 改造版；官方 DSH 源码不动）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
@@ -59,7 +59,7 @@ SoloIPs 是 **AI 公司协作平台框架**：
 | ARCH-D05 | 上游 API 失败停线 | ORG-13 |
 | ARCH-D06 | 原生任务系统 | 协作要求 |
 | ARCH-D07 | S0 优先验证 | 开发策略 |
-| ARCH-D08 | Web/3D 双界面 | UI 架构子智能体 |
+| ARCH-D08 | Web/3D 双界面 | UI 架构子智能体（〔已取代〕2026-09-17：自研 Web+3D 推迟，V1 改为官方 Web fork 改造，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
 
 ## 包职责
 
@@ -103,7 +103,11 @@ SoloIPs 是 **AI 公司协作平台框架**：
 
 ### soloips-web
 
-> ⚠️ **当前为包边界骨架**（仅 `export {}`），无实际 React/Zustand/3D 实现代码（M0.1/M0.3/M1 里程碑目标）
+> V1 界面 = **复制官方 Web 插件（`@deepseek-ai/dsh-web-app` 行代表的浏览器界面面）fork 改造版**，官方 DSH 源码不动；装配时替换 profile bundles 中的官方 Web 行，上游 bug 修正持续同步未改动区域。
+>
+> 原「自研 Web + 3D 双版本（React/Zustand/Three.js）」路线**推迟**（〔待决〕解冻时点）。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
+>
+> ⚠️ 当前 `packages/web/` 仍是包边界骨架（仅 `export {}`），fork 改造尚未开始。
 
 ### soloips-tools-pv
 
@@ -147,16 +151,16 @@ interface SoloipsCompanyRecord {
 >
 > **运营服务接口**：[`docs/design/operation-services.md`](design/operation-services.md)（预留，后期实现）
 
-> ⚠️ 实现状态以 [`data-contract.md` §0](../design/data-contract.md#0-实现状态对照代码事实2026-09-17) 为准。
+> ⚠️ 实现状态以 [`data-contract.md` §0](design/data-contract.md#0-实现状态对照代码事实2026-09-17) 为准。
 
 | 阶段 | 目标 | 验收 | 状态 |
 |---|---|---|---|
 | **S0 接通** | 插件装配、受控写入、同包重启 | 加载成功 + 受控写 + 重启读回 | ✅ 已通过 |
 | **S0 多公司基础** | 跨账户拒绝、引用归属、撤职失效、并发配额 | 隔离测试通过 | ⚠️ 部分通过；配额/权限/执行绑定待实现 |
-| **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 | ⏳ 待实现 |
+| **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 | ⏳ 待实现；界面 = `soloips-web`（官方 Web fork 改造版，非自研），验收标准不变 |
 | **M0.2** | 订阅限制：三层配额生效 | 免费用户无法创建第二公司 | ⏳ 待实现 |
-| **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 | ⏳ 待实现 |
-| **M1** | 双版本联调：Zustand 状态共享 | Web 操作同步到 3D 视图 | ⏳ 待实现 |
+| **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 | ⏳ 待实现；随自研 UI 路线**推迟**，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md) |
+| **M1** | 双版本联调：Zustand 状态共享 | Web 操作同步到 3D 视图 | ⏳ 待实现；依赖 M0.3，随自研 UI 路线**推迟** |
 | **Sonnet** | 总助理：AI 驱动的公司运营 | 对话总助理完成日常事务 | ⏳ 待实现 |
 | **Opus** | 日志与监测：三层日志系统 | 能查询业务审计、执行历史 | ⏳ 待实现 |
 
@@ -177,3 +181,4 @@ interface SoloipsCompanyRecord {
 | 2026-09-17 | 创建架构概览 |
 | 2026-09-17 | 里程碑加状态列（✅/⚠️/⏳） |
 | 2026-09-17 | 移除与 architecture.md 重复的公司生态 ASCII 图，改为引用 |
+| 2026-09-17 | 写入 V1 UI 决策：web 行与包职责改为 fork 改造定位；ARCH-D08 标〔已取代〕；M0.1 补界面来源注记，M0.3/M1 标推迟并指向 `docs/decisions/web-ui-fork.md` | 文档智能体 |

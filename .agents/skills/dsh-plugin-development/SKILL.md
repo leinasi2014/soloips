@@ -16,7 +16,7 @@ metadata:
 | 决策状态 | 〔约束〕用户 2026-09-16 要求改为官方链接目录，开发前首先查询官方对应文档 |
 | 证据范围 | 本文提供查询路径；具体接口与兼容性须在目标版本核实，目录本身不提供运行验收证据 |
 | 依据 | [DeepSeek 官方仓库](https://github.com/deepseek-ai/deepseek-harness)；项目授权与工程规则见 [AGENTS.md](../../../AGENTS.md) |
-| 变更权 | 按[文档注册表](../../../docs/governance/document-registry.yaml)维护链接及适用范围；框架文档正文由官方维护 |
+| 变更权 | 按[文档注册表](../../../docs/governance/document-registry.md)维护链接及适用范围；框架文档正文由官方维护 |
 
 ## DSH-DOC-01：开发前先查询
 

@@ -8,7 +8,7 @@
 | 决策状态 | 〔约束〕承接用户补齐开发前资料的要求、ARCH-D03/04/07 与文档规范 §6 |
 | 证据范围 | 本文规定如何取得与刷新环境证据；机器路径和当次观察存放于本机记录，不构成持续运行保证 |
 | 依据 | [技术架构附录 B](../technical-architecture.md)、[项目绑定](../governance/project-binding.yaml)、[代码规范](../governance/code-development-standard.md) |
-| 变更权 | 规程按[注册表](../governance/document-registry.yaml)维护；执行者只在当前授权范围内更新本机观察 |
+| 变更权 | 规程按[注册表](../governance/document-registry.md)维护；执行者只在当前授权范围内更新本机观察 |
 
 ## ENV-01：先读本机记录
 

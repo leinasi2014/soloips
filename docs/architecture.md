@@ -17,6 +17,8 @@
 
 **〔需求，SOLO-02〕** 第一版先复用 DSH Web 界面，完成可用闭环，再逐步替换为 SoloIPs 产品界面。复用外壳仍需呈现业务目标、当前负责人、待回答事项和真实交付物。
 
+> **2026-09-17 补充**：「逐步替换」的 V1 落实方式已确定为**复制官方 Web 插件 fork 改造为 `soloips-web`**（官方 DSH 源码不动，装配时替换 profile bundles 的官方 Web 行）；原「自研 Web+3D 双版本」路线推迟。本需求（先复用、再替换）不变，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
+
 **〔需求，SOLO-03〕** 第一条业务验收选择短剧：先完成 IP 简纲，再测试生成可观看的 PV。PV 是试水宣传短片，首片不等于完整短剧制作与发行完成。
 
 **业务主线（来源：[产品想法 V0.4](SoloIPs_Studio_Idea_Document_V0.4.md)，该文件登记为 `reference`，不是本节已确认需求）** 业务主线是“原创 IP 孵化 → 试水作品 → 自营或合作发行 → 数据反馈 → 扩展、重构或资产复用”。小说、漫画、游戏、音乐及视频属于产品的创作与发行方向。第一条交付路径不会自动取消其余方向，也不等于整套商业生态已完成。
@@ -53,7 +55,7 @@ flowchart TB
 | 协作内核 | Team 原生任务、成员、依赖与消息；公司合同所需 attempt / 审核门禁须适配验证 | 通过公开接口复用官方 Agent Team → subagent → Session；定制由 DSH fork 承载，一个事实保留一个写权威 |
 | 公司组织 | Organization、Department、Employee、Appointment、执行身份绑定、入职与准入 | 复用当前公司重构合同和合格候选，补齐真实 Host 入口与恢复 |
 | SoloIPs 业务 | IP 设定、角色、世界观、作品版本、创作阶段、试水计划、反馈与资产复用 | 在组织与协作之上增加业务对象，不把全部业务塞进聊天提示词 |
-| 工作台 | 输入目标、观察工作、回答问题、查看/退回/接受成果 | 首版使用 DSH Web 插槽、页面或侧栏；后续独立界面消费同一业务接口 |
+| 工作台 | 输入目标、观察工作、回答问题、查看/退回/接受成果 | 首版使用 DSH Web 插槽、页面或侧栏；后续独立界面消费同一业务接口（V1 改为复制官方 Web 插件 fork 改造为 `soloips-web`，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
 | 发行与外部工具 | 内容生产服务、发布渠道、反馈采集 | 通过具体工具/适配器接入，按首个作品类型逐项交付 |
 
 **〔需求〕用户 2026-09-16 明确选择官方 Agent Team → 官方 subagent → DSH Session 作为协作执行基础，维护 DSH 定制 fork，并由 SoloIPs 锁定工件；旧 swarm 仅作源码与测试经验参考。** 路线、状态归属、适配缺口与升级规则统一见[官方 Team 与 DSH fork 决策](decisions/official-team-and-dsh-fork.md)（SOLO-TEAM-01–09）。原“首片优先 swarm”的实现选择已取代；公司准入、独立审核、独占与恢复要求继续保留，官方复用尚不代表适配验收通过。

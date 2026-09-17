@@ -9,7 +9,7 @@
 | 证据范围 | §3 为固定官方源码基线的静态事实，不代表实际安装、模型调用或产品验收通过 |
 | 交付状态 | 设计路线已确定；运行交付仍为〔提案〕。本文不证明已创建 fork、发布工件、完成迁移或接入目标服务 |
 | 依据 | 最新用户指令；[产品架构](../architecture.md)、[技术架构](../technical-architecture.md)、[代码规范](../governance/code-development-standard.md)、[官方文档导航](../../.agents/skills/dsh-plugin-development/SKILL.md)；官方固定来源见 §3 |
-| 变更权 | 按[文档注册表](../governance/document-registry.yaml)维护；工程负责人可在本路线内决定适配与补丁，改变业务要求或改用另一协作内核须由用户决定 |
+| 变更权 | 按[文档注册表](../governance/document-registry.md)维护；工程负责人可在本路线内决定适配与补丁，改变业务要求或改用另一协作内核须由用户决定 |
 
 ## 1. 已定路线（SOLO-TEAM-01）
 

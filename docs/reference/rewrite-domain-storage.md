@@ -7,7 +7,7 @@
 | 范围 | `COMPANY_CORE_CHECKOUT/src/domain/`（42 文件）+ `src/storage/`（14 文件），与 `REPAIR_RELEASE_CHECKOUT` 同名目录对账；不含 runtime/client/rpc/tools 层 |
 | 决策状态 | 〔源码事实〕为只读观察；〔推断〕含假设；〔未验证〕为证据缺口。本文不构成实施许可，重写方案须另行确认 |
 | 证据范围 | 2026-09-16 只读复核两份候选 checkout（同属 `dsh-agent-swarm` 0.1.5、private、MIT）。**未运行、未构建、未做故障注入**；行号相对各自 checkout 根 |
-| 依据 | [文档格式规范](../governance/agent-readable-documentation.md)；`docs/operations/environment-handoff.md`（符号真值） |
+| 依据 | [文档格式规范](../governance/doc-format.md)；`docs/operations/environment-handoff.md`（符号真值） |
 | 变更权 | 队长合并入唯一正文前，本文为分块草稿 |
 
 ## 0. 结论摘要

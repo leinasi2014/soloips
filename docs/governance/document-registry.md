@@ -20,6 +20,7 @@
 | 文档 | 路径 | 用途 | 负责人 |
 |---|---|---|---|
 | 官方 Team 复用 | `docs/decisions/official-team-and-dsh-fork.md` | 官方 Team / DSH fork 维护规则 | architecture-owner |
+| **V1 界面路线** | `docs/decisions/web-ui-fork.md` | **V1 界面 = 复制官方 Web 插件 fork 改造为 soloips-web；装配替换、上游同步、自研双版本推迟** | architecture-owner |
 | 重构需求基线 | `docs/refactoring/README.md` | 公司/部门/员工/作品需求 | product-owner |
 
 ## 环境与操作
@@ -41,7 +42,7 @@
 | 文档 | 路径 | 用途 | 负责人 |
 |---|---|---|---|
 | **架构概览** | `docs/architecture-summary.md` | 快速参考：包职责、关键决策、里程碑 | architecture-owner |
-| **完整架构设计** | `docs/architecture-complete.md` | UI双版本、多公司模型、总助理、日志系统 | architecture-owner |
+| **完整架构设计** | `docs/architecture-complete.md` | 多公司模型、总助理、日志系统（§4.2/§5 的 UI 双版本设计已标〔已取代〕，V1 界面见 web-ui-fork.md） | architecture-owner |
 | **权威数据契约** | `docs/design/data-contract.md` | **唯一权威数据模型（含实现状态表、三层配额、S0 临时账户绑定例外）** | architecture-owner |
 | **多公司架构** | `docs/design/multi-company-organization.md` | 〔已取代〕历史稿；实现以 data-contract.md 为准 | architecture-owner |
 | **多公司实现** | `docs/design/multi-company-implementation.md` | 〔已取代〕历史稿；实现以 data-contract.md 为准 | architecture-owner |
@@ -73,7 +74,8 @@
    - 实现状态：`docs/design/data-contract.md` §0
    - adapter 端口清单：`docs/technical/packages.md`
    - 包目录结构（当前实际）：`docs/technical/packages.md`
-   
+   - V1 界面路线（官方 Web fork 改造、装配替换、上游同步、自研双版本推迟）：`docs/decisions/web-ui-fork.md`
+
    新增同题复述视为冲突，按 `docs/refactoring/README.md` 的「更正唯一正文」规则处理。
 
 ## 历史引用迁移
@@ -83,6 +85,7 @@
 | `docs/governance/document-registry.yaml` | 文件不存在（实为 `.md`） | `docs/governance/document-registry.md` |
 | `docs/governance/agent-readable-documentation.md` | 文件不存在 | `docs/governance/doc-format.md` |
 | `multi-company-*.md` 的数据模型与配额 | 已被取代 | `docs/design/data-contract.md` |
+| 「自研 Web+3D 双版本」UI 设计（`architecture-summary.md`、`architecture-complete.md` §4.2/§5、`technical/packages.md`、`technical-architecture.md`） | 推迟，V1 改走官方 Web fork 改造 | `docs/decisions/web-ui-fork.md` |
 
 ## 简化说明
 

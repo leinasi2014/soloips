@@ -9,13 +9,17 @@
 | soloips-bundle | 装配声明，patch 覆写顺序 | 无 | 无运行时依赖 |
 | soloips-adapter-dsh | DSH 适配，收敛全部 `@deepseek-ai/*`；支持 SQLite/JSON 存储后端 | 无业务状态 | DSH 官方包 |
 | soloips-core | **通用业务状态（公司层级、组织结构、文档模型）** | 各业务插件的共享基础 | adapter |
-| soloips-web | **界面层（Web + 3D 双版本）** | 只读投影 | core |
+| soloips-web | **界面层**（V1 = 复制官方 Web 插件 fork 改造版） | 只读投影 | core |
 | soloips-tools-pv | **业务插件（PV 制作）** | PV 任务状态 | adapter + core |
 
-> **存储后端**：默认 SQLite（Drizzle + better-sqlite3）；可选 JSON。后期可迁移 PostgreSQL。
+> **存储后端**：默认 SQLite（Drizzle 0.38 查询构造 + better-sqlite3 driver，实现见
+> `packages/adapter-dsh/src/ports/storage-sqlite.ts`）；可选 JSON。后期可迁移 PostgreSQL
+> 〔建议〕（迁移面见 `docs/technical/state.md`）。
 
 > **实现程度（2026-09-17）**：`adapter-dsh` 只差 `team` 端口（fail-closed）；`core` 已实现六表 CRUD 与提交门；
-> `web` 目前只有包边界与工具链，**尚未接入 core、也没有 React/Zustand/3D 实现**；`tools-pv` 属 S1，未创建。
+> `web` 目前只有包边界与工具链，**尚未接入 core**；V1 界面的交付方式为**复制官方 Web 插件 fork 改造版**
+> （非自研 React/Zustand/3D，后者推迟），见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)；
+> `tools-pv` 属 S1，未创建。
 
 ## 端口映射（adapter-dsh）
 
@@ -92,7 +96,7 @@ packages/                    # package 名见各自 package.json（soloips-*）
 │   ├── src/commit-gate.ts   # 唯一提交前门（含账户归属盖章）
 │   ├── src/onboarding.ts    # 入职/准入判定
 │   └── tests/
-└── web/                     # 当前为包边界骨架（export {}），无 client 实现
+└── web/                     # 当前为包边界骨架（export {}），无 client 实现；V1 交付方式 = 官方 Web fork 改造
     ├── package.json
     ├── cordis.patch.yml
     ├── src/index.ts
@@ -114,6 +118,8 @@ packages/                    # package 名见各自 package.json（soloips-*）
 
 ### UI 双版本架构（ARCH-D08）
 
+> **〔已取代〕2026-09-17**：V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**，下表自研 Web+3D 路线**推迟**（〔待决〕解冻时点）。正文保留为历史设计稿，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+
 | 版本 | 技术栈 | 说明 |
 |---|---|---|
 | **Web** | React + Zustand | 主界面，公司/部门/团队 CRUD |
@@ -127,3 +133,4 @@ packages/                    # package 名见各自 package.json（soloips-*）
 |---|---|
 | 2026-09-17 | 从技术架构拆分 |
 | 2026-09-17 | 按用户确认的产品准则统一：三层公司生态的决策引用由不存在的 ARCH-D09 更正为 SOLO-COMPANY-01 |
+| 2026-09-17 | 写入 V1 UI 决策：web 行/实现程度/目录注释改为「官方 Web fork 改造」定位；UI 双版本节标〔已取代〕并指向 `docs/decisions/web-ui-fork.md`（存储后端行未改动） | 文档智能体 |

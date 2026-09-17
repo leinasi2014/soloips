@@ -99,15 +99,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:SOLOIPS_ROOT/scrip
 ## 界面与后续里程碑
 
 > **权威里程碑定义见 [`docs/design/data-contract.md`](../design/data-contract.md) §6.1**，本节仅为展开引用，不复述为第二口径。其中 M0.1–M1 属 ARCH-D08（Web/3D 双界面）路线；M2（总助理）、M3（日志与监测）是独立的框架核心里程碑，不属于 ARCH-D08。
+>
+> **界面路线注记（2026-09-17）**：M0.1 的界面来源为**复制官方 Web 插件 fork 改造的 `soloips-web`**（验收出口不变）；M0.3/M1 随原「自研 Web+3D 双版本」路线**推迟**，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
 ### UI 双版本与框架核心路线
 
 | 阶段 | 目标 | 验收 |
 |---|---|---|
-| **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 |
+| **M0.1** | Web 版基础：公司/部门/团队 CRUD（界面 = 官方 Web fork 改造版） | 能在 DSH Web 中创建公司 |
 | **M0.2** | 订阅限制：三层配额生效（Free 1 公司+0 子公司；Pro 1 公司+3 子公司） | 免费用户无法创建第二公司或任一子公司 |
-| **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 |
-| **M1** | 双版本联调：Zustand 状态共享 | Web 操作能同步到 3D 视图 |
+| **M0.3** | 3D 版基础：场景搭建、部门/团队可视化（⏳ 随自研 UI 路线推迟） | 3D 场景能渲染公司结构 |
+| **M1** | 双版本联调：Zustand 状态共享（⏳ 依赖 M0.3，推迟） | Web 操作能同步到 3D 视图 |
 | **M2** | 总助理：AI 驱动的公司运营 | 能对话总助理完成日常事务 |
 | **M3** | 日志与监测：三层日志系统 | 能查询业务审计、执行历史、系统监测 |
 

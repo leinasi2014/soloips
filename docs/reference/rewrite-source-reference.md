@@ -7,7 +7,7 @@
 | 范围 | 两份候选 checkout 的 domain / storage / seam / client / tests 五层；不含 runtime / rpc / tools / host / human / skills 层 |
 | 决策状态 | 用户 2026-09-16 对旧 swarm / company 候选选择**参考重写**（不 fork、不整包拷贝）；后续明确选择官方 Team 及 DSH 定制 fork，现行路线见 [SOLO-TEAM-FORK](../decisions/official-team-and-dsh-fork.md)。本文只提供旧源码参考，复用建议不能覆盖该决定，不构成实施许可 |
 | 证据范围 | 2026-09-16 只读复核；**未运行、未构建、未做故障注入**。行号相对各自 checkout 根，符号真值见 [环境交接](../operations/environment-handoff.md) |
-| 依据 | [文档格式规范](../governance/agent-readable-documentation.md)；[技术架构](../technical-architecture.md) ARCH-D02 |
+| 依据 | [文档格式规范](../governance/doc-format.md)；[技术架构](../technical-architecture.md) ARCH-D02 |
 | 变更权 | 队长（单一写者）；分块正文见 `docs/reference/` 三份 |
 | 交付状态 | 〔提案〕——待审后并入注册表 |
 

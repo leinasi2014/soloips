@@ -7,7 +7,7 @@
 | 范围 | `COMPANY_CORE_CHECKOUT/tests/`（330 资产）与 `REPAIR_RELEASE_CHECKOUT/tests/`（325 资产）；外加对 `docs/reference/rewrite-domain-storage.md`、`docs/reference/rewrite-seam-client.md` 关键论断的核验。不含 src 实现细节与产品需求正文 |
 | 决策状态 | 〔源码事实〕为只读观察；〔推断〕含假设；〔未验证〕为证据缺口。本文不构成实施许可 |
 | 证据范围 | 2026-09-16 只读复核两份候选 checkout（同属 `dsh-agent-swarm` 0.1.5、private、MIT）。**未运行任何测试、未构建、未启动宿主**；行号相对各自 checkout 根 |
-| 依据 | `docs/governance/agent-readable-documentation.md`（SOLOIP-DOC-001）；`docs/operations/environment-handoff.md` ENV-02（符号真值）；`docs/technical-architecture.md` 第 11 章验收合同 |
+| 依据 | `docs/governance/doc-format.md`（SOLOIP-DOC-001；原 `agent-readable-documentation.md` 已删除）；`docs/operations/environment-handoff.md` ENV-02（符号真值）；`docs/technical-architecture.md` 第 11 章验收合同 |
 | 变更权 | 队长合并入唯一正文；写者不单独改本文结论 |
 
 ## 0. 结论摘要

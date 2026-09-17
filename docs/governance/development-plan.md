@@ -19,7 +19,7 @@
 | `soloips-adapter-dsh` | 已实现 | 7 个端口（storage/session/agents/subagents/tools/events + team） | **Team 端口是 fail-closed 占位** |
 | `soloips-core` | 已实现 | 6 张表 schema + CRUD、唯一 opener、提交门、入职/准入判定 | **无配额/权限/Team/执行绑定**；公司树分支缺测试 |
 | `soloips-bundle` | 装配声明 | cordis.patch.yml（关闭 llm-retry / otel 遥测） | 无运行时逻辑（符合设计） |
-| `soloips-web` | **包边界骨架** | 仅 `export {}` 与装配行，`registerClient: false` | **无 UI 实现代码**（React/Zustand/3D 均为设计） |
+| `soloips-web` | **包边界骨架** | 仅 `export {}` 与装配行，`registerClient: false` | **无 UI 实现代码**；V1 交付方式 = 复制官方 Web 插件 fork 改造（原自研 React/Zustand/3D 路线推迟，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)） |
 | `soloips-tools-pv` | 未创建 | — | **S1 里程碑交付物** |
 
 > 更细的契约 vs 代码差距见 `docs/design/data-contract.md` §0。
@@ -67,10 +67,10 @@ Team 端口实现 ──┬── core CRUD 实现
 | 里程碑 | 目标 | 交付物 | 验收标准 | 预计时间 |
 |---|---|---|---|---|
 | M0 | 基础就绪 | 依赖锁定、CI 门禁、隔离机制 | `pnpm verify` 通过；可构建 | 1-2 周 |
-| **M0.1** | **Web 版基础** | **公司/部门/团队 CRUD、Zustand store** | **能在 DSH Web 中创建公司** | — |
+| **M0.1** | **Web 版基础** | **公司/部门/团队 CRUD**（界面 = 官方 Web fork 改造版 `soloips-web`） | **能在 DSH Web 中创建公司** | — |
 | **M0.2** | **订阅限制** | **权益策略接口、三层配额（Free 1 公司+0 子公司；Pro 1 公司+3 子公司）** | **免费用户无法创建第二公司或任一子公司** | — |
-| **M0.3** | **3D 版基础** | **场景搭建、部门/团队可视化** | **3D 场景能渲染公司结构** | — |
-| **M1** | **双版本联调** | **Zustand 状态共享、Web↔3D 同步** | **Web 操作同步到 3D 视图** | — |
+| **M0.3** | **3D 版基础** | **场景搭建、部门/团队可视化** | **3D 场景能渲染公司结构** | — (⏳ 随自研 UI 路线推迟) |
+| **M1** | **双版本联调** | **Zustand 状态共享、Web↔3D 同步** | **Web 操作同步到 3D 视图** | — (⏳ 依赖 M0.3，推迟) |
 | **M2** | **总助理** | **AI 驱动的公司运营** | **对话总助理完成日常事务** | — |
 | **M3** | **日志与监测** | **三层日志系统** | **能查询业务审计、执行历史** | — |
 
@@ -93,9 +93,11 @@ Team 端口实现 ──┬── core CRUD 实现
 
 ### UI 双版本里程碑详情
 
+> **界面路线注记（2026-09-17）**：本节的「自研双版本 + Client Slots」落实方式**推迟**。V1（M0.1）界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**（官方 DSH 源码不动，装配时替换 profile bundles 的官方 Web 行）；M0.3（3D）与 M1（双版本联调）随自研路线推迟，解冻时点〔待决〕。里程碑口径与验收出口不变，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+
 #### M0.1：Web 版基础
 
-**目标**：实现公司/部门/团队 CRUD，通过 DSH Client Slots 接入。
+**目标**：实现公司/部门/团队 CRUD。原「通过 DSH Client Slots 接入的自研 Web 实现」改为复制官方 Web 插件 fork 改造版承接，验收出口不变。
 
 #### M0.2：订阅限制
 
@@ -103,13 +105,13 @@ Team 端口实现 ──┬── core CRUD 实现
 
 #### M0.3：3D 版基础
 
-**目标**：使用 React Three Fiber + Three.js 渲染公司架构场景。
+**目标**：使用 React Three Fiber + Three.js 渲染公司架构场景。⏳ 随自研 UI 路线**推迟**，解冻时点〔待决〕。
 
 #### M1：双版本联调
 
-**目标**：Web 与 3D 共享 Zustand store，操作自动同步。
+**目标**：Web 与 3D 共享 Zustand store，操作自动同步。⏳ 依赖 M0.3，随自研 UI 路线**推迟**。
 
-> **注意**：M0.1-M1 可与 M0 并行开发，独立验收。
+> **注意**：M0.1 可与 M0 并行开发，独立验收；M0.3/M1 待自研路线解冻后再排期。
 
 ### 原有里程碑（〔已取代〕）
 
@@ -612,3 +614,4 @@ M0 完成后，且：
 |---|---|
 | 2026-09-17 | 按用户确认的产品准则统一：「原有里程碑」及 §2.2–2.4 标〔已取代〕（里程碑权威定义归 data-contract §6.1）；M0.2 改三层配额口径；§4.2 并行任务表去除旧代号与"任务状态机"；术语表同步 |
 | 2026-09-17 | 里程碑代号 Sonnet→M2、Opus→M3（含 §3.4 合并时机、§4.2 并行任务表、术语表）；原代号与模型档位同名易误解，用户裁定更名 |
+| 2026-09-17 | 写入 V1 UI 决策：§1.1 web 行、里程碑总览 M0.1/M0.3/M1、UI 双版本里程碑详情与 M0.1/M0.3/M1 小节补界面路线注记，指向 `docs/decisions/web-ui-fork.md` | 文档智能体 |

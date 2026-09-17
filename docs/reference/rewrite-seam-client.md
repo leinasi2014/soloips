@@ -7,7 +7,7 @@
 | 范围 | `COMPANY_CORE_CHECKOUT/src/plugin/`（4 文件）、`src/public-api.ts`、`src/client/`（70 文件）、`package.json`、`cordis.patch.yml`；并与 `REPAIR_RELEASE_CHECKOUT` 对账。不含 host 业务域建模、存储后端、任务状态机 |
 | 决策状态 | 本文为〔源码事实〕登记与〔建议〕取舍；不构成实现授权，不改变 ARCH-D01–07 已定技术约束 |
 | 证据范围 | 两候选均为 `dsh-agent-swarm` 0.1.5、private、MIT；COMPANY_CORE_CHECKOUT HEAD `4c6d05ef30452df2b7adbfb24d625aef4e58f239`；REPAIR_RELEASE_CHECKOUT HEAD `d5d28b685b3a29c355336a7616f577f2f7a312e7`（41 处已跟踪修改，HEAD 不足以标识完整候选）。本轮只读、未运行、未启动服务 |
-| 依据 | `docs/governance/agent-readable-documentation.md`（SOLOIP-DOC-001）；`docs/technical-architecture.md` 第 5、8、9 章；`docs/operations/environment-handoff.md` ENV-02 |
+| 依据 | `docs/governance/doc-format.md`（SOLOIP-DOC-001；原 `agent-readable-documentation.md` 已删除）；`docs/technical-architecture.md` 第 5、8、9 章；`docs/operations/environment-handoff.md` ENV-02 |
 | 变更权 | 队长合并入唯一正文；写者不单独改本文结论 |
 
 ## 1. 结论摘要

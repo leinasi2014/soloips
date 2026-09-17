@@ -8,7 +8,7 @@
 
 | 阅读契约 | 内容 |
 |---|---|
-| 文档身份 | `company-refactor-contract` 的 `department-spec` 节；负责人及变更权限沿用[文档注册表](../governance/document-registry.yaml) |
+| 文档身份 | `company-refactor-contract` 的 `department-spec` 节；负责人及变更权限沿用[文档注册表](../governance/document-registry.md) |
 | 目的与范围 | 保存员工、任职、岗位记忆、Skills 提炼及审计的待决设计；部门与资料室规范见 [重构文档 01](01-departments.md) |
 | 决策成熟度 | 已确认需求与设计建议并列；本次整理不批准尚未决定的业务权限，也不启动产品实现 |
 | 实现证据范围 | 仅列当前源码可核对事实；部门方案未进行端到端、真实模型或冷恢复验收，不因文档归档而视为已实现 |
@@ -35,7 +35,7 @@
 
 - **CUR-01〔源码事实〕**：现有私有记忆分区使用 scope、Team 与成员 Session，见 [member-private-memory-service.ts 的固定版本](https://github.com/leinasi2014/dsh-agent-swarm/blob/51ddbe29bf35f39064cd99269d824e0b3a9e856d/src/runtime/member-private-memory-service.ts#L36-L43) 中的 `OwningMember`。未来按部门、岗位、任职隔离是设计，不是该分区已支持的事实。
 - **CUR-02〔源码事实〕**：现有成员恢复核对 `stored.meta.parentSession` 与恢复队长的 ID，不一致返回失败并要求 drain，见 [member-provisioning.ts 的固定版本](https://github.com/leinasi2014/dsh-agent-swarm/blob/51ddbe29bf35f39064cd99269d824e0b3a9e856d/src/runtime/member-provisioning.ts#L546-L563)。**〔推断〕**只改管理员绑定不足以完成接管；本轮没有执行该故障的运行时实验。
-- **CUR-03〔约束〕**：Team 继续拥有任务、attempt、审核、邮箱、依赖及预算的既有状态；Session 日志继续记录执行事实。部门不复制第二份任务状态机。扩展遵循[DSH 分层原则](../01-dsh-principles.md)。
+- **CUR-03〔约束〕**：Team 继续拥有任务、attempt、审核、邮箱、依赖及预算的既有状态；Session 日志继续记录执行事实。部门不复制第二份任务状态机。扩展遵循 DSH 分层原则（原引用目标 `01-dsh-principles.md` 已删除，仓库内无等价正文）。
 - **CUR-04〔未验证〕**：部门实体存储、长期员工与任职接入、受支持的会话迁移、完整入职门及个人档案彻底删除均没有本节所需的完整实现证据。源码检索未见不等于官方没有能力；接入前核对目标安装包与真实组合，不改变现有兼容基线。
 
 CUR-01/02 的源码观察基线为 `51ddbe29bf35f39064cd99269d824e0b3a9e856d`，核对日期为 2026-09-14；源码变化后应重核受影响结论。代码观察、设计走查和产品验收分别记录。

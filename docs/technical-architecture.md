@@ -9,7 +9,7 @@
 | 身份 | SOLO-TECH-ARCH |
 | 目的 | 包边界、装配机制、状态归属、验收设计 |
 | 范围 | 交付形态与包边界；装配；状态；验收 |
-| 依据 | [产品架构](../architecture.md)、[代码规范](../governance/code-development-standard.md) |
+| 依据 | [产品架构](architecture.md)、[代码规范](governance/code-development-standard.md) |
 | 变更权 | architecture-owner；重大变更须用户确认 |
 
 ## 架构决策（ARCH-D01–08）
@@ -23,7 +23,7 @@
 | ARCH-D05 | 上游 API 失败停线（ORG-13） |
 | ARCH-D06 | 用原生任务系统登记工作 |
 | ARCH-D07 | S0 优先：真实安装候选 + 写保护验证 |
-| ARCH-D08 | Web/3D 双界面架构，共享 Zustand 状态，通过 DSH Client Slots 扩展 |
+| ARCH-D08 | Web/3D 双界面架构，共享 Zustand 状态，通过 DSH Client Slots 扩展（〔已取代〕2026-09-17：自研双版本推迟，V1 界面改为复制官方 Web 插件 fork 改造，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
 
 ## 包结构
 
@@ -32,7 +32,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型）
-├── web/                     # soloips-web：可替换界面层（Web + 3D 双版本）
+├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件 fork 改造版；官方 DSH 源码不动）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
@@ -40,13 +40,15 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 
 ### UI 双版本架构（ARCH-D08）
 
+> **〔已取代〕2026-09-17**：自研 Web+3D 双版本设计**推迟**（〔待决〕解冻时点）；V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**。下表保留为历史设计稿，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
+
 | 组件 | 技术栈 | 说明 |
 |---|---|---|
 | **Web 版本** | React + Zustand | 主界面，创建/管理公司、部门、团队 |
 | **3D 版本** | React Three Fiber + Three.js | 科幻风格可视化，增强沉浸感 |
 | **状态共享** | Zustand + DSH Slots | 双版本共享同一业务状态 |
 
-详细：见 [docs/architecture-complete.md](../architecture-complete.md)
+详细：见 [docs/architecture-complete.md](architecture-complete.md)
 
 ## 装配机制
 
@@ -95,3 +97,4 @@ S0 验收目标：
 |---|---|
 | 2026-09-17 | 拆分模块化文档结构 |
 | 2026-09-17 | 按用户确认的产品准则统一：包结构图改为实际目录名；adapter 端口数更正为 7（shared.ts 非端口） |
+| 2026-09-17 | 写入 V1 UI 决策：ARCH-D08 与 UI 双版本节标〔已取代〕、web 行改为 fork 改造定位，均指向 `docs/decisions/web-ui-fork.md` | 文档智能体 |

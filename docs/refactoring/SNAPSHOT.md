@@ -3,11 +3,11 @@
 | 阅读契约 | 内容 |
 | --- | --- |
 | 身份 | `SOLO-REFACTORING-SNAPSHOT`；外部需求正文的**入仓来源与保真记录**，非需求正文本身 |
-| 目的 | 让接手者知道本目录 5 份正文从哪来、与来源的等价程度（4/5 原始字节一致、5/5 经行尾归一后一致）、如何复核，以及**哪些内容有意未入仓** |
+| 目的 | 让接手者知道本目录 5 份正文从哪来、与来源的等价程度（入仓时 4/5 原始字节一致、5/5 经行尾归一后一致；其中 2 份其后经授权的链接修复，见 §2.2）、如何复核，以及**哪些内容有意未入仓** |
 | 范围 | 本目录 5 份正文的来源、哈希、保真方法与漂移处置；不重述其需求内容 |
 | 决策状态 | 〔约束〕落实用户 2026-09-16 批准「复制 5 份重构文档入仓」；本记录不改写任何需求的含义 |
 | 证据范围 | 2026-09-16 复制时点本机实测：源文件 SHA-256、字节数、逐文件比对结果；**未评审需求内容正确性** |
-| 依据 | 用户 2026-09-16 指令；[环境交接 ENV-01/02/04](../../operations/environment-handoff.md)；[文档格式规范 §10](../governance/agent-readable-documentation.md) |
+| 依据 | 用户 2026-09-16 指令；[环境交接 ENV-01/02/04](../operations/environment-handoff.md)；[文档格式规范](../governance/doc-format.md)（原 `agent-readable-documentation.md` §10；该文已删除，现规范无 §10 节） |
 | 变更权 | 来源变化时按 ENV-04 在同一候选内刷新本记录与 5 份正文，另存新回执 |
 
 ---
@@ -16,13 +16,13 @@
 
 `docs/technical-architecture.md`、`docs/architecture.md` 与 `docs/reference/*` 引用 `ORG-01–13`、`DEPT-01–04`、`LIB-01–11`、`AVATAR-64`、`DEP-*` 等需求 ID **近百处**，但在此之前**其正文只存在于本机一个被 gitignore 覆盖的外部目录**——换机、换人或 CI 环境即失去可追溯性。
 
-来源目录（`REFACTORING_DOCS_ROOT`，按 [ENV-02](../../operations/environment-handoff.md) 解析）：
+来源目录（`REFACTORING_DOCS_ROOT`，按 [ENV-02](../operations/environment-handoff.md) 解析）：
 
 ```text
 REFACTORING_DOCS_ROOT 下的 docs/refactoring/
 ```
 
-**该符号的实际绝对路径记录在 [ENV-01](../../operations/environment-handoff.md) 规定的本机记录中，不写在正文里。** 依据 `agent-readable-documentation.md` §6：可复用文档使用符号环境名，机器本地绝对路径写入本机记录、不进正文；本仓库为 public。
+**该符号的实际绝对路径记录在 [ENV-01](../operations/environment-handoff.md) 规定的本机记录中，不写在正文里。** 依据 `agent-readable-documentation.md` §6：可复用文档使用符号环境名，机器本地绝对路径写入本机记录、不进正文；本仓库为 public。
 
 本文件是**入仓时编写的来源与保真说明**，不在 §2 的 5 份快照之内（那 5 份才是被比对对象），因此本处按规范改用符号名不影响那 5 份的等价性核对。
 
@@ -43,12 +43,12 @@ REFACTORING_DOCS_ROOT 下的 docs/refactoring/
 | 文件 | 来源字节数 | 来源 SHA-256 | 入库字节数 | 入库 SHA-256 |
 | --- | ---: | --- | ---: | --- |
 | `README.md` | 2435 | `ea8c9d461ae902d3abc6a0d45c24bc790c2fde13976ed8210326987826b26ea2` | 2435 | `ea8c9d461ae902d3abc6a0d45c24bc790c2fde13976ed8210326987826b26ea2` |
-| `01-departments.md` | 18235 | `a9eb602c4fd74b22fcc7ab7e5fbb8e42ba0775de2ce12793cb7839bf16368365` | 18235 | `a9eb602c4fd74b22fcc7ab7e5fbb8e42ba0775de2ce12793cb7839bf16368365` |
-| `02-company-contract.md` | 44934 | `a0fa595f2a5d13dba9a9fb37f988eea0c4a1536139235d7c55255b094ff18abf` | 44934 | `a0fa595f2a5d13dba9a9fb37f988eea0c4a1536139235d7c55255b094ff18abf` |
+| `01-departments.md` | 18235 | `a9eb602c4fd74b22fcc7ab7e5fbb8e42ba0775de2ce12793cb7839bf16368365` | **18233** | **`55fcadb82453ad10683eff6423ba487c9b35c9ea30b1c590cc41fbb18466bc42`** |
+| `02-company-contract.md` | 44934 | `a0fa595f2a5d13dba9a9fb37f988eea0c4a1536139235d7c55255b094ff18abf` | **44987** | **`a138e65dea1784691c587e7df4b6cf32c508fee80d0c8b8c73637947c3385221`** |
 | `03-delivery-and-acceptance.md` | 5651 | `4eaf91e659d32c92e5b027f78655787e0f665e1e1e6bba2b42476c202014d4a4` | **5609** | **`f54487573a513e714b8f312daccf6bbeb067b9ffa4ae3e790b6defcb6fa4dd60`** |
 | `04-avatar-64.md` | 2213 | `21d4fe9fd552aa9d411bb936316a44afb6e9f8bb2472be4ef58de59b557f6bbf` | 2213 | `21d4fe9fd552aa9d411bb936316a44afb6e9f8bb2472be4ef58de59b557f6bbf` |
 
-**结论必须按此表述**：**4/5 原始字节一致；5/5 在仅作 CRLF→LF 归一化后逐字节一致。**
+**入仓时结论**：**4/5 原始字节一致；5/5 在仅作 CRLF→LF 归一化后逐字节一致。**（该结论描述 2026-09-16 入仓时点；`01`、`02` 其后经 §2.2 的授权修订，现况见 §2.2。）
 
 `03-delivery-and-acceptance.md` 的来源是 CRLF（42 处）。按 `.gitattributes` 的统一 LF 策略与 Issue #1 的已决裁决（**不为个例设 `eol` 例外**），入库时 42 个 CR 被删除，故其**入库值不等于来源原始值**；正文内容逐字节相同。
 
@@ -74,7 +74,21 @@ foreach ($f in @('README.md','01-departments.md','02-company-contract.md',
 }
 ```
 
-期望：`README`/`01`/`02`/`04` 的 `src` 与 `blob` **相等**；`03` 的 `src` 为 `4eaf91e6…`、`blob` 为 `f5448757…`——**这是已记录的预期差异**，来源经 `CRLF→LF` 后才与 blob 逐字节相等。出现其余差异即表示源已变化，按 §4 处置。
+期望（**须结合 §2.2 修订后重述**）：`README`/`04` 的 `src` 与 `blob` **相等**；`03` 的 `src` 为 `4eaf91e6…`、`blob` 为 `f5448757…`（已记录的 CRLF→LF 预期差异）；`01` 的 `blob` 为 `55fcadb8…`、`02` 的 `blob` 为 `a138e65d…`，**与各自 `src` 不等**——这是 §2.2 已登记的授权链接修订，逐条理由见该节表格。出现本表与 §2.2 之外的差异即表示源或仓已再次变化，按 §4 处置。
+
+### 2.2 授权修订登记（2026-09-17，死链修复）
+
+按 §4 第 3 条「有意修订须在本记录登记并说明理由」，登记本次对已入仓正文的修订：
+
+| 文件 | 修订内容 | 性质 |
+| --- | --- | --- |
+| `01-departments.md:10` | 阅读契约「负责人」行引用目标 `../governance/document-registry.yaml` → `document-registry.md` | 只改引用路径（目标文件实际为 `.md`），不改语义 |
+| `02-company-contract.md:11` | 阅读契约「文档身份」行同上（`.yaml` → `.md`） | 只改引用路径，不改语义 |
+| `02-company-contract.md:38` | CUR-03 末句的「DSH 分层原则」改为纯文本并注明原引用目标 `01-dsh-principles.md` 已删除、仓库内无等价正文 | 原目标文件在仓库内不存在且无等价正文，按「无等价物则删引用句并留注」处置；CUR-03 的约束语义未改 |
+
+**理由**：`01`、`02` 均在仓库内以 `../governance/document-registry.yaml`、`../01-dsh-principles.md` 引用不存在的目标，属死链；用户 2026-09-17 经指挥派发明确授权修复死链，原则为「只改引用路径，不改语义」。本修订**不改变任何需求 ID、约束内容或验收要求**，仅使引用可解析。
+
+**后果（按 §2 保真口径）**：`01` 由 18235 → **18233** 字节（`.yaml`→`.md` 少 2 字符）；`02` 由 44934 → **44987** 字节（链接替换为带说明的纯文本）。因此**这 2 份的入仓 blob 现值不再等于来源原始值**，`README`/`04` 仍等于来源原始值。§2 上表已同步为现值并保留原始值列。
 
 ---
 
@@ -128,5 +142,6 @@ foreach ($f in @('README.md','01-departments.md','02-company-contract.md',
 ## 6. 边界声明
 
 - **已验证**：5 份文件的字节数与 SHA-256（源、仓两侧）；源目录存在性；3 份未入仓文件的「定义数 = 0」；来源 `README.md` 的两条自述。
+- **已修订**：`01`、`02` 经 §2.2 登记的授权死链修复，入仓 blob 现值与来源原始值不等；其余 3 份未修订。
 - **未执行**：未评审需求内容的正确性或一致性；未核实 `REFACTORING_DOCS_ROOT` 之外是否还有其他需求来源；未修改任何来源文件。
 - **不证明**：入仓不使需求「已实现」，也不构成实施授权（`docs/design/r002/baseline/baseline.md` §6 的 A1–A8 仍有效）。本记录不改变任何需求的含义或效力。
