@@ -1,4 +1,4 @@
-# PR 门禁：Ubuntu + Windows 双平台验证
+# PR 门禁：verify（Ubuntu 平台，主检查）+ windows-verify（辅助）
 name: verify
 
 on:
@@ -16,8 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ubuntu:
-    name: verify (ubuntu)
+  # 主检查：匹配 branch protection 的 "verify" 要求
+  verify:
+    name: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,8 +56,9 @@ jobs:
       - name: Delivery load check
         run: pnpm run check:delivery-load
 
+  # Windows 辅助检查（不阻塞合并）
   windows:
-    name: verify (windows)
+    name: windows-verify
     runs-on: windows-latest
     steps:
       - name: Checkout
