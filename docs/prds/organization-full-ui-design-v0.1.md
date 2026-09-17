@@ -751,24 +751,38 @@ flowchart LR
 
 ## 9b. 工具名与两条命名面（对齐 BE-6）
 
-> **⚠️ 事实更正（本次执行时发现）**：派单要求「读 `organization-full-backend-design-v0.1.md` 的 **A4 节**、把工具名逐行对齐」。
-> **经检索，该节不存在**：该文档的章节为 §1–§6 + 附录 A（证据范围），**无 A4 节，也无任何 16 行工具名表**（`grep -rn "A4\|soloips_company_create\|工具名清单" docs/prds/` 无命中；全文仅一处 `soloips_*` 标识符 `` `soloipsDigestOf` ``）。
-> 因此本节**不引用所谓 A4 清单**，改为**从权威命令面自行推导**，并**登记该差异待与后端对齐**（`【差异】`，见文末）。
+> **⚠️ 事实更正（2026-09-18 后端四任回填）**：本任初次执行时曾检索「A4 节」未命中，据此登记「清单不存在」——**该判断有误，已撤销**。
+> 实际情形：**16 行建议清单曾存在于** [`system-assistant-backend-design-v0.1.md`](system-assistant-backend-design-v0.1.md) **§3.1 / BE-6 节（L308–328，标题「BE-6 系统助理工具名建议清单」）**；我未命中是因为检索词用了派单用语「A4」，而文档内标题不含该词。
+> **该清单已于 2026-09-18 收敛**：后端明确「本文档不再维护第二份工具名清单」，**一律引用 [`data-contract.md`](../design/data-contract.md) **§2.5「工具名（模型工具面，2026-09-18 登记）」的 20 项表**。→ **本文件 §9b.2 的推导表已获采纳为该 §2.5 权威表**（20 项逐项一致），见下。
+
+### 9b.0 权威归属（〔约束〕）
+
+| 层 | 权威位置 | 说明 |
+|---|---|---|
+| **工具名清单** | **[`data-contract.md` §2.5](../design/data-contract.md#25-工具名模型工具面2026-09-18-登记)**（20 项） | **唯一权威**；从权威命令面导出（10 个已登记 kind + 10 个只读服务方法） |
+| 原 16 行建议清单 | `system-assistant-backend-design-v0.1.md` BE-6 节（L308–328） | **已收敛**，保留备查；**不再维护第二份清单** |
+| **差异登记（3 项实质差异）** | 同上文档 BE-6 节的**差异表**（L314–321） | 详见下 §9b.3 |
+
+〔约束〕**本文件不复制清单正文**（避免第三份事实来源）：§9b.2 保留**推导过程**（说明 20 项从何而来、为何是这些），**清单以 §2.5 为准**。
 
 ### 9b.1 两条命名面（〔约束〕，刻意不同形）
 
 | 面 | 形态 | 依据 | 示例 |
 |---|---|---|---|
-| **模型工具名** | **下划线**：`soloips_<域>_<动作>` | 〔源码事实〕官方工具名先例全为下划线：`spawn_teammate`、`send_message`、`list_agents`、`team_task_create`、`team_task_update`（`packages/experimental/tool-agent-team/src/index.ts`）；且 BE-6 明确「工具名必须带 `soloips-` 前缀」以避免同作用域冲突（`contracts.ts:524-525`） | `soloips_company_create` |
+| **模型工具名** | **下划线**：`soloips_<域>_<动作>` | 〔源码事实〕官方工具名先例全为下划线：`spawn_teammate`、`send_message`、`list_agents`、`team_task_create`、`team_task_update`（`packages/experimental/tool-agent-team/src/index.ts`）；BE-6 明确「工具名必须带**下划线**前缀 **`soloips_`**」以避免同作用域冲突（`contracts.ts:524-525`）〔后端 2026-09-18 更正：原稿写 `soloips-` **连字符**，已改〕 | `soloips_company_create` |
 | **浏览器 @Remote 调用面** | **点号 namespace**：`ctx.remote.<namespace>.<method>` | 〔源码事实〕BE-6 §3.2：每次调用走 `POST /api/<namespace>/<method>`；方法名 = core 服务方法名（`createCompany`） | `ctx.remote.soloips.createCompany` |
 
 〔约束〕**两套命名不同形是刻意的**，**禁止混用**：
 
 - 模型工具名**不用点号**（点号是 `mcp__server__tool` 与 HTTP 路径的分隔符语义，混用会造成工具名歧义）。
 - `@Remote` 方法名**不用下划线**（它是 Typert 严格分析下的**方法名**，须与方法标识符一致：具名必填简单标识符，不得解构/默认值/rest/可选）。
-- 〔**未验证**〕「DSH 工具名**禁止**点号」这一硬性规则**本次未在 DSH 源码中找到显式校验**；上述区分依据是**官方命名先例 + 各协议层分隔符语义**，属〔推断〕，**不是**已核实的禁用规则。若后端能给出显式校验点，应回填。
+- 〔**源码事实**〕**点号属"不允许"字符**：DeepSeek 函数名约定**只允许 `[A-Za-z0-9_-]`**、≤64 字符；不允许的字符被替换为 `_`，有损时追加 12 位 SHA-256 hash（`packages/mcp/mcp-client/src/tools.ts:48` `MAX_PUBLIC_NAME_LENGTH` / `:51` `INVALID_NAME_CHARS = /[^A-Za-z0-9_-]/g` / `:54` `HASH_LENGTH` / `:81-86` `publicToolName`）。**本次已核对源码，该引用准确**。
+  - 〔精度保留〕该约束位于 **MCP 桥接的 public name 归一化**路径，是**命名约定的强证据**；但**"soloips 工具注册路径是否走同一归一化"未逐一核实**。故：**工具名用小写+下划线是遵循官方约定的〔建议+源码事实〕，不是"soloips 侧已被校验拒绝"的结论**。
+  - 〔依据〕后端已在 [`data-contract.md` §2.5](../design/data-contract.md#25-工具名模型工具面2026-09-18-登记) 同向登记该源码事实，并保留一条〔未验证〕：「DSH 工具名禁止点号未在源码中找到**显式校验**」——与该精度保留一致。
 
-### 9b.2 工具名推导表（〔建议〕，从权威命令面导出）
+### 9b.2 工具名推导表（**已被采纳为 `data-contract.md` §2.5 权威表**）
+
+> **状态变更**：本节原为〔建议〕推导；2026-09-18 **已获后端采纳并登记为 [`data-contract.md` §2.5](../design/data-contract.md#25-工具名模型工具面2026-09-18-登记) 权威 20 项表**（逐项一致）。下表保留**推导过程**，**引用时一律指 §2.5**。
 
 **写命令**（源：`SoloipsOperationKind`，`contracts.ts:81-92`，共 10 项）
 
@@ -809,12 +823,26 @@ flowchart LR
 | 创建公司卡 | `soloips_company_create` |
 | 创建部门卡 | `soloips_department_create` |
 | 招募卡（员工 + 任职） | `soloips_employee_create` + `soloips_appointment_create` |
-| 编组建议卡 | `soloips_team_grouping_suggest`〔**推导，待后端确认**——编组不在上述 20 项内，属 BE-3 后的新增命令〕 |
-| 成员加载状态卡 | `soloips_team_member_loading_get`〔同上，**待后端确认**〕 |
+| **编组建议卡** | **`soloips_grouping_suggest`**〔**待决**〕——见 §9b.3 差异 ③：**编组建议是纯读能力、不在 §2.5 的 20 项内**，属「待 BE-3/编组切片一并登记」的〔待决〕项。**在该项登记前，本卡的工具名不得定稿** |
+| **成员加载状态卡** | **〔待决，同源〕**——成员加载矩阵（§3.4/§3.5）读的是装配取证面（后端推荐案 B 的独立只读模型），**其读能力同样未在 §2.5 的 20 项内**；须随装配读模型一并登记 |
 
-〔**差异登记 D-T1**〕**编组与团队命令未在权威命令面中**：本文件 §3 的「编组建议」「成员加载矩阵」需要**新增命令**（如 `soloips_team_*`），但 `SoloipsOperationKind`（`contracts.ts:81-92`）**当前无 `team.*` 项**（BE-3 规划新增 `team` 表与 team 命令 kind，但**具体工具名未在已读文档中给出**）。→ 上表第 2 行起的编组相关键名**属推导**，**须与后端逐行对齐后方可定稿**（QA 阶段）。
+〔约束〕**上表第 4/5 行的〔待决〕含义**：`data-contract.md` §2.5 的**边界 2** 规定「每个工具必须对应一个已存在的命令 kind；**无 kind 的动作不得暴露为工具**」，且**只读投影的登记口径由 M0.1 裁剪决定**（BE-6 纪律 3）。→ **编组面与装配读面属"无 kind 的纯读能力"，其工具名须待后端登记后方可引用**。
 
-〔**差异登记 D-T2**〕**派单引用的「A4 节 16 行工具名清单」不存在**（详见本节开头）。本节的 20 项推导**可能多于**该清单，或命名顺序不同 → **须以后端实际清单为准**；本文件不改后端文档，只登记差异。
+〔**差异登记 D-T1**〕**团队命令尚未在权威命令面中**：`SoloipsOperationKind`（`contracts.ts:81-92`）**当前无 `team.*` 项**，故 `soloips_team_create` / `soloips_team_update_function` / `soloips_team_close` / `soloips_team_list` 等**待 BE-3 新增 kind 后才成立，不得定稿**（与 `data-contract.md` §2.5 边界 2 一致；后端已在 BE-6 差异表同向登记）。
+
+〔**差异登记 D-T2**〕**更正为**：原 16 行工具名清单**曾存在**于 [`system-assistant-backend-design-v0.1.md`](system-assistant-backend-design-v0.1.md) **BE-6 节（L308–328）**；**已收敛至 [`data-contract.md` §2.5](../design/data-contract.md#25-工具名模型工具面2026-09-18-登记) 的权威 20 项表**（该表**采纳自本文件 §9b.2 的推导**）。**原 16 行版与 §2.5 的 3 项实质差异见后端 BE-6 差异表（L314–321）**，摘要转录于下 §9b.3。
+
+### 9b.3 原 16 行版 → §2.5 的三项实质差异（转录，权威在后端 BE-6 节）
+
+> 〔约束〕**权威在原表**：[`system-assistant-backend-design-v0.1.md`](system-assistant-backend-design-v0.1.md) BE-6 节 L314–321。此处仅为**界面侧影响摘要**，**不复述为第二口径**。
+
+| # | 差异 | 处置 | **对界面设计的影响** |
+|---|---|---|---|
+| ① | `soloips_company_tree` → **`soloips_company_get_tree`** | **改名**（对齐服务方法名 `getCompanyTree`） | 母子公司树（§2.3）与公司工作台的读工具引用改为新名；`listSubsidiaries` 另有 `soloips_company_list_subsidiaries` |
+| ② | `soloips_onboarding_check` → **`soloips_employee_check_onboarding`** | **改名**（对齐服务方法名 `checkOnboarding`） | 入职缺项面板（首任 §3.2.5）与看板准入摘要的工具名改为新名 |
+| ③ | **`soloips_grouping_suggest`** | ★ **语义缺口，非命名问题**：编组建议是**纯读**（产建议、不写状态、**无 kind**）；§2.5 的 20 项覆盖「已登记 kind + 既有服务方法」，**不含**本文件 §1.2 的编组建议面 | **直接影响本文件 §3.4 的「编组建议卡」**：该卡的工具名**不得定稿**；见上表第 4 行〔待决〕。**须随 BE-3/编组切片一并登记** |
+
+〔约束〕**D-T1 与差异 ③ 的界面合并含义**：本文件 §3（智能编组）的**两处界面产出**——「编组建议卡」与「成员加载矩阵」——**都落在 §2.5 的 20 项之外**（前者无 kind 的纯读、后者依赖装配取证面）。→ **两者在 M0.1 均不暴露为可调用的工具名**，界面只能按「未就绪占位 + 诚实降级」处理（与首任 §7.3 B-1/B-4 的纪律一致）。
 
 ---
 
@@ -1018,6 +1046,7 @@ flowchart LR
 |---|---|---|
 | 2026-09-17 | 创建 v0.1：智能编组（B 方案）、子公司全生命周期、任务领取看板、模型×界面×里程碑覆盖矩阵（24 项 + 6 处缺口）、子公司权限静态差异、新增 i18n 键、8 项新澄清问题 | 常驻 UI/UX 智能体（第二任） |
 | 2026-09-18 | **第三任 QA 统审修正**：①**新增 §0 主题一致性**（引用底册 token/卡片配方/三大禁止项 P1–P3/强调色 6.05% 纪律/BR1–BR7）；②**B1** 补插件包形态（`./typert`+`./remote`+tsdown+api-remotes，§1 第 5 条）；③**B2** 更正 slot 事实（§9：严格口径 60 key、欢迎态 `single` 接管语义）；④**B3** G6 修正（Team 数据层 M0.1 建立 BE-3，任务面仍归 DSH Team）；⑤**B4** UI2:76 subsidiary 父校验缺陷（删 ✅，新增 E3b）；⑥**C** 新增 §9b 工具名与两条命名面（下划线 vs 点号）+ **差异登记 D-T1/D-T2**；⑦§7 补 i18n 机制事实与门禁 | 常驻 UI/UX 智能体（第三任） |
+| 2026-09-18 | **D-T2 更正（后端四任回填）**：原登记「16 行工具名清单不存在」**判断有误，已撤销**——清单**曾存在**于 `system-assistant-backend-design-v0.1.md` BE-6 节（L308–328，标题「BE-6 系统助理工具名建议清单」），未命中的原因是检索词用了派单用语「A4」。**已收敛至 `data-contract.md` §2.5 权威 20 项表**（该表采纳自本文件 §9b.2 推导）。新增 **§9b.0 权威归属**、**§9b.3 三项实质差异转录**（含 `soloips_grouping_suggest` 纯读能力不在 §2.5 内的〔待决〕标注）；§9b.1 前缀更正为下划线 `soloips_`；点号禁令补源码出处 | 常驻 UI/UX 智能体（第三任，小修） |
 
 ---
 
