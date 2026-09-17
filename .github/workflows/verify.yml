@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  checks: write  # 必需：报告 CI 状态给 PR 的分支保护检查
 
 concurrency:
   group: verify-${{ github.ref }}
