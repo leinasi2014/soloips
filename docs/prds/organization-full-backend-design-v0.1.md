@@ -68,7 +68,7 @@
 > **状态更新（2026-09-18，PR #15 审查意见修正后）**：**6 个实体已全部登记进 [`data-contract.md` §2.2](../design/data-contract.md#22-新增实体登记2026-09-18-裁定全部待实现)**，权威形状**以该节为准**（本文下表保留为登记过程的留痕）。其中若干形状在该次修正中已**变更**，本文的示意代码**不再代表最终形态**：
 >
 > - `NormAck`：**主键改 `ackId`、append-only 事件流**（原以 `(employeeId, teamId, normVersionId)` 为主键的写法**已被取代**——见 `data-contract.md` §2.1.3「主键与追加语义」）；
-> - `Team`：新增 `confirmedBy` 字段，并写死「禁物理删除 + 语义三分（可用/不可用/归档）」（§2.1.1 P-7/P-8）；
+> - `Team`：新增 `confirmedBy` 字段，并写死「禁物理删除 + 状态语义（pending/可用/不可用/归档）」（§2.1.1 P-7/P-8；`pending` 与 `leadAppointmentId` 可缺省见 **P-9**，BE-001）；
 > - `TeamMcpIntent`：补**状态迁移矩阵**（§2.1.2，`revoked` 无出边）；
 > - `AssemblyEvidence`：升格为**不变量 INV-AE-1**（禁作 onboarding/permission/readiness 判定输入）。
 >
@@ -76,8 +76,8 @@
 
 | # | 实体 | 位置 | `data-contract.md` §2 现状（2026-09-18 更新） |
 | --- | --- | --- | --- |
-| 1 | `Team`（+ `function`/`functionSource`/`confirmedBy`） | §1.1 | **已登记**（§2.1 `SoloipsTeamRecord`） |
-| 2 | `TeamSkillAssignment` | §2.1 | **已登记**（§2.1 + 品牌类型） |
+| 1 | `Team`（+ `function`/`functionSource`/`confirmedBy`） | §1.1 | **已登记**（§2.1 `SoloipsTeamRecord`；`status` 含 `pending`、`leadAppointmentId` 可缺省——BE-001） |
+| 2 | `TeamSkillAssignment` | §2.1 | **已登记**（§2.1 + 品牌类型；`status` 五态 + 迁移矩阵——BE-004） |
 | 3 | `TeamMcpIntent` | §2.2 | **已登记**（§2.1 + 品牌类型 + §2.1.2 迁移矩阵） |
 | 4 | `team_norm`（团队规范条目/版本） | §2.3 | **已登记**（§2.1 + 两个品牌类型 + 与 `document_version` 分工） |
 | 5 | `NormAck`（阅读/确认状态） | §2.3 | **已登记**（§2.1 + `SoloipsNormAckId`；`ackId` 主键、append-only——见 §2.1.3） |
@@ -95,7 +95,7 @@
 | 2 | 取候选人集合：部门内 = 该部门所有 `active` `appointment` 的员工；跨部门 = 该公司内 | 需要首任 BE-4 的 `listAppointments(departmentId)` / `listEmployees(companyId)` 读面 |
 | 3 | 按能力匹配评分 | 见下 |
 | 4 | 产出「编组建议」结构 | 见下 |
-| 5 | **部长确认** → 成团（创建 `team` + `team_lead`/`member` 任职） | 确认是唯一写入口 |
+| 5 | **部长确认** → 成团（**三步**：`team.create`(pending) → `appointment.create`(team_lead) → `team.activate`，见 §1.4 BE-001） | 确认是唯一写入口；**不是**一次原子提交 |
 
 **匹配来源**〔读源确认：`packages/core/src/domain.ts:144-152`、`:126-134`〕：
 - `appointment.requiredCapabilities`：**岗位**必需能力（员工当前任职要求他具备什么）；
@@ -122,6 +122,10 @@
 ```ts
 // 纯 JSON，可持久化、可跨 RPC（对齐 core 现有 *Result 纪律）
 interface SoloipsGroupingSuggestion {
+  /** 建议唯一 ID〔新增，P2-001〕——使建议可被引用（回执/审计/跨 RPC 关联） */
+  readonly suggestionId: string;
+  /** 生成时刻〔新增，P2-001〕——与 evidence.evaluatedAt 同源，提为一等字段便于排序/去重 */
+  readonly createdAt: string;
   readonly teamFunction: string;
   readonly scope: 'department' | 'cross-department';
   readonly suggestedLeader?: { readonly employeeId: string; readonly reason: string };
@@ -136,7 +140,7 @@ interface SoloipsGroupingSuggestion {
     readonly employeeId: string;
     readonly reason: string;
   }[];
-  /** 生成建议所依据的事实快照，使建议可复算。 */
+  /** 生成建议时的**事实概况**（候选人数 + 生成时刻）。**不构成快照**——不保证可复算，见下。 */
   readonly evidence: {
     readonly candidateCount: number;
     readonly evaluatedAt: string;
@@ -144,8 +148,19 @@ interface SoloipsGroupingSuggestion {
 }
 ```
 
+**建议的可复算性与快照版本机制**〔待决 M0.2+，P2-001 折中〕：本结构是**瞬时读模型**（§4.3：投影不落库、不回写），`evidence.evaluatedAt` 只记**生成时刻**，**不保证**按该快照能重放出同一结果——因为 `checkOnboarding` 的输入（任职/文档/装配证据/记忆/能力）会随时间变化。若要「建议可复算」，需要一套**快照版本机制**：
+
+| 待决项 | 说明 |
+|---|---|
+| `employeeSnapshotVersion`（或等效） | 记录生成建议时各输入事实的版本/摘要，使「同一快照 → 同一建议」可被验证 |
+| 版本载体 | 是给 `employee`/`appointment` 加版本字段，还是建议内嵌输入摘要（`inputDigest`），**未裁定** |
+| 与 §2.3 P1 的关系 | 若走「加版本字段」，依赖 unit version 戳机制（同 R-3 的介质能力缺口），**当前不满足** |
+| 是否必要 | M0.1 **不要求**可复算——建议的用途是「辅助部长决策」，不是「审计凭证」；**不得**声称建议可复算 |
+
+**〔待决 M0.2+〕**：上表各项在 M0.2 前**不做**；`suggestionId`/`createdAt` 两字段**本次即落地**（它们只解决「可引用/可排序」，不引入快照语义）。
+
 **关键设计约束**〔建议，依据 ORG-03 + ORG-08〕：
-- **建议不是授权**：结构里**不放**任何可执行动作，只列事实与理由；成团必须经部长确认的独立写命令（`team.create` + 任职创建）。**注意**：`team.create` 是 **BE-3 待新增**的 kind，不是现有能力——见 §1.4。
+- **建议不是授权**：结构里**不放**任何可执行动作，只列事实与理由；成团必须经部长确认的独立写命令（**三步**：`team.create` + `appointment.create` + `team.activate`，见 §1.4 BE-001）。**注意**：这些是 **BE-3 待新增**的 kind，不是现有能力——见 §1.4。
 - **不冒充质量判断**：`reason` 只陈述**可核对事实**（能力匹配/缺项/入职就绪），不陈述「这个人适合做创作」。对齐 ORG-03「装配证据……不冒充模型理解质量」。
 - **`excluded` 必须存在**：只给入选名单会让「为什么没选他」不可解释，与 ORG-08「保留来源……矛盾经验保留条件」同向。
 - **能力差集是必要条件不是充分条件**：`readyForWork` 沿用 ORG-03 的完整判定（任职 + 四文档 + 装配证据 + 记忆 + 能力），不是只看能力名。
@@ -187,20 +202,38 @@ document.save | work-entry.request
 
 | kind | 语义 | 对应服务方法 | 写入事实 |
 | --- | --- | --- | --- |
-| `team.create` | 建团队（含 `function` / `functionSource`） | `createTeam` | `team` 一条 + （可选）`team_lead`/`member` 任职（各自独立提交或同 kind 内顺序写） |
+| `team.create` | **建团队（成团第 ① 步）**——只建 `status='pending'` 团队（含 `function` / `functionSource`），**不建任何任职** | `createTeam` | `team` 一条（**无组长**：`leadAppointmentId` 缺省） |
+| `team.activate` | **成团第 ③ 步**——校验 `leadAppointmentId` 满足 P-4 四项后 `pending` → 可用 | `activateTeam` | `team.status` 更新（pending → active） |
 | `team.update-function` | 改职能定义 | `updateTeamFunction` | `team.function` + `functionSource` 更新 |
 | `team.close` | 归档团队（`status: 'archived'`） | `closeTeam` | `team.status` 更新 |
 | （无 kind）读面 | `listTeams` / `getTeam` | — | **纯读不产生 kind**（对齐 `checkOnboarding`/`getCompany` 等既有读面的处理：读路径不经提交门，`store.ts:753-860`） |
 
-**设计纪律（三条）**〔建议〕：
+> **★ BE-001：成团三步协议（2026-09-18 冻结）**〔约束〕——上表 `team.create` 的「（可选）任职」表述**已被取代**。成团**冻结为三步、三个 kind、三个 `operationId`**：
+>
+> | 步 | kind | 动作 | 结果 |
+> |---|---|---|---|
+> | ① | `team.create` | 只建团队 | `status='pending'`，**无组长** |
+> | ② | `appointment.create` | 建组长任职（`role='team_lead'`，`scope.kind='team'`） | 任职已存在；团队**仍 pending** |
+> | ③ | `team.activate` | 校验 P-4 四项后转可用 | 团队**可用** |
+>
+> **权威正文见 `data-contract.md` §2.1.1 P-9**（含恢复入口「扫描 pending 续做或收敛」与四条读面纪律 P-9.1…P-9.4）。本节只登记 kind 清单，**不重复协议正文**。
+>
+> **对首任 BE-3 验收的修正**：验收③「一个团队恰好一名 `team_lead` + N 名 `member` 可读回」**仅对 `status='active'` 的团队成立**；`pending` 团队**没有**组长是**合法中间态**，读面须排除或显式标注（P-9.1/P-9.2）。验收①「kind 未登记前不存在任何 team 写命令」**新增 `team.activate` 后仍成立**（三项 kind 一并登记）。
+
+**设计纪律（四条）**〔建议〕：
 
 1. **`team.list` 不是 kind**。kind 只登记**持久写**操作（`contracts.ts:80` 的注释原文：「本切片实际存在的持久写操作种类」）。给读操作造 kind 会污染 `operation` 台账并让恢复核对出现无意义的未决记录。
 2. **`kind` 是幂等与冲突检测的身份**。提交门在 `operationId` 命中既有记录时**比对 kind**，不同则抛 `SOLOIPS_CORE_CONFLICT`〔读源确认：`commit-gate.ts:126-132`〕。因此 kind 命名必须**稳定且互不混淆**——用 `team.update-function` 而不是泛化的 `team.update`，可为后续 `team.update-name` 等留出无歧义空间（避免「同一 kind 语义悄悄扩大」）。
-3. **一次成团 = 多个提交，不是一次原子提交**。`createTeam` 若同时落团队与 N 条任职，须按首任 §1.3 的既有纪律处理：**承诺门不提供跨表事务**〔`commit-gate.ts:11-14`〕，因此要么**拆成多个 kind 的独立提交**（每步带自己的 `operationId`，失败可从已提交事实续做），要么在同一 kind 的 `mutate` 内顺序写并在文档中**如实声明「非原子」**。**不得**声称成团是原子的。
+3. **一次成团 = 多个提交，不是一次原子提交**（**BE-001 已冻结为三步**，见上表后注）。`createTeam` **不**同时落团队与任职——团队与组长任职分属**不同 kind 的独立提交**（各自 `operationId`，失败可从已提交事实续做），**不得**合并成一次提交、**不得**声称成团是原子的。协议正文见 `data-contract.md` §2.1.1 P-9。
+4. **★ BE-002：`kind` 联合扩展的兼容性纪律**〔约束〕（2026-09-18）——`SoloipsOperationKind` 是**封闭联合**，而团队命令、编组命令等会不断加项。**每次扩展都必须保证历史 operation 记录仍可读**：
+   - **`operation` 记录带 `schemaVersion`**〔待实现〕——新写入用当前版本；读取遇 **unknown kind**（不在当前联合内）时按该版本兼容处理，**不得**因词表扩展判记录损坏。字段定义见 `data-contract.md` §2.1 `SoloipsOperationRecord`。
+   - **恢复路径不得跳过读不懂的记录**：未决（`pending`）记录即使 `kind` 是当前代码不认识的项，也**必须**可读并可参与核对——「读不懂」不等于「可忽略」。
+   - **落地顺序**：`schemaVersion` 与 `team.*` kind **同一批**落地；**不得**先加 kind 后补版本字段（否则本批新增的 operation 记录在下一批扩展时即成为不可读的历史）。
+   - **取值机制**〔待决〕：初始值、递增规则、与 `data-contract.md` §2.3 P1（unit version 戳 + `compatibleVersions`）的关系留实现裁定；**字段存在性是硬要求，取值机制不是**。
 
 **与 §1.2 的衔接**：§1.2「部长确认成团」的写路径，就是本节的 `team.create`（+ `appointment.create` 若干）。修正前该处引用的 `team.create` 属**尚不存在的 kind**，本节把它显式登记为 BE-3 的交付项。
 
-**契约登记预告**：`SoloipsOperationKind` 的新增项属 `data-contract.md` §2 范围的**契约扩展**——**权威归属：待登记进 `data-contract.md` §2（P2 落实）**。
+**契约登记预告**：`SoloipsOperationKind` 的新增项属 `data-contract.md` §2 范围的**契约扩展**。**登记状态（2026-09-18 更新）**：`team.create`/`team.activate`/`team.update-function`/`team.close` 四项 kind 与 `operation.schemaVersion`（BE-002）**已登记进 `data-contract.md`**——kind 清单见 §2.5 边界 2、三步协议见 §2.1.1 P-9、`schemaVersion` 见 §2.1 `SoloipsOperationRecord`；**形状以该处为准**。
 
 **与 BE-6 工具名的衔接**：本节新增的 kind 对应**模型工具名**（下划线形态）与 **`@Remote` 方法**（点号形态）——**两套命名面刻意不同形，禁止混用**，完整清单见 [`data-contract.md`](../design/data-contract.md) **§2.5「工具名（模型工具面，2026-09-18 登记）」的 20 项表**。
 
@@ -212,19 +245,21 @@ document.save | work-entry.request
 
 **为什么必须如此（与 §2.4 同一根因）**〔读源确认〕：`appointmentRecordSchema` 当前 `departmentId` 是**必填**且**没有 `scope`**〔`packages/core/src/domain.ts:144-152`〕。若把 `scope` 直接设为必填，**存量 `appointment` 记录会缺该字段 → 整次 open 失败**——因为 domain 的 `invalidRecords` 默认是**拒绝**（「Absent (the default), the whole open rejects with `invalid-record` — right for authoritative data」〔读源确认：fork `packages/storage/storage-domain/src/spec.ts:56-66`〕），而 core 的 spec **未声明** `invalidRecords`〔读源确认：`packages/core/src/domain.ts:240-244` 无该键〕。
 
-**阶段一：`scope?` 可选期的默认推断规则**〔建议〕（读取时凡遇到缺 `scope` 的记录，按序推断，**不写回**）：
+**阶段一：`scope?` 可选期的运行时推断规则**〔约束〕（**BE-003 修正，2026-09-18**）：读取时凡遇到缺 `scope` 的记录，按下表**严格三分支**处理，**不写回**、**不猜测**：
 
-| 序 | 条件 | 推断结果 | 依据 |
+| 序 | 条件 | 结果 | 依据 |
 | --- | --- | --- | --- |
-| 1 | 记录**无** `scope`，且 `departmentId` 存在 | `{ kind: 'department', companyId: <由 departmentId 解析 department.companyId>, departmentId }` | 现有形状即部门级任职（`departmentId` 必填语义，`domain.ts:147`） |
-| 2 | 记录**无** `scope`，且是该公司**首个** `role` 推断为 `general_assistant` 的任命 | `{ kind: 'company', companyId }` | 公司级任职无部门可挂——**这正是不加 `scope` 就无法表达的那类**（首任 §2.1） |
-| 3 | 记录**无** `scope`，且无法解析出公司 | **判定为数据不一致**，按 `SOLOIPS_CORE_RECORD_INVALID` 处理 | 不猜（对齐首任「交付确定性、不虚构」纪律）；不得静默当作任一 scope |
+| 1 | 记录**有** `scope` | **直接采用 `scope`**（不做任何推断） | 显式字段优先，推断只服务缺失场景 |
+| 2 | 记录**无** `scope`，且 `departmentId` 存在 | `{ kind: 'department', companyId: <由 departmentId 解析 department.companyId>, departmentId }` | 现有形状即部门级任职（`departmentId` 必填语义，`domain.ts:147`） |
+| 3 | 记录**无** `scope`，且**无法解析出公司**（含无 `departmentId` 的情形） | **判定为数据不一致**，按 `SOLOIPS_CORE_RECORD_INVALID` 处理 | **不猜**（对齐首任「交付确定性、不虚构」纪律）；不得静默当作任一 scope |
 
-**关于规则 2 的一个诚实边界**〔未验证〕：规则 2 依赖「首个 `general_assistant`」这个**基于读取顺序/时间的推断**，它**不是**权威事实——存量记录里**没有**信息能把公司级任职与部门级任职区分开（这正是 `scope` 缺失造成的不可判定的历史数据）。因此：
+> **★ 原规则 2「首个 `general_assistant` → company 级」已删除（BE-003）**〔约束〕——**该推断不得存在于运行时**。理由：它依赖「首个」这一**基于读取顺序/时间**的猜测，而存量记录里**没有**任何信息能区分公司级与部门级任职（这正是 `scope` 缺失造成的不可判定历史数据）；读取顺序在并发、分页、重放、数据根迁移下**都不稳定**，会产出**非确定性**结果。以时序猜测填补契约缺口，违反「交付确定性、不虚构」纪律。
+>
+> **该推断的合法去向**〔约束〕：**仅允许存在于 migration 工具**，且**必须人工确认**——① 载体是**迁移工具/脚本**（独立切片），**不是** core 读取路径、**不是** `checkOnboarding` 等服务方法；② 工具**必须**把候选判定呈现给人工确认后才写入；③ 写入经**新 `operationId`** 的显式操作（重新任命）或显式声明的迁移脚本，**不得**在读取时写回；④ 每条改判可追溯（哪条记录、依据什么、谁确认的）。
+>
+> 权威正文见 `data-contract.md` §2.3。
 
-- 规则 2 只应在**明确的迁移路径**中应用（例如「公司创建时自动产生的首个总助理任职」这一已知写入路径），**不应**作为通用读取时的猜测；
-- 更稳妥的做法〔建议〕：**阶段一不推断规则 2**，而是让「公司级任职」通过**迁移脚本或重新任命**（新 `operationId` 产生带 `scope` 的新任职、旧的撤销）显式建立；读取时遇无 `scope` 且无 `departmentId` 的记录一律按规则 3 报错。
-- **两个方案都必须在切片内二选一并写进实现说明**，不能留给运行时即兴决定。
+**与 BE-2 的关系**：首任 BE-2「`appointment` 增 `scope`（判别联合）与 `role`」的验收标准④「公司级任职在旧 `departmentId` 必填约束下不再被迫挂部门」**仍然成立**，但实现方式须按本节：**新写入**的任职带 `scope`（新记录不受存量约束）。`departmentId` 是否同步改为可选，属 BE-2 内决定，**建议同为可选 + 严格三分支**（保持两条字段的迁移节奏一致；**不采用**任何时序推断补齐）。
 
 **阶段二：收紧为必填的前置条件**〔建议〕（**必须全部满足**才可执行）：
 
@@ -235,9 +270,7 @@ document.save | work-entry.request
 | P3 | 收紧动作有**可回退**路径（`compatibleVersions` 或显式迁移步骤） | 不满足（同 P1） |
 | P4 | 收紧在**独立切片**内发布，不与业务功能同片 | 待规划 |
 
-**★ 结论**〔推断，依据 P1/P3 现状〕：**在 P1 满足前，`scope` 必须保持可选**。这不是保守选择，而是**介质层能力决定的硬约束**——`compatibleVersions` 与 `invalidRecords` 两个逃生通道目前都不可用（见 R-3 强化后的 §6）。
-
-**与 BE-2 的关系**：首任 BE-2「`appointment` 增 `scope`（判别联合）与 `role`」的验收标准④「公司级任职在旧 `departmentId` 必填约束下不再被迫挂部门」**仍然成立**，但实现方式须按本节：**新写入**的任职带 `scope`（新记录不受存量约束）。`departmentId` 是否同步改为可选，属 BE-2 内决定，**建议同为可选 + 默认推断**（保持两条字段的迁移节奏一致）。
+**★ 结论**〔推断，依据 P1/P3 现状〕：**在 P1 满足前，`scope` 必须保持可选**。这不是保守选择，而是**介质层能力决定的硬约束**——`compatibleVersions` 与 `invalidRecords` 两个逃生通道目前都不可用（见 R-3 强化后的 §6）。**收紧锚点为「目标 M1 前完成 `scope` required 迁移」**〔约束〕（权威表述见 `data-contract.md` §2.3；该锚点是目标时点，不是当前授权）。
 
 ---
 
@@ -291,12 +324,19 @@ interface SoloipsTeamSkillAssignmentRecord {
   readonly skillName: string;              // DSH skill 名（kebab-case，^[a-z0-9]+(?:-[a-z0-9]+)*$）
   readonly skillSourceRef: string;         // 分配时的来源标识（provider 名或目录），用于对账
   readonly assignedByAppointmentId: SoloipsAppointmentId;  // 谁分配的（部长/总助理）
-  readonly status: 'assigned' | 'revoked';
+  // ★ BE-004（2026-09-18）：五态，与 MCP 生命周期对齐；M0.1 实际只走到 'requested'
+  readonly status: 'requested' | 'available' | 'active' | 'failed' | 'revoked';
   readonly createdAt: string;
 }
 ```
 
-**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成）**——`SoloipsTeamSkillAssignmentId` 品牌类型与记录声明已写入；形状以该处为准。
+> **★ BE-004：状态枚举扩展（2026-09-18）**〔约束〕——上方 `status` 由原两值 `'assigned' | 'revoked'` **扩为五态**，与 §2.2 的 MCP 生命周期**对齐**：`requested`（分配已登记，**不表示**可加载）→ `available`（provider 实际供出候选，**仅可信接入流程写入**）→ `active`（观测到实际加载/使用）；`failed`（接入失败，**可判定**，不得用 `requested` 冒充）；`revoked`（**终态，无出边**，恢复须新建记录）。
+>
+> **M0.1 实际只走到 `requested`**——M0.1 不接 skill provider 与逐 agent 加载路径，故 `available`/`active`/`failed` **不可达**，实现**不得**自行写入。**枚举先定义全**的理由：状态是**持久字段**，后补取值会让既有记录语义悬空（且 `status` 的旧值 `'assigned'` **不再使用**）。
+>
+> **权威正文见 `data-contract.md` §2.1**（含完整迁移矩阵）；本节只登记形状。
+
+**权威归属：已登记进 `data-contract.md` §2.1（2026-09-18 完成）**——`SoloipsTeamSkillAssignmentId` 品牌类型与记录声明（含 BE-004 五态）已写入；形状以该处为准。
 
 **层 2 — 实际加载（观测事实，不能由分配推导）**：见 §2.4 的两案选型。
 
@@ -580,6 +620,41 @@ interface SoloipsAssemblyEvidenceRecord {
 4. **不把 Team 的 roster 映射成 core 的 employee**：Team 成员是 `SessionId` + 不可变 `name`〔`types.ts:58-68`〕，core 员工是 `employeeId` + `displayName`。两者**身份体系不同**，不存在可靠的双向映射（一个员工可有多个 Session）。因此**看板行用 Team 的成员名展示，用 core 的 employeeId 判定准入**，两列事实**并列展示、不合并**——对齐 ORG-10「状态按维度分开」。
 5. **字段对齐**〔读源确认：`packages/experimental/agent-team/src/types.ts:71-97`〕：Team 的 `TeamTaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted'`；view 附带 `ready: boolean`（依赖就绪）与 `writeScopeWarnings`，`ownerName?` 由 view 补充。core 侧**不要**镜像这些字段，只引用。
 
+### 4.3b 看板读面契约：`TeamBoardState`（P2-002，2026-09-18 采纳）〔约束〕
+
+**看板读面返回的必须是一个显式三态结构**，而不是裸任务数组：
+
+```ts
+interface TeamBoardState {
+  /** 三态判别式；**null 与空数组语义不同**，见下 */
+  readonly status: 'not_connected' | 'loading' | 'data';
+  /** 仅 status==='data' 时为数组；'not_connected' 与 'loading' 时**必须**为 null */
+  readonly tasks: Task[] | null;
+}
+```
+
+**★ 核心纪律：`tasks: null`（未接入）≠ `tasks: []`（确无任务）**〔约束〕
+
+| 状态 | `tasks` | 语义 | UI 必须呈现 |
+|---|---|---|---|
+| `'not_connected'` | **`null`** | Team 端口未接入（adapter `team` 端口 fail-closed，R-6）——**任务面整体不可用** | 「Team 未接入」的**显式状态**；**不得**显示空列表 |
+| `'loading'` | **`null`** | 读面尚未返回（加载中） | 加载态；**不得**显示空列表 |
+| `'data'` | `Task[]`（**可为 `[]`**） | 已从 Team 读到数据——`[]` 表示**确实没有任务** | 空列表文案（「暂无任务」） |
+
+**为什么写死**〔约束〕：`null` 与 `[]` 混用会让「读不到」被读成「没有」——这正是 §1.2 C-6（`data-contract.md`）与 R-6 明禁的「**显示空任务列表冒充『暂无任务』**」。二者在 UI 上**必须**可区分：
+
+- **`null`**：是「**不知道**」——不得据此说「你没有任务」，也不得据此说「任务都完成了」；
+- **`[]`**：是「**知道，且没有**」——可显示「暂无任务」。
+
+**UI 侧纪律**〔约束〕：
+
+1. **不得用 `tasks ?? []` 或 `tasks?.length === 0` 之类写法**把 `null` 归一成空数组——该写法**恰好**抹掉本契约要保留的区分；
+2. **`not_connected` 不得提供「刷新重试」以外的操作入口**（依赖未接入，重试无意义）；应指向「Team 端口接入（T08）」的说明；
+3. **`loading` 与 `not_connected` 不得互相冒充**：加载中显示加载态，未接入显示未接入——两者都不是「空」；
+4. **本契约不引入新持久状态**：三态是**读面的运行时结果**，**不落库**（对齐 §4.3 投影边界）。
+
+**〔待实现〕**：本契约属**目标形状**——`TeamBoardState` 未实现，Team 端口未接入（R-6），M0.1 看板**只能**返回 `'not_connected'`。**不得**声称看板已可显示任务。
+
 ### 4.4 `unknown` 三态的看板查询语义
 
 **core 侧的 `unknown`**〔读源确认：`contracts.ts:382-392`、`commit-gate.ts:87-92`〕：`SoloipsCommitOutcome` 的 `unknown` 表示「该 `operationId` 存在**未决（pending）**意图，结果未知」。对应的可观察查询：
@@ -625,9 +700,27 @@ interface SoloipsAssemblyEvidenceRecord {
 | **R-3** | **schema 演进的容错逃生通道不存在（QA B5 强化）** | 三层同时成立：① `invalidRecords` 默认即「整次 open 拒绝」，且 **core 的 `SOLOIPS_COMPANY_DOMAIN_SPEC` 未声明该键**（`domain.ts:240-244`）；② 即便声明为 `'backup-and-skip'`，**在当前默认后端下仍是空操作**——该策略要求 `KvUnit.backupRecord` 存在，而 `backupRecord` **只在 JSON 后端的 per-record unit 实现**（`storage-json/src/per-record-unit.ts:238`；`storage-json/src/single-unit.ts` 与 `SqliteKvUnit` 均**无**此方法），宿主遂按文档**回退到拒绝默认**（`storage-domain/src/spec.ts:64-66`）；③ `defaultBackend` 恰为 **`sqlite`**（`contracts.ts:777`），即默认路径上**两条逃生通道都不可用** | ★ 任何**破坏性 schema 变更**（把字段改类型/改必填/嵌套化）都会让**存量记录整次 open 失败**，且**无法通过配置绕过**。这是本文 §1.5 / §2.4 坚持「先加新表 / 先可选字段」的**共同根因**。<br>**缓解（三条，缺一不可）**：(a) 新字段一律**先可选**、新信息一律**先加表**（§1.5、§2.4 案 B）；(b) 若必须改形状，先落 **P1：unit version 戳 + `compatibleVersions` 机制**（含 sqlite 后端的版本戳实现），再在**独立切片**内收紧；(c) 开发期若确需重置数据根，必须在切片内**显式声明**，不得默认依赖。**原 R-3（`subsidiary` 可无父）已并入下条 R-3b** | 
 | **R-3b** | **`subsidiary` 可无父公司** | `createCompany` 只在 `parentCompanyId !== undefined` 时校验父存在性（`store.ts:336-353`）；`type='subsidiary'` 无父**不会被拒** | 会产生「孤儿子公司」——既有配额按 `type` 计数仍能算它，但组织树读不回（`getCompanyTree` 从给定根 DFS）。缓解：在 BE-5 加「`subsidiary` 必有父 + 父同账户」校验（对齐 `data-contract.md` §4.2 第 0 步，该步现有代码未实现） |
 | **R-4** | **公司树无显式环检测** | `#computeDepth` 只检父记录缺失与深度上限（`store.ts:310-326`）；父可以是 `subsidiary`（`store.ts:342` 只禁 `operation`） | 物理上难以通过 `createCompany` 造环（新公司 id 是新生成的，不能成为既有记录的祖先），但**深度计算在环上会提前退出**（`depth < MAX_TREE_DEPTH` 守卫），返回**不正确的深度**而非报错。缓解：在 BE-5 的校验里对 `parentCompanyId` 链做显式环检测（比照现有「祖先链断裂」的主动检测风格）。**这不是可被外部触发的漏洞**〔推断〕，但会让深度限制在异常数据上静默失效 |
-| **R-5** | **`requestWorkEntry` 的幂等探测不在提交门队内** | `probe` 在 `commit` 之前调用（`store.ts:695-714`），与并发提交之间存在窗口 | 单 operator 交互式使用无实际风险；但**不得**在文档或验收中声称「准入判定与提交是同一原子步」。缓解：看板查询语义（§4.4）不依赖该原子性 |
+| **R-5** | **`requestWorkEntry` 的幂等探测不在提交门队内**（**P2-003 处置升级：写死为必须修复项**） | `probe` 在 `commit` 之前调用（`store.ts:695-714`），与并发提交之间存在窗口 | ★ **P2-003 采纳（2026-09-18）**：**写死要求**——`requestWorkEntry` 的 probe（含 `checkOnboarding` 判定）**必须移入 commit gate 队内执行**，与 write operation 落在**同一互斥区间**；**外部 probe 禁止**。详见下方「R-5 处置要求」 |
 | **R-6** | **看板的任务读面完全依赖未接入的 Team 端口** | adapter `team` 端口 fail-closed（`ports/team.ts:37-75`）；`@deepseek-ai/dsh-experimental-agent-team` **不在** `packages/adapter-dsh/package.json` 依赖集（实测 node_modules 无此包） | 首任 §2.3 的「M0.1 只做纯数据层 Team」判断在**本节得到加强**：看板若要显示真实任务，必须等 Team 端口接入（T08）。M0.1 看板只能显示 core 侧事实（入职状态/未决操作）**加上**「Team 未接入」的显式状态，**不得**显示空任务列表冒充「暂无任务」 |
 | **R-7** | **智能编组的能力匹配依赖 `verifiedCapabilities`，而该字段目前只能由 `verifyEmployeeCapability` 手工逐项写入** | `store.ts:540-569`；未见任何自动验证能力的路径 | 若一个部门的员工普遍没有 verified 能力，编组建议会**普遍落空**（`missing` 很大、`readyForWork` 全 false）。缓解：编组建议的 `reason` 必须把「能力未验证」与「能力不匹配」区分开（前者可补验证，后者是真实不匹配），否则部长会误判为「没人合适」 |
+
+#### R-5 处置要求（P2-003，2026-09-18 采纳为硬要求）〔约束〕
+
+**写死要求：`requestWorkEntry` 的 probe（onboarding 检查）必须移入 commit gate 队内执行，与 write operation 在同一互斥区间；外部 probe 禁止。**
+
+| # | 要求 |
+|---|---|
+| R-5.1 | **probe 在队内**：`probe(operationId)` 的调用与 `checkOnboarding` 的判定**必须**发生在**同一次 `commit` 的队内临界区**（即持有提交门串行槽位时），**不得**在 `commit` 调用**之前**先判定再提交 |
+| R-5.2 | **外部 probe 禁止**：**不得**存在绕过提交门的准入判定路径——包括「Host 半边先查 `checkOnboarding` 再调 `requestWorkEntry`」这类看似无害的预检（它把判定与提交拆到两个区间，正是本风险的形态）。**展示用**的 `checkOnboarding` 查询**不在此禁令内**（纯读、不参与提交决策），但**不得**把其结果作为提交依据传入 |
+| R-5.3 | **判定输入在队内重取**：准入判定所读的事实（任职/文档/装配证据/记忆/能力）**必须**在队内重新读取（对齐 `data-contract.md` §4.3 K-3「读当前权威数据」），**不得**使用调用前算好的结论 |
+| R-5.4 | **未决检查同在队内**：`listPendingOperations` 的阻塞判定（`employee-operation-unknown`）与 `probe` 的 `unknown/replayed` 分支**同样**须在队内完成——否则「未决阻塞」本身存在窗口 |
+| R-5.5 | **失败方向**：任一判定不通过即返回可判定拒绝，**零业务写**；不得因移入队内而放宽任何既有拒绝条件 |
+
+**为什么升级为硬要求**〔约束〕：M0.1 虽是「单 operator 交互式使用」，但**契约不得依赖使用方式**——「单 operator 无风险」是**运行假设**，不是**结构保证**；一旦出现第二写者或自动化调用（M0.2 多 Host），窗口立即成为**真实竞态**，且此时契约已经以「准入判定与提交是同一原子步」的口径被引用（首任 §2.1 的权限链叙述）。**在契约层先写死，避免后续返工。**
+
+**与 `data-contract.md` §4.3 K-1/K-2 的同构关系**：K-1「互斥边界全覆盖」要求「计数 + 写入」落在同一串行槽位；本要求是**同一纪律在准入判定上的应用**——「判定 + 提交」必须落在同一串行槽位。**两处口径一致，不得只做一处。**
+
+**〔待实现〕**：当前代码是**外部 probe**（`store.ts:695-714` 在 `commit` 之前），**不满足** R-5.1；须在 BE-6（Host 半边）或独立切片内修复。**在修复前，不得声称准入判定与提交是同一原子步。**
 
 ---
 
@@ -650,6 +743,28 @@ interface SoloipsAssemblyEvidenceRecord {
 **本次未改动**：§2.0 的 preset standing 组合发现、§2.4 的案 B 推荐、§3 的 Q-N5 结论、§4 的看板投影与 `unknown` 三态——裁定清单未涉及，保持原样。
 
 **权威归属（本文自身）**：本记录为**过程留痕**，不改写第 1–6 节的结论文本；被裁定修正处已在原处就地更新（非仅在本文追加）。
+
+---
+
+## 7b. ChatGPT 第二阶段审查落地（2026-09-18，第九任）
+
+> 第二阶段审查（BE 切片闭合）意见经指挥逐条核实并裁定：**四条 P1 全采纳**；P2 三条中**两条采纳、一条折中**。以下为逐条处置。
+
+| # | 裁定内容 | 落点 | 处置 |
+| --- | --- | --- | --- |
+| **BE-001** | **`team.create` 三步协议冻结** | 本文 §1.4（kind 表后注 + 纪律 3 改写）；权威正文 `data-contract.md` §2.1.1 **P-9** | **全采纳**。成团冻结为三步三 kind 三 `operationId`：①`team.create`（只建 `status='pending'`、**无组长**）→ ②`appointment.create`（`team_lead`）→ ③`team.activate`（P-4 校验后转可用）。恢复入口 = 扫描 `pending` **续做或收敛**（收敛经 `team.close`，**不物理删除**）。kind 表新增 `team.activate` 行、删除 `team.create` 的「（可选）任职」表述；纪律 3 由「二选一」改为「已冻结为三步」；**首任 BE-3 验收③修正**（「恰好一名 `team_lead`」仅对 `active` 团队成立，`pending` 无组长是合法中间态） |
+| **BE-002** | **`operation` 加 `schemaVersion`** | 本文 §1.4（新增纪律 4）；权威正文 `data-contract.md` §2.1 `SoloipsOperationRecord` | **全采纳**。新增字段〔待实现〕：新写入带当前版本；读取遇 **unknown kind** 按版本兼容处理（历史 operation 不因 kind 封闭联合扩展而不可读）。落地纪律：**与 `team.*` kind 同一批落地**，不得先加 kind 后补版本字段。取值机制（初始值/递增/与 §2.3 P1 的关系）标〔待决〕——**字段存在性是硬要求，取值机制不是** |
+| **BE-003** | **删除 runtime 推断规则 2** | 本文 §1.5（推断表重写 + 删除说明）；权威正文 `data-contract.md` §2.3 | **全采纳**。「无 `scope` 且首个 `general_assistant` → company 级」**从 runtime 推断中删除**；改为**严格三分支**（① 有 `scope` 用之 / ② 无 `scope` 有 `departmentId` 归 department / ③ 否则 `SOLOIPS_CORE_RECORD_INVALID`，**不猜**）。该推断**仅允许存在于 migration 工具且须人工确认**（四条约束：载体是迁移工具、人工确认后才写、经新 `operationId`、逐条可追溯）。理由：时序猜测在并发/分页/重放/迁移下**不稳定**，产出非确定性结果。原「两个方案二选一」表述**作废**（已选定严格分支） |
+| **BE-004** | **SkillAssignment 状态机** | 本文 §2.1（记录块 + 说明注）；权威正文 `data-contract.md` §2.1 | **全采纳**。`status` 由两值 `'assigned' \| 'revoked'` 扩为**五态** `'requested' \| 'available' \| 'active' \| 'failed' \| 'revoked'`（与 §2.2 MCP 生命周期对齐），含迁移矩阵（`revoked` **无出边**）。**M0.1 实际只走到 `requested`**，其余四态不可达、实现不得自行写入。旧值 `'assigned'` **不再使用** |
+| **P2-001** | 编组建议加 `suggestionId`/`createdAt`；snapshot 版本机制 | 本文 §1.2（`SoloipsGroupingSuggestion` 结构 + 新增待决小节） | **折中采纳**。**本次即落地**两字段：`suggestionId`（建议可引用/可关联）+ `createdAt`（一等字段，便于排序去重）；**`evidence` 注释同步更正**——原写「事实快照，使建议可复算」是**过度承诺**，改为「事实概况，**不构成快照**」。**快照版本机制（`employeeSnapshotVersion` 等）标〔待决 M0.2+〕**，并写明：若走「加版本字段」路线则依赖 unit version 戳（同 R-3 介质缺口，**当前不满足**）；M0.1 **不要求**可复算，**不得**声称建议可复算 |
+| **P2-002** | 看板读面补 `TeamBoardState` 契约 | 本文 §4.3b（新增） | **全采纳**。新增 `TeamBoardState = { status: 'not_connected' \| 'loading' \| 'data'; tasks: Task[] \| null }`。**核心纪律写死：`tasks: null`（未接入）≠ `tasks: []`（确无任务）**——三态对照表 + 四条 UI 纪律（禁止 `tasks ?? []` 归一、`not_connected` 不得提供无意义重试、`loading` 与 `not_connected` 不得互相冒充、不引入新持久状态）。与 §4.3（投影不落库）、R-6（Team 端口未接入）一致 |
+| **P2-003** | `requestWorkEntry` probe 移入 commit gate 队内 | 本文 §6（R-5 行升级 + 新增「R-5 处置要求」小节） | **全采纳（升级为硬要求）**。写死：probe（含 `checkOnboarding` 判定）**必须移入 commit gate 队内执行**，与 write operation **同一互斥区间**；**外部 probe 禁止**。五条要求 R-5.1…R-5.5（probe 在队内 / 外部 probe 禁止 / 判定输入队内重取 / 未决检查同在队内 / 失败方向不变）。**理由**：M0.1「单 operator 无风险」是**运行假设**不是**结构保证**；契约层先写死避免 M0.2 多 Host 时返工。与 `data-contract.md` §4.3 K-1/K-2 **同构**（同一纪律在准入判定上的应用） |
+
+**本次同步的既有表述**：§1.1 实体登记表行 1/2（Team 加 pending/可缺省、SkillAssignment 五态）；§1.4「契约登记预告」改为「已登记」并指向权威落点；§1.4 设计纪律由三条改四条；§1.5「与 BE-2 的关系」段由「默认推断」改「严格三分支」。
+
+**本次未改动**：§2.0 preset standing 组合、§2.4 案 B 推荐、§3 子公司嵌套（Q-N5）、§4.4 `unknown` 三态纪律——本批裁定未涉及。
+
+**反面声明**：以上七条**均为文档层裁定**，不证明任何一条已实现。`data-contract.md` §0 明列 Team/权限/配额/审计**均未实现**；R-5 的修复、`schemaVersion` 的落地、五态的写入路径**都还没有代码**。
 
 ## 附录 A：证据范围
 
