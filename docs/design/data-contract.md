@@ -14,7 +14,7 @@
 
 ---
 
-## 0. 实现状态（对照代码事实，2026-09-17）
+## 0. 实现状态（对照代码事实，2026-09-18 OPS-00 同步）
 
 > 本文档是**目标数据契约**；下表给出它与 `packages/core/src/contracts.ts` 当前代码的差距。
 > 「未实现」是实现目标，不代表已交付能力。文档之间冲突时以本文档为准。
@@ -28,16 +28,17 @@
 | 模型 / 能力 | 代码状态 | 代码实际字段 |
 |---|---|---|
 | `SoloipsCompanyRecord`（`accountId`/`parentCompanyId`/`type`/`name`/`status`/`createdAt`） | **已实现** | `contracts.ts` §3 |
-| `SoloipsDepartmentRecord` | **已实现（部分字段）** | 只有 `id`/`companyId`/`name`；`description`/`leaderAppointmentId`/`parentDepartmentId`/`status` 见 §2 设计稿 |
+| `SoloipsDepartmentRecord` | **已实现（部分字段）** | 已实现：`id`/`companyId`/`name`/`leaderAppointmentId?`（BE-2 部长链回填，`contracts.ts:314-322`）。**未实现**：`description`/`parentDepartmentId`/`status`（见 §2 设计稿） |
 | `SoloipsEmployeeRecord` | **已实现（部分字段）** | 已实现：`id`/`displayName`/`currentDocuments`/`assemblyEvidence`/`memoryInitialized`/`verifiedCapabilities`。**未实现**：`email`/`modelConfig`/`status`/`createdAt`/`identitySource`（目标新增）。**既有判定字段属目标契约，不得移出**（§2.1 C-3 注）；确切形状以 `contracts.ts` 为准 |
-| `SoloipsAppointmentRecord` | **已实现（部分字段）** | `id`/`employeeId`/`departmentId`/`requiredCapabilities`/`generation`/`status`；`scope`(判别联合) 与 `role` 见 §2 设计稿（`scope` 先可选，见 §2.3） |
+| `SoloipsAppointmentRecord` | **已实现** | `id`/`employeeId`/`departmentId?`（C-4 改可选）/`requiredCapabilities`/`generation`/`status`/**`scope?`**（判别联合 company\|department\|team）/`role?`（五值词表）。可选理由为存量兼容（§2.3 阶段一），与 BE-2/BE-3 实现一致（`contracts.ts:167-194`、`:342-376`） |
 | `SoloipsDocumentVersionRecord` | **已实现** | `versionId`/`ownerId`/`documentType`/`content`/`digest`/`previousVersionId?`/`appointmentId?` |
-| `SoloipsOperationRecord` | **已实现** | `id`/`kind`/`status`/`employeeId?`/`intent`/`result?`（核验 `contracts.ts:183-191`，2026-09-18）。**未实现**：`schemaVersion`（目标新增，见 §2.1 与 BE-002） |
-| **已实现的能力面**（C-9） | **已实现** | 服务面 `contracts.ts:424-481`。写：`createCompany`/`createDepartment`/`createEmployee`/`createAppointment`/`revokeAppointment`/`initializeEmployeeMemory`/`verifyEmployeeCapability`/`recordAssemblyEvidence`/`saveEmployeeDocument`/`requestWorkEntry`。读：`checkOnboarding`/`getCompany`/`listSubsidiaries`/`getCompanyTree`/`listDepartments`/`getEmployee`/`getAppointment`/`getDocumentVersion`/`getOperation`/`listPendingOperations`。生命周期 `close()`。**缺口**：无 `getDepartment(id)`/`listEmployees`/`listAppointments`/`listTeams`/`getTeam`（BE-4 待补） |
+| `SoloipsOperationRecord` | **已实现** | `id`/`kind`/`status`/`employeeId?`/`intent`/`result?`，**及 `schemaVersion?`**（BE-3 交付：`SoloipsOperationKindValue` 开放词表 + 版本读取策略，`contracts.ts:459-510`） |
+| **已实现的能力面**（C-9） | **已实现** | 服务面 `contracts.ts:988-1125`。写：`createCompany`/`createDepartment`/`createEmployee`/`createAppointment`/`revokeAppointment`/`initializeEmployeeMemory`/`verifyEmployeeCapability`/`recordAssemblyEvidence`/`saveEmployeeDocument`/`requestWorkEntry`，以及团队四命令 `createTeam`/`updateTeamFunction`/`activateTeam`/`closeTeam`（BE-3 P-9）。读：`checkOnboarding`/`getCompany`/`listSubsidiaries`/`getCompanyTree`/`listDepartments`/`getEmployee`/`getAppointment`/`getDocumentVersion`/`getOperation`/`listPendingOperations`，以及 `getTeam`/`listTeams`（BE-3）。生命周期 `close()`；恢复辅助 `reconcileTeams`。**缺口**：无 `getDepartment(id)`/`listEmployees`/`listAppointments`/`listDocumentVersions`/`listAdministrators`（BE-4a 待补）；`listTeams` 缺 `departmentId` 过滤（BE-4a 补） |
 | 文档类型 `ip_summary` / `storyboard` | **未实现** | 代码枚举只有 `profile`/`avatar`/`soul`/`operating`/`work` |
 | `SoloipsEntitlement*` 与完整三层配额表（§3/§4） | **未实现** | 目标设计，属 **M0.2**（C-1）。**M0.1 的配额口径见下方「C-1 配额口径」** |
-| `SoloipsAuthContext` / `SoloipsPermissionService` | **未实现** | S0 用部署账户绑定替代，见 §3.1 临时例外 |
-| `SoloipsTeamBindingRecord`（及独立 `Team` 实体） | **未实现** | adapter 的 `team` 端口是 fail-closed 占位；任务/attempt 状态归官方 Team。M0.1 只落纯数据层 `Team`（§2），`TeamBinding` 留后续——中间态合法，见 §1.2 注（C-6） |
+| `SoloipsAuthContext` / `SoloipsPermissionService` | **未实现** | S0 用部署账户绑定替代，见 §3.1 临时例外。**账户绑定本身已实现**（BE-1）：根级绑定元数据 + `SOLOIPS_CORE_ACCOUNT_MISMATCH` 打开即拒 + `createCompany` 写真实 `accountId`（`store.ts:272-340`、`contracts.ts:531`） |
+| `SoloipsTeamRecord`（独立 Team 实体） | **已实现**（BE-3） | 四 kind（`SoloipsTeamKind`）+ 四值 status + P-4 组长引用核验 + P-7~P-9 三步成团协议；读面 `SoloipsTeamView` 带 `usable`/`leadReference` 显式状态（`contracts.ts:403-434`、`:864-917`） |
+| `SoloipsTeamBindingRecord`（Team→DSH Team 绑定层） | **未实现** | adapter 的 `team` 端口是 fail-closed 占位；任务/attempt 状态归官方 Team。M0.1 只落纯数据层 `Team`（§2），`TeamBinding` 留后续——中间态合法，见 §1.2 注（C-6） |
 | `SoloipsExecutionBindingRecord` | **未实现** | 撤职使执行失效的验收因此尚未覆盖 |
 | `SoloipsAuditRecord` | **未实现** | 审计落库属 M3 里程碑 |
 | 跨账户拒绝 / 并发配额 / 多租户隔离验收 | **未实现** | 属「S0 多公司基础」，尚未通过 |
@@ -915,7 +916,7 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 | SA-01.3 | **界面据此显示「待招募」引导**：界面收到该显式状态后，显示「待招募总助理」引导（与 [`system-assistant-ui-design-v0.1.md`](../prds/system-assistant-ui-design-v0.1.md) 的收尾引导衔接）——**不是**显示空白、**不是**显示错误态 |
 | SA-01.4 | **与 §2.4.2 的分工**：本节只要求**读面能表达**该状态；**写面**（招募入口、幂等、恢复）见 §2.4.2 |
 
-**〔待实现〕**：SA-01 的读面**未实现**——现有 `getCompanyTree` 只返回公司节点，**不携带**总助理状态（§0：BE-4 读投影扩容待补）。**在 BE-4 落地前，不得声称界面能显示「待招募」状态。**
+**〔待实现〕**：SA-01 的读面**未实现**——现有 `getCompanyTree` 只返回公司节点，**不携带**总助理状态。**BE-4a 的 `listAdministrators(companyId)` 即本节的实现切片**（显式状态形状区分「无有效 general_assistant」与「公司不存在/查询未覆盖」）。**在 BE-4a 落地前，不得声称界面能显示「待招募」状态。**
 
 **⚠️ 已删除的旧示例**：本契约早前在 §4.2 的 `createCompany` 示例中含 `createDefaultGeneralAssistant(company.id)` 步骤（「创建默认总助理任职」）。该步骤**已删除**，理由：
 
@@ -1091,20 +1092,18 @@ adapter 的 session 端口只有会话持久化、没有账户身份面，core �
 |---|---|---|
 | 来源 | 部署层经插件 config 注入（`accountId` 字段），Host 打开 store 时绑定 | DSH Session → 账户映射 |
 | 信任依据 | **部署配置的控制权 + Host 内部调用边界**，不是字符串校验 | 宿主签发的会话身份 |
-| 基数 | 一个业务存储根**只绑定一个账户**；数据根内出现其他账户的公司记录即拒绝打开（错误码 `SOLOIPS_CORE_ACCOUNT_MISMATCH`——**〔待实现〕BE-1 交付**，见下方注） | 多账户共享数据面时按账户隔离 |
+| 基数 | 一个业务存储根**只绑定一个账户**；数据根内出现其他账户的公司记录即拒绝打开（错误码 `SOLOIPS_CORE_ACCOUNT_MISMATCH`——**已实现，BE-1 交付**，见下方注） | 多账户共享数据面时按账户隔离 |
 | 命令面 | 业务命令、UI、模型**不得**逐次传入或覆盖 accountId | 每命令携带由 Session 派生的 `SoloipsAuthContext` |
 
-**〔待实现〕C-2：本节的 account-binding 机制**（2026-09-18 更正）
+**〔已实现〕C-2：本节的 account-binding 机制**（2026-09-18 更正 → 2026-09-18 BE-1 交付后更新）
 
-> **本表的「S0 临时做法」列是目标设计，当前代码尚未实现。** 特别地，错误码 `SOLOIPS_CORE_ACCOUNT_MISMATCH` **不是既有契约**——
-> `SoloipsCoreErrorCode` 联合中**没有**该码，`SoloipsCoreConfig` 也**没有** `accountId` 键；
-> `createCompany` 目前**硬编码**写入 `accountId: "seed"`。**来源 + 日期 + 边界**：读源确认
-> `packages/core/src/index.ts:70-75`、`contracts.ts:487-505`、`store.ts:371-374`（2026-09-18 核对）。
+> **BE-1 已交付，本节的「S0 临时做法」列即当前实现事实**〔实测〕：`SoloipsCoreErrorCode` 含
+> `SOLOIPS_CORE_ACCOUNT_MISMATCH`；`SoloipsCoreConfig` 含 `accountId?`（缺省/空白/占位 `"seed"` 一律不发布服务，fail-closed）；根级绑定元数据
+> `SoloipsRootBindingRecord` 已落（`contracts.ts:531`），打开时按「绑定元数据 → 根内公司记录 → 占位账户」三条判据校验（`store.ts:272-340`）；
+> `createCompany` 写入部署注入的真实 `accountId`，不再硬编码 `"seed"`；存量 `"seed"` 记录的处置路径按本节下方三选一（默认 (a) 拒绝）
+> 实现于 `placeholderResetGuidance`。**来源 + 日期 + 边界**：读源确认 `packages/core/src/index.ts:77-96`、`contracts.ts:531`、`store.ts:203-340`（2026-09-18 核对）。
 >
-> 因此**不得**把本节当作已生效的既有契约引用（此前 PRD 与 UI 设计已发生过此类引用）。该机制的交付责任是 **BE-1「账户绑定落地」**：
-> core config 增 `accountId`（必填注入）→ 打开时校验数据根内公司记录同账户、否则 fail-closed →
-> 新增稳定码 `SOLOIPS_CORE_ACCOUNT_MISMATCH` → `createCompany` 写入真实 `accountId`（去掉 `"seed"`）。
-> 形状成立时间以 BE-1 验收为准。
+> 换绑重放的判据字段落点（本节下方「〔待决〕」）以 BE-1 实际实现为准（对照源码核验后再引用）。交付验收证据见 PR #28。
 
 - 平台公司（`platform`）/ 运营子公司（`operation`）的官方账户初始化**不在 S0 范围**，且不自动归属部署账户。
 - 存量占位数据（旧 `"seed"` 账户写下的记录）**不认领、不自动改归**部署账户；换绑后旧操作不得重放。
@@ -1703,3 +1702,4 @@ export function register(client: ClientModules): void {
 | 2026-09-18 | **PR #15 审查意见修正（N-1…N-9 采纳，2 条登记不采纳）**：①**N-1** NormAck 改 **append-only 事件流**——主键改 `ackId`，三元组不再作主键；重复装配**新增事件行**（含 `appointmentGeneration`/`sessionRef`/`acknowledgedAt`），删除「不新增行只更新上下文」表述；新增「append-only 与读取证据」（按当前有效代际取最新事件，旧行留审计）；②**N-2** Team 生命周期——§2.1 `status` 注 + §2.1.1 **P-7 禁物理删除**、**P-8 悬挂组长引用处置协议**（扫描/归入不可用/不自动修复/待显式修复或换任/读面不静默降级/归档不扫描），语义三分写死、字段形态留 BE-3；③**N-3** AssemblyEvidence 升格为显式不变量 **INV-AE-1**（禁作 onboarding/permission/readiness 输入，违反即契约违规）；④**N-4** §2.1.2 补 **MCP Intent 状态迁移矩阵**（`revoked` 无出边、`unavailable→active` 禁跳跃、`active→unavailable` 禁直降；M0.1 停留 requested/unavailable 维持）；⑤**N-5** `functionSource` 补 `confirmedBy`（system-suggested 必填）+ 枚举扩展标〔待决 M0.2+〕；⑥**N-6** 新增 **§3.3 权限判定优先级**（explicit deny > allow > inherited default，M0.2 权限服务遵守）；⑦**N-7** Employee 补 `identitySource`（`user_created`/`recruited` 两值起步，〔待实现〕）；⑧**N-8** §4.3 补**扫表计数适用边界**（单账户公司数 ≤1000，超出或性能不达转 M0.2 quota 表）；⑨**N-9** §2.3 收紧前置旁加**锚点「目标 M1 前完成 scope required 迁移」**；⑩**登记不采纳 2 条**——工具清单**不拆** `tool-registry.md`（§2.5，工具数 >40 再议）；`contract-doc-sync-check` CI 登记为 **P3 切片候选 BE-8**（新增 §6.2 切片候选登记表），M0.1 替代纪律写入 **§0 开头注**「凡改 §0 已实现行，必须对照 `packages/core/src/contracts.ts` 核验」 | ChatGPT 对 PR #15 的审查意见；指挥逐条核实属实并裁定（9 采纳 2 登记） |
 | 2026-09-18 | **ChatGPT 第二阶段审查修正（BE-001…004 + P2-001…003）**：①**BE-001** §2.1.1 新增 **P-9 三步成团协议**（`team.create`(pending,无组长) → `appointment.create`(team_lead) → `team.activate`(P-4 校验后转可用)），三步三 kind 三 `operationId` 各自可恢复；恢复入口=扫描 pending 续做或收敛；四条读面纪律 P-9.1…P-9.4；`SoloipsTeamRecord.leadAppointmentId` 改**可缺省**（pending 期无组长）、`status` 增 `pending`；②**BE-002** 新增 **`SoloipsOperationRecord.schemaVersion`**〔待实现〕——新写入带当前版本、读取遇 unknown kind 按版本兼容，使 kind 联合扩展由破坏性降为兼容性变更；③**BE-003** §2.3 运行时推断**删除规则 2**（「首个 `general_assistant` → company 级」），改为**严格三分支**（有 scope 用之 / 无 scope 有 departmentId 归 department / 否则 invalid，不猜）；该推断**仅允许存在于 migration 工具且须人工确认**；D-1 同步改写；④**BE-004** `SoloipsTeamSkillAssignmentRecord.status` 扩为 **`requested`/`available`/`active`/`failed`/`revoked`** 五态 + 迁移矩阵（与 MCP 对齐，`revoked` 无出边；M0.1 只走 `requested`）；⑤§2.2 实体登记表行 1/2 同步 | ChatGPT 第二阶段审查（BE 切片闭合）；指挥逐条核实裁定（四条 P1 全采纳，P2 一采纳一折中一采纳） |
 | 2026-09-18 | **ChatGPT 第三阶段终审 SA 建议（SA-01…SA-04，全部采纳）**：①**SA-01** §2.4.1 补「读面必须显式表达『无总助理』状态」（SA-01.1…SA-01.4）——BE-4 查询服务须能区分「无有效 `general_assistant` 任职」与「未覆盖/查询失败」，**不静默省略**，界面据此显示「待招募」引导；②**SA-02** §3.1 补「**Host 层 actor 属半可信输入**」声明（SA-02.1…SA-02.5）——非可信输入（部署面自证），**可作审计线索、不可作授权唯一依据**，**不得**与 ORG-05 可信身份链混同；`ExecutionBinding` 落地后重新评估；③**SA-03** 新增 **§3.4 员工自主循环的能力闸门**〔待实现 M0.2+，原则 M0.1 生效〕——七阶段循环（Observe→Plan→**Request capability**→Execute→Record evidence→Reflect→Continue）+ **四层检查**（身份→任职→工具授权→scope，全部通过与关系）+ 五条**反例明示禁止**（含「直接调用所有工具」）；④**SA-04** 新增 **§2.4.3 系统助理职责边界**——允许（引导招募/解释状态/协调流程/提供建议）与禁止（自建任职/改自身权限/绕过审批/替员工执行业务）分列，判据「**可以『说』，不可以『做组织动作』**」，定位写死为**系统级协调入口，不是组织最高决策主体（防「隐形 CEO」）** | ChatGPT 第三阶段终审 4 项 SA 建议；指挥核实裁定全部采纳（PR 收口补入） |
+| 2026-09-18 | **OPS-00 同步（#35 §3.2）**：§0 对照 `contracts.ts`@8abf815 修正 5 处滞后行——①Department 补 `leaderAppointmentId?`；②Appointment 补 `scope?`/`role?` 与 `departmentId?` 可选、状态改「已实现」；③Operation 补 `schemaVersion?`（BE-3 交付）、删「未实现」；④能力面补 team 四命令 + `getTeam`/`listTeams` + `reconcileTeams`、缺口改为 5 个未落地读方法；⑤Team 实体行改「已实现」、TeamBinding 行拆分独立；§3.1 C-2 注从〔待实现〕改〔已实现〕（BE-1 交付：根级绑定元数据 + 占位拒绝 + 真实 accountId）；§2.4.1 SA-01 注指向 BE-4a 切片 | OPS-00 接管收口（#35 §3.2「§0 滞后」项）；逐项对照源码核验（附行号） |
