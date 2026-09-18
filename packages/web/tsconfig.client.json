@@ -1,0 +1,35 @@
+{
+  // ── BE-0b-i：client 编译面配置（浏览器半边）───────────────────────────────
+  //
+  // 与 `tsconfig.json`（Host 半边）**文件集不相交**：本工程只含 `src/client/**`。
+  // 两者都写 `lib/types`，但写的是不同文件；`tsBuildInfoFile` 必须分开。
+  //
+  // ── 为什么是 declaration-only ────────────────────────────────────────────
+  // 浏览器半边以运行时值导入 `soloips-web/remote`（本包自我引用）。若本工程也产
+  // JS，会写出 `lib/types/client/index.js`，其中那条裸说明符被
+  // `check-delivery-load` 的 `checkDeclaredDependencies`（扫 `lib/**/*.js`）读作
+  // 「产物 import 了未声明的依赖」——而它既不是交付面（`exports["./client"].default`
+  // 指向 tsdown 的 `lib/client.js`），也不该被当成依赖声明问题的证据。
+  // 因此本工程**只产声明**：`lib/types/client/index.d.ts` 是
+  // `exports["./client"].types` 需要的全部，JS 由 rolldown 从**源码**直接打包
+  // （见根 `tsdown.config.ts` 的 clientBundleConfig）。
+  //
+  // 〔约束〕`lib` 含 DOM：这是浏览器半边，`document`/`window` 属其正当环境。
+  // `types: []` 刻意清空 base 的 `["node"]`：浏览器半边不得依赖 Node 全局——
+  // 这与「Host 实现不打入浏览器产物」是同一道边界的编译期一半。
+  //
+  // 〔约束〕**不声明 `paths`**：`soloips-web/remote` 的类型由
+  // `src/client/remote-artifact.d.ts` 的**环境模块声明**提供（该文件头注释记录了
+  // 「paths 会被 rolldown 一并读走、导致它把类型替身当运行时模块」的实测结论）。
+  // 环境声明不经路径映射，因此不影响 rolldown 按 package.json `exports` 解析真产物。
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": [],
+    "emitDeclarationOnly": true,
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
+  "include": ["src/client/**/*.ts"]
+}

@@ -71,12 +71,27 @@ const entryPoints = [
 ];
 
 /**
- * 尚未实现的入口：本切片（T01–T04）内 `soloips-web` 仍是骨架（`export {}`），
- * `./client` 属 T07。这些入口在实现前不可加载属预期——**显式列出而不是静默跳过**，
- * 以免它们永远不被纳入检查。
+ * **浏览器产物**（Node 加载面不适用）：这些入口的产物是给 DSH 客户端模块加载器
+ * 消费的闭包工厂（`window.__ModuleLoader__.load(...)`），在 Node 下必然失败
+ * ——且**应当**失败：一个能在 Node 里跑起来的浏览器产物反而说明形态错了
+ * （它没有依赖浏览器全局）。
+ *
+ * 为什么不并进 `entryPoints`：那会让「Node 可加载」这条断言失去意义。故单列并
+ * 用**预期失败**断言它：期望非 0 退出，且 stderr 含 `expectStderr` 片段——后者
+ * 是鉴别力的关键，它把「因等待浏览器全局而失败」与「因路径写错/产物缺失这类
+ * 真实故障而失败」区分开。
+ *
+ * 翻转记录（2026-09-18，指挥）：本条原为 `notYetImplemented`（T01 时 client 半边
+ * 未交付，属「尚未实现故不可加载」）。BE-0b-i 交付后语义变为「已实现但 Node 面
+ * **不适用**」，故从 SKIP 列表移出并升级为可判定断言——从「未知」变为「已验证的
+ * 预期失败」。
  */
-const notYetImplemented = [
-  { specifier: "soloips-web/client", reason: "客户端入口属 T07（T01 时未声明 dsh.client）" },
+const browserOnlyEntries = [
+  {
+    specifier: "soloips-web/client",
+    expectStderr: "window is not defined",
+    reason: "浏览器闭包工厂产物（依赖 window.__ModuleLoader__），Node 加载面不适用",
+  },
 ];
 
 function fail(message) {
@@ -310,9 +325,32 @@ function main() {
       if (!ok) failures.push({ specifier: entry.specifier, detail });
     }
 
-    process.stdout.write("\n尚未实现、按预期不可加载的入口（显式列出，非静默跳过）：\n");
-    for (const entry of notYetImplemented) {
-      process.stdout.write(`  SKIP ${entry.specifier} — ${entry.reason}\n`);
+    // 浏览器产物：**预期失败**断言（非 0 退出 + stderr 含预期片段）。
+    // 两个方向都查：既不能意外成功（说明没依赖浏览器全局=产物形态错了），
+    // 也不能因别的原因失败（说明是真实故障，不是「Node 面不适用」）。
+    process.stdout.write("\n浏览器产物入口（Node 加载面不适用；断言其**按预期失败**）：\n");
+    for (const entry of browserOnlyEntries) {
+      const probe = `await import(${JSON.stringify(entry.specifier)}).then(() => process.exit(0)).catch((error) => { console.error(error && error.message ? error.message.split("\\n")[0] : String(error)); process.exit(1); });`;
+      const run = spawnSync(process.execPath, ["--input-type=module", "-e", probe], {
+        cwd: consumerDir,
+        encoding: "utf8",
+      });
+      const detail = `${run.stderr ?? ""}`.trim().split("\n")[0] ?? "";
+      if (run.status === 0) {
+        failures.push({
+          specifier: entry.specifier,
+          detail: `预期在 Node 下失败（${entry.reason}），实际却加载成功——产物可能未依赖浏览器全局`,
+        });
+        process.stdout.write(`  FAIL ${entry.specifier} — 意外加载成功\n`);
+      } else if (!detail.includes(entry.expectStderr)) {
+        failures.push({
+          specifier: entry.specifier,
+          detail: `失败原因不是预期的「${entry.expectStderr}」，而是：${detail}（可能是产物缺失/路径错误的真实故障）`,
+        });
+        process.stdout.write(`  FAIL ${entry.specifier} — ${detail}\n`);
+      } else {
+        process.stdout.write(`  OK   ${entry.specifier} — 按预期失败（${entry.expectStderr}）\n`);
+      }
     }
 
     if (failures.length > 0) {

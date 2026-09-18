@@ -179,6 +179,18 @@
                   "soloips-web",
                   "soloips-web/**",
                   "!soloips-web/contracts",
+                  // 浏览器半边（BE-0b-i）的**包自我引用**：`src/client/index.ts` 以运行时值
+                  // 导入本包生成的 `/remote` 贡献并自行 `ctx.remote.$mount(...)`。官方
+                  // `@deepseek-ai/dsh-api-remotes` 的 Client 装配是一份**硬编码**导入清单
+                  // （`packages/api/remotes/src/client/index.ts` 的 for-of，17 项），它既不
+                  // 认识也无法容纳本包——「增加一个 Host Remote 包是 Client 组合所有者的
+                  // 显式选择」在本仓的落点只能是自挂载。
+                  //
+                  // 〔约束〕放行理由限定为「自己 import 自己」：包名模式匹配无法区分「自己」
+                  // 与「别人」，禁令初衷（防跨包相对导入/内部实现耦合）在此不适用。**只放行
+                  // 这一条**；`soloips-web/client`、`soloips-web/typert` 等其余子路径继续
+                  // 受上方 `soloips-web/**` 禁令约束。
+                  "!soloips-web/remote",
                   "soloips-bundle",
                   "soloips-bundle/**",
                   "soloips-tools-pv",
@@ -186,7 +198,7 @@
                   "**/packages/*/src/**",
                   "soloips-*/src/**"
                 ],
-                "message": "web 层 Host 半边的依赖面只有 @deepseek-ai/cordis、@deepseek-ai/dsh-typert-protocol 与 soloips-core/contracts（类型）；不得经包名或相对路径依赖其他包实现（DEV-04）。"
+                "message": "web 层依赖面：Host 半边只有 @deepseek-ai/cordis、@deepseek-ai/dsh-typert-protocol 与 soloips-core/contracts（类型）；浏览器半边另有本包自我引用的 soloips-web/remote（生成的 Remote 贡献）；不得经包名或相对路径依赖其他包实现（DEV-04）。"
               }
             ]
           }

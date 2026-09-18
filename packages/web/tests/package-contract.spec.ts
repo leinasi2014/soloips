@@ -22,6 +22,12 @@ const EXPECTED_WEB_IMPORT_ALLOWLIST = [
   "@deepseek-ai/dsh-typert-protocol/**",
   "soloips-core/contracts",
   "soloips-web/contracts",
+  // BE-0b-i：浏览器半边以运行时值导入**本包生成的** `/remote` 贡献并自行
+  // `ctx.remote.$mount(...)`（官方 `@deepseek-ai/dsh-api-remotes` 的 Client 装配是
+  // 硬编码导入清单，不认识本包）。这是**包自我引用**，不是跨包耦合：
+  // `no-restricted-imports` 的包名模式匹配无法区分「自己」与「别人」，
+  // 故配置侧需要一条显式例外。放行理由与边界见 `.oxlintrc.json` 该 override 的注释。
+  "soloips-web/remote",
 ] as const;
 
 interface ExportTarget {
@@ -49,6 +55,7 @@ describe("soloips-web package contract", () => {
     exports: Record<string, ExportTarget | string>;
     files?: string[];
     dependencies?: Record<string, string>;
+    dsh?: { client?: { platform?: string; inject?: string[]; external?: string[] } };
   };
 
   it("uses the agreed package name and ESM form", () => {
@@ -112,6 +119,37 @@ describe("soloips-web package contract", () => {
     expect(manifest.exports["./cordis.patch.yml"]).toBe("./cordis.patch.yml");
     expect(manifest.files ?? []).toContain("cordis.patch.yml");
     expect(existsSync(join(packageDir, "cordis.patch.yml"))).toBe(true);
+  });
+
+  it("declares ./client and dsh.client as one coherent pair (BE-0b-i)", () => {
+    // 〔为什么成对断言〕DSH `client-modules` 的扫描规则（0.1.6-alpha.1，
+    // `packages/client/modules/src/index.ts:779-793`）是**两段式**：
+    //   1. 读 package.json 的 `dsh.client`：缺 `platform` 抛错、非 `web` 跳过；
+    //   2. 声明了 `dsh.client` 就必须有 `exports["./client"]`，否则抛
+    //      `declares dsh.client but exports no "./client" bundle`。
+    // 因此「只声明一半」是**运行期抛错**的形态，不是风格问题：
+    //   - 有 dsh.client 无 ./client → 宿主启动即抛；
+    //   - 有 ./client 无 dsh.client → 该包被安全跳过，客户端半边**永不加载**
+    //     （静默失效，比抛错更难发现）。
+    // 本用例把「两半同时存在且形状正确」固定成契约。
+    const client = manifest.exports["./client"] as ExportTarget;
+    expect(client.types).toBe("./lib/types/client/index.d.ts");
+    expect(client.default).toBe("./lib/client.js");
+
+    const declaration = manifest.dsh?.client;
+    expect(declaration, "dsh.client 必须存在（否则客户端半边被安全跳过）").toBeDefined();
+    expect(declaration?.platform).toBe("web");
+    // `inject` 是**包名清单**（页面按它排序并保证 provider 先物化），
+    // 不是 cordis 服务键。api-remotes 是 `ctx.remote` 的提供者：本包的
+    // `apply()` 直接调 `ctx.remote.$mount`，因此它必须先就位。
+    expect(declaration?.inject).toEqual(["@deepseek-ai/dsh-api-remotes"]);
+  });
+
+  it("lists the client artifact in files (否则 tarball 缺产物)", () => {
+    // `files` 决定 tarball 内容。产物不列进来时本地 worktree 一切正常，
+    // 只有交付安装后才会暴露「exports 指向不存在的文件」——正是
+    // check:delivery-load 要拦的那类缺陷。
+    expect(manifest.files ?? []).toContain("lib/client.js");
   });
 
   it("declares the toolchain dependencies the Host half imports (DEV-04 窄口径)", () => {

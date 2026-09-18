@@ -1,0 +1,327 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+import { describe, expect, it } from "vitest";
+
+const pkgRoot = dirname(fileURLToPath(import.meta.url));
+const packageDir = join(pkgRoot, "..");
+const repoRoot = join(packageDir, "..", "..");
+const libDir = join(packageDir, "lib");
+const clientArtifact = join(libDir, "client.js");
+const clientSource = join(packageDir, "src", "client", "index.ts");
+
+/** `dsh.client` 声明的包名（= Loader 行名 = `__ModuleLoader__.load` 的注册键）。 */
+const CLIENT_PACKAGE_ID = "soloips-web";
+
+/**
+ * 浏览器半边挂载契约测试（BE-0b-i）。
+ *
+ * ── 与 CI 门禁顺序的关系（刻意设计，不是将就）────────────────────────────
+ * CI 顺序是 format → lint → **typecheck** → **test** → **build**
+ * （`.github/workflows/verify.yml`），即 `test` 跑在 `build` 之前：**tsdown 产物
+ * 此时不存在**。因此本文件对产物的断言一律**条件化**（`lib/client.js` 不在则
+ * 跳过），与 `typert-artifacts.spec.ts` 的既有分工一致——产物有效性由
+ * `check:build-repro` 在 build **之后**兜住。
+ *
+ * 但有一条**不能**条件化：`client-modules` 的两段式校验（声明了 `dsh.client`
+ * 却缺 `./client` 即抛）必须由**源码与 manifest 的静态一致性**在默认套件里就
+ * 拦下——否则「声明了但没产物」只会在宿主启动时才炸。该断言见
+ * `package-contract.spec.ts` 的 `declares ./client and dsh.client as one coherent pair`。
+ *
+ * ── 产物断言做了什么（产物在时才跑）──────────────────────────────────────
+ * 真实执行：把 `lib/client.js` 放进 `node:vm` 的上下文里跑一遍，模拟页面的
+ * `window.__ModuleLoader__.load`，取出工厂并**物化**它，再调 `apply()`。
+ * 这验证的是「产物在目标运行时里真的能注册、能物化、能把贡献交给 `$mount`」，
+ * 而不是「文件存在」——后者不是确认（项目红线第 5 条）。
+ */
+describe("soloips-web browser half (BE-0b-i)", () => {
+  const hasArtifact = existsSync(clientArtifact);
+
+  it("keeps the client entry as a real module with apply/inject (源码面)", () => {
+    // 这一条**非条件**：即使产物未构建，源码也必须存在且导出挂载面。
+    // 它是「客户端半边存在」的最低事实，与 bundle 是否已打包无关。
+    expect(existsSync(clientSource), `客户端入口必须存在：${clientSource}`).toBe(true);
+    const source = readFileSync(clientSource, "utf8");
+    expect(source, "必须导出 apply（cordis 插件入口）").toContain("export function apply(");
+    expect(source, "必须导出 inject（服务等待声明）").toContain("export const inject");
+    // 值导入面必须**只有**本包的 /remote：跨插件值耦合是 DEV-04 违规。
+    const valueImports = [...source.matchAll(/^import\s+(?!type\b)[^;]*from\s+"([^"]+)"/gm)].map(
+      (match) => match[1],
+    );
+    expect(
+      valueImports,
+      "浏览器半边只允许值导入本包生成的 /remote（其余经 cordis 服务协作）",
+    ).toEqual([`${CLIENT_PACKAGE_ID}/remote`]);
+    // 〔约束〕不得声明 cordis `Context` 增强。实测：生成器把「本包声明的、出现在
+    // Context 增强里的具名类型」读作**本包贡献的服务**（`collectServices` 要求类型
+    // 与增强成员同属一个包），于是 client face 凭空多出一条服务面，并进而要求
+    // `exports["./client/typert"]` 与 `lib/typert.client.*` 产物
+    // （`typert(client): soloips-web must export ./client/typert as …`）。
+    // `remote` 的提供者是官方 api-gateway/client，我们只是消费者。
+    //
+    // 判据先剥掉注释：本文件的说明文字里就写着这条约束，不剥会把注释本身当违规。
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "浏览器半边不得声明 Context 增强（会被生成器读成服务贡献面）").not.toContain(
+      "declare module",
+    );
+  });
+
+  it("keeps the client compile face declaration-only (构建面不产自引用 JS 中间产物)", () => {
+    // 〔为什么非条件断言〕浏览器半边以运行时值导入 `soloips-web/remote`（本包自我
+    // 引用）。若 client 编译工程也产 JS，`lib/types/client/index.js` 会带着那条裸
+    // 说明符留在 `lib/**/*.js` 里，被 `check:delivery-load` 的
+    // `checkDeclaredDependencies` 读作「产物 import 了未声明的依赖」而失败
+    // （实测）。该中间产物既不是交付面（`exports["./client"].default` 指向 tsdown
+    // 的 `lib/client.js`），也不该被当成依赖问题的证据——故编译面必须只产声明。
+    const config = JSON.parse(
+      readFileSync(join(packageDir, "tsconfig.client.json"), "utf8")
+        // tsconfig 是 JSONC：剥掉整行注释后再解析。
+        .replace(/^\s*\/\/.*$/gm, ""),
+    ) as { compilerOptions?: { emitDeclarationOnly?: boolean; paths?: unknown } };
+    expect(
+      config.compilerOptions?.emitDeclarationOnly,
+      "client 编译工程必须 emitDeclarationOnly（否则会产出自引用的 JS 中间产物）",
+    ).toBe(true);
+    // 〔约束〕不得声明 paths：rolldown 会读走它并把类型替身当运行时模块解析
+    // （实测 `MISSING_EXPORT: "TYPERT_REMOTE" is not exported by …`）。
+    // 类型面由 `src/client/remote-artifact.d.ts` 的环境模块声明提供。
+    expect(
+      config.compilerOptions?.paths,
+      "client 编译工程不得声明 paths（会被 rolldown 读走，污染运行时解析）",
+    ).toBeUndefined();
+  });
+
+  it("registers a closure factory under the loader row name (产物形态)", () => {
+    if (!hasArtifact) return;
+    const source = readFileSync(clientArtifact, "utf8");
+    // DSH 的模块表只认 `window.__ModuleLoader__.load({id, factory})` 这一种注册形态
+    // （`client-modules/src/client/manifest.ts` 的 ClientBundleRegistration）。
+    expect(source).toContain("window.__ModuleLoader__.load(");
+    expect(source, "注册键必须等于 Loader 行名（包名）").toContain(
+      `id: ${JSON.stringify(CLIENT_PACKAGE_ID)}`,
+    );
+  });
+
+  it("materializes in a simulated page and mounts the generated contribution", async () => {
+    if (!hasArtifact) return;
+    const source = readFileSync(clientArtifact, "utf8");
+
+    // 页面侧最小环境：只有 `window.__ModuleLoader__` 的注册口。
+    const registrations: {
+      id: string;
+      factory: (require: (spec: string) => unknown) => unknown;
+    }[] = [];
+    const sandbox = {
+      window: {
+        __ModuleLoader__: {
+          load(registration: {
+            id: string;
+            factory: (require: (spec: string) => unknown) => unknown;
+          }) {
+            registrations.push(registration);
+          },
+        },
+      },
+      console,
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox, { filename: "client.js" });
+
+    expect(registrations.length, "bundle 必须恰好注册一次工厂").toBe(1);
+    const registration = registrations[0];
+    expect(registration?.id).toBe(CLIENT_PACKAGE_ID);
+
+    // 物化工厂。传入的 `require` 故意抛错：本 bundle 的说明符要么走模块表
+    // （页面 seed），要么已被内联——任何 `require` 都说明外部面漏配了。
+    const exports = registration?.factory((specifier: string) => {
+      throw new Error(`意外的 require：${specifier}（既非页面模块表词，也未被内联）`);
+    }) as { apply?: unknown; inject?: unknown };
+
+    expect(exports.inject, "inject 必须声明 remote 服务").toEqual(["remote"]);
+    expect(typeof exports.apply, "apply 必须是函数").toBe("function");
+
+    // `apply` 必须把生成的贡献交给 `$mount`，并**透传**其 disposer
+    // （cordis 以 apply 的返回值作为卸载钩子；丢弃会让重载泄漏 namespace）。
+    const disposer = async (): Promise<void> => undefined;
+    const mounted: { package?: string; descriptors?: { id: string }[] }[] = [];
+    const returned = await (exports.apply as (ctx: unknown) => Promise<unknown>)({
+      remote: {
+        async $mount(contribution: { package: string; descriptors: { id: string }[] }) {
+          mounted.push(contribution);
+          return disposer;
+        },
+      },
+    });
+
+    expect(mounted.length, "$mount 必须被调用一次").toBe(1);
+    expect(mounted[0]?.package).toBe(CLIENT_PACKAGE_ID);
+    expect(
+      mounted[0]?.descriptors?.map((descriptor) => descriptor.id),
+      "挂载的必须是 Host 半边生成的 getStatus 描述符",
+    ).toContain("soloips-web#soloipsWeb/getStatus");
+    expect(returned, "apply 必须透传 $mount 的 disposer").toBe(disposer);
+  });
+
+  it("carries a strict codec that actually validates (非空贡献)", async () => {
+    if (!hasArtifact) return;
+    const source = readFileSync(clientArtifact, "utf8");
+    const registrations: { factory: (require: (spec: string) => unknown) => unknown }[] = [];
+    const sandbox = {
+      window: {
+        __ModuleLoader__: { load: (r: (typeof registrations)[number]) => registrations.push(r) },
+      },
+      console,
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox, { filename: "client.js" });
+
+    const exports = registrations[0]?.factory(() => {
+      throw new Error("本 bundle 不应有外部 require");
+    }) as { apply: (ctx: unknown) => Promise<unknown> };
+    let contribution:
+      | {
+          descriptors: {
+            parameters: {
+              codec: { mode: string; schema: { safeParse: (v: unknown) => { success: boolean } } };
+            }[];
+            result: { schema: { safeParse: (v: unknown) => { success: boolean } } };
+          }[];
+        }
+      | undefined;
+    await exports.apply({
+      remote: {
+        async $mount(c: typeof contribution) {
+          contribution = c;
+          return async () => undefined;
+        },
+      },
+    });
+
+    const descriptor = contribution?.descriptors?.[0];
+    expect(descriptor, "贡献必须带描述符").toBeDefined();
+    // Client 端**拒绝挂载**缺少严格 codec 的 SRC 描述符（api-gateway.zh.md:137），
+    // 因此 `mode: "strict"` 是能被挂载的前提，不是可选装饰。
+    expect(descriptor?.parameters?.[0]?.codec.mode).toBe("strict");
+
+    // 真实校验：接受正确载荷、拒绝错误类型——证明内联的是**真 codec**，
+    // 而不是被内联成空壳的替身（那会让所有调用静默通过校验）。
+    const parameterSchema = descriptor?.parameters?.[0]?.codec.schema;
+    expect(parameterSchema?.safeParse({ note: "ping" }).success).toBe(true);
+    expect(parameterSchema?.safeParse({ note: 1 }).success).toBe(false);
+    expect(
+      descriptor?.result.schema.safeParse({ service: "s", echo: "e", toolchain: "t" }).success,
+    ).toBe(true);
+    expect(descriptor?.result.schema.safeParse({ service: "s" }).success).toBe(false);
+  });
+
+  it("keeps server-side implementation and credentials out of the artifact (验收条款 5)", () => {
+    if (!hasArtifact) return;
+    const source = readFileSync(clientArtifact, "utf8");
+    // 判据：Host 半边的实现符号、存储/账户配置键、后端驱动名。
+    for (const marker of [
+      "SoloipsWebHost",
+      "soloipsCore",
+      "storageRoot",
+      "accountId",
+      "better-sqlite3",
+      "drizzle",
+    ]) {
+      expect(source, `浏览器产物不得含服务端实现/凭据标识 "${marker}"`).not.toContain(marker);
+    }
+    // Node 内置模块（`node:` 前缀与裸名）都不得出现：本 bundle 在浏览器里执行。
+    const nodeRequires = [...source.matchAll(/require\(\s*["'](?:node:)?([a-z_]+)["']\s*\)/g)].map(
+      (match) => match[1],
+    );
+    expect(nodeRequires, "浏览器产物不得 require Node 内置模块").toEqual([]);
+  });
+
+  it("wires the build-time mirror of the missing-bundle error (反例可判定)", () => {
+    // 〔为什么本用例**不**做 `hasArtifact` 条件跳过（QA 变异发现，2026-09-18）〕
+    // 它断言的全是**配置文本**（`tsdown.config.ts` 的内容），不需要任何产物。
+    // 此前它带着 `if (!hasArtifact) return`，而 CI 的 `test` 跑在 `build` **之前**
+    // （`.github/workflows/verify.yml`），故该断言在 CI 上**恒被跳过**——QA 实测：
+    // 把 `clientArtifactContractGate(` 从配置里整条摘掉，CI 门禁链仍全绿
+    // （test/build/repro/delivery-load 均 exit 0）。那是**假绿**：门是产物契约的
+    // 唯一构建期守卫，摘掉它没有任何门禁会响。故本用例无条件执行。
+    const config = readFileSync(join(repoRoot, "tsdown.config.ts"), "utf8");
+    expect(config, "构建期必须有产物契约门").toContain("soloips-web/client-artifact-contract");
+    expect(config, "门必须检查产物存在").toContain("未产出");
+    expect(config, "门必须检查注册形态").toContain("__ModuleLoader__.load({");
+    // 〔判据来源〕产物路径必须**从 manifest 读**（宿主就是这么解析的），
+    // 写死路径会让门与实际交付契约分叉。
+    expect(config, '门必须读 exports["./client"] 而不是写死路径').toContain(
+      'manifest.exports?.["./client"]',
+    );
+    // 门必须在 **client 配置**上（而非只在 node 配置上）：它判的是浏览器产物。
+    const clientConfigAt = config.indexOf("function clientBundleConfig");
+    expect(clientConfigAt, "必须存在 clientBundleConfig").toBeGreaterThanOrEqual(0);
+    const clientConfigBody = config.slice(clientConfigAt);
+    expect(clientConfigBody).toContain("clientArtifactContractGate(");
+  });
+
+  it("materializes the Typert artifacts before the browser bundle resolves them (时序契约)", () => {
+    // 〔同上的条件跳过修正〕配置接线断言（物化步骤存在/挂载位置/执行阶段）只读
+    // `tsdown.config.ts` 文本，不依赖产物 → 无条件执行；**产物形态**断言（真内联、
+    // 无外部 require）需要 `lib/client.js`，保留条件化（CI 的 test 在 build 之前）。
+    const config = readFileSync(join(repoRoot, "tsdown.config.ts"), "utf8");
+    expect(config, "必须存在物化步骤").toContain("soloips-web/materialize-host-artifacts");
+    const clientConfigAt2 = config.indexOf("function clientBundleConfig");
+    const clientConfigBody2 = config.slice(clientConfigAt2);
+    expect(clientConfigBody2, "物化必须挂在 client 配置上").toContain(
+      "soloips-web/materialize-host-artifacts",
+    );
+    // 必须在 `buildStart`（先于模块解析）而不是 writeBundle（后于打包）里跑。
+    expect(clientConfigBody2, "物化必须在 buildStart 阶段执行").toMatch(
+      /materialize-host-artifacts[\s\S]{0,200}buildStart\(\)/,
+    );
+
+    // ── 以下需要产物 ──────────────────────────────────────────────────────
+    if (!hasArtifact) return;
+    // 〔实测的静默失败模式〕浏览器半边以运行时值导入 `soloips-web/remote`，该文件由
+    // Typert 生成器写出；而生成器插件挂在 **node 配置**上，其 writeBundle 与浏览器
+    // bundle 的构建**并发**。控制实验（删掉物化步骤 + 冷构建）的结果是：
+    // **构建退出码仍为 0**，但 `lib/client.js` 从 170.6 kB 缩到 3.4 kB——rolldown 把
+    // 未解析的 `soloips-web/remote` 当作**外部依赖**留下，产物变成一个没有贡献对象的
+    // 空壳。这正是本用例要固定的事实：物化步骤是**承载时序的必需件**，不是优化。
+    const source = readFileSync(clientArtifact, "utf8");
+    expect(source, "产物必须内联生成的贡献（真内联）").toContain("soloipsWeb/getStatus");
+    expect(source, "产物不得把 soloips-web/remote 留成外部 require（那是空壳形态）").not.toMatch(
+      /require\(\s*["']soloips-web\/remote["']\s*\)/,
+    );
+  });
+
+  it("pins the Typert face posture and the dual-face trap (BE-0b-i 遗留约束)", () => {
+    // 〔本用例固定的是一条**陷阱**，不是风格偏好〕
+    //
+    // 生成器的 `isDualFacePackage`（`lib/index.js:2019-2022`）= 有 `dsh.client` 且有
+    // `exports["./client*"]`。本包自 BE-0b-i 起满足该判据，于是 host 聚合引用包根
+    // `tsconfig.json` 时，生成器会**双面展开**该包（`lib/index.js:292-300`），client
+    // 那份用的是**包根 tsconfig 的 fileNames**。实测：`faces: ["host", "client"]` 报
+    //   `typert(client): soloips-web export ./client resolves to missing source
+    //    …/src/client/index.ts`
+    // 因为包根 tsconfig 为让 Host 工程不产自引用 JS 中间产物而 `exclude` 了
+    // `src/client/**`（理由见该文件注释）。
+    //
+    // 实测的边界（不要据此过度推断）：把根 `tsconfig.client.json` 的引用从
+    // `packages/web/tsconfig.client.json` 改成 `packages/web`，报错**不变**——说明
+    // 胜出的 client 登记来自 host 聚合的双面展开，根聚合的引用目标不是这条错误的自变量。
+    // 因此修复方向在**包内配置形态**（例如把 Host 与 client 拆成两个 tsc 工程、
+    // 让双面展开各自读到正确的 fileNames），不在根聚合。
+    //
+    // 本用例把当前姿态钉住：改动 `faces` 前必须先解决上述冲突。
+    const config = readFileSync(join(repoRoot, "tsdown.config.ts"), "utf8");
+    expect(
+      config,
+      '当前只跑 faces: ["host"]；改为 ["host","client"] 会触发 dual-face 冲突（见本用例注释）',
+    ).toContain('faces: ["host"]');
+    // 根 `tsconfig.client.json` 必须存在：生成器在 workspace 根按固定名读它
+    // （`clientConfig ?? "tsconfig.client.json"`）。缺失时请求 client face 会以
+    // `Cannot read file '…/tsconfig.client.json'` 失败（实测）——fail-closed，
+    // 但错误信息指向配置缺失而非真实原因。
+    expect(
+      existsSync(join(repoRoot, "tsconfig.client.json")),
+      "根 client 聚合必须存在（生成器按固定名读取）",
+    ).toBe(true);
+  });
+});
