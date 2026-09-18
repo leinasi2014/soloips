@@ -1,6 +1,7 @@
 # 知识包：BE-4 切片侦察（读投影+probe 入门）
 
-〔性质：源码事实+落点表｜来源版本：BE-3 worktree（合并后=main@8961d93）｜稳定 ID：方法/函数名｜验证状态：读源确认｜失效条件：BE-3 合并后行号以 main 为准重定位；读面方法落地后本包缺口表失效〕
+〔性质：源码事实+落点表｜来源版本：main@8abf815（行号以 BE-3 后 main 重定位）｜稳定 ID：方法/函数名｜验证状态：读源确认｜失效条件：**BE-4a/BE-4c 交付后缺口表失效，降为历史；不再作为默认启动材料**〕
+〔用途〕BE-4a / BE-4c 派发单的落点依据。方法落地后本包只保留历史链接价值。
 
 ## 读面缺口（C-9 在 BE-3 后的残余）
 须新增 5 方法（SoloipsCoreService，contracts.ts 服务接口区）：`getDepartment(id)` / `listEmployees(companyId|departmentId)` / `listAppointments(filter)` / `listDocumentVersions(employeeId)` / `listAdministrators(companyId)`（SA-01.1 显式状态契约最严：须区分「无总助理」与「查询失败」，不得空数组表达；查询名以此登记为准）。
