@@ -194,10 +194,34 @@
 
 | # | 事项 | 归属 |
 |---|---|---|
-| Q-1 | 门禁脚本的实现方式：复用 fork 脚本逻辑（复制并适配）还是自研轻量版 | 实现切片（i18n-1）提出，C 裁定 |
-| Q-2 | `gaps` 的 90 组合中哪些**不可达**（需对照 `evaluateOnboarding` 实证） | 实现切片（i18n-2） |
-| Q-3 | 错误文案的参数化细节（`{current}`/`{limit}` 的字典语法沿用机制即可，但**诊断串如何解析为参数**需实证 `message` 的实际形态） | 实现切片（i18n-1） |
+| Q-1 | 门禁脚本的实现方式：复用 fork 脚本逻辑（复制并适配）还是自研轻量版 | **已裁定**（见下） |
+| Q-2 | `gaps` 的 90 组合中哪些**不可达**（需对照 `evaluateOnboarding` 实证） | **已实证**（见下） |
+| Q-3 | 错误文案的参数化细节（诊断串如何解析为参数） | **已实证并推翻假设**（见下） |
 | Q-4 | 是否需要在 Host 半边也暴露「已本地化」的读面（当前裁定：**不需要**，本地化全在浏览器侧） | 复议触发：若出现服务端渲染需求 |
+
+### Q-1 裁定：自研轻量版（i18n-1 交付）
+
+**裁定：采用 i18n-1 的自研轻量门禁**（`scripts/development/verify-client-ui-i18n.mjs`），不复制 fork 脚本。理由：① fork 脚本的扫描根覆盖 `apps/desktop`、`packages/client/*` 等本仓不存在的目录，移植会带入无意义分支；② i18n-1 版的**排除规则窄于 fork**（fork 还按 basename 排除任意目录下的 `locale.ts`/`locales.ts`，本仓版只排除 `locales/` 目录）——豁免口更少意味着更强的检查，方向正确；③ 保留最小扫描数守卫（防「扫描面被误缩成空集」的假绿），与 fork 同构。
+
+**待复核**：i18n-2 落地后复核 `MINIMUM_SCANNED_CLIENT_SOURCES` 的取值（当前 2，为交付时实测下限）。
+
+### Q-2 实证结论：90 组合中 **19 个可达**、71 个不可达
+
+**实证方式**（非注释声明）：i18n-1 的测试从 `packages/core/src/onboarding.ts` 提取 `gap(...)` 调用点、把 `documentType` 展开为 `REQUIRED_DOCUMENT_TYPES` 四值，与映射表做**双向相等**断言。
+
+可达集：`employee × employee-not-found`；`appointment × {appointment-missing, appointment-revoked}`；`{profile, avatar, soul, operating} × {document-missing, document-content-invalid, document-owner-mismatch}`（12）；`memory × memory-not-initialized`；`capability × capability-not-verified`；`assembly × {assembly-evidence-missing, assembly-evidence-stale}`。
+
+**维护契约**：`evaluateOnboarding` 新增分支而映射表未跟上时，该双向断言**即失败**——这是 §4「可达组合必须有键」的执行机制。
+
+### Q-3 实证结论：**当前代码不存在参数化诊断串**（推翻原假设）
+
+原假设（本设计 §3 表格与 §9 Q-3）：诊断串含 `current=N, limit=M`、`subsidiary_requires_parent` 等形态，需要解析为字典参数。
+
+**实测结论：该形态在当前代码中不存在**（`grep "current=\|limit="`、`subsidiary_requires_parent`、`limit_exceeded` 在 `packages/core/src` + `packages/adapter-dsh/src` **零命中**）。故 i18n-1 **不写 message 解析器**：字典参数只来自**结构化字段**（`code`/`reason`/`capability`），永不来自 `message`。
+
+**这同时是 I18N-1 的最强形态**：参数不依赖诊断文本，诊断文本的语言变化不可能影响用户文案——比「解析 message」在结构上更安全。
+
+**边界（属 BE-5 的交付责任）**：配额拒绝若引入带数值的**结构化**字段（而非只写进 message），须在 BE-5 中按本设计的映射机制（参数来自结构化字段）暴露，**不得**改回「解析 message」。
 
 ---
 
@@ -206,3 +230,4 @@
 | 日期 | 变更 | 变更者 |
 |---|---|---|
 | 2026-09-18 | 创建 v0.1：用户指示「需要国际化的后端项目，没有就全部补上设计文档」；取证（core 零 i18n 设计、102 处中文串、门禁在 fork 不在本仓）→ 三条核心裁定（语言分层 / 映射表落点 / 字典唯一）+ 7 类文本分层表 + `gaps` 与模型面语言策略 + 验证要求 7 项 | 指挥（C），依据用户 2026-09-18 指示 |
+| 2026-09-18 | **i18n-1 交付回写**：①**Q-1 裁定**为自研轻量门禁（不移植 fork 脚本；排除规则窄于 fork、保留最小扫描数守卫）；②**Q-2 实证**90 组合中 19 可达/71 不可达（双向相等断言，`evaluateOnboarding` 改而映射未跟上即失败）；③**Q-3 推翻原假设**——当前代码**不存在**参数化诊断串（逐词零命中），故不写 message 解析器，参数只来自结构化字段（这是 I18N-1 的最强形态），配额若引入数值须走结构化字段而非解析 message | i18n-1 交付（Issue #42）；指挥核实并裁定 |
