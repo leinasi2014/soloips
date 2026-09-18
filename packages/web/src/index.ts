@@ -36,8 +36,13 @@ export const SOLOIPS_WEB_SERVICE_NAME = "soloipsWeb";
 /**
  * 本切片的工具链标识：证明生成物来自 tsdown + Typert 生成管线。
  * BE-6 接入业务面时连同 `getStatus` 一起替换为真实就绪信息。
+ *
+ * 〔BE-0b-ii〕版本必须与 `package.json` 的 generator 钉版一致：本值是
+ * `getStatus` 的返回值之一，浏览器侧读到的就是它；写成旧版本会在「工具链
+ * 自证」这一项上给出假事实。alpha.1 产出 `codec.schema`、alpha.2 产出
+ * `codec.create`，而运行时（fork HEAD 的 dsh-typert-loader）只接受后者。
  */
-export const SOLOIPS_WEB_TOOLCHAIN = "tsdown+typert-generator@0.1.6-alpha.1";
+export const SOLOIPS_WEB_TOOLCHAIN = "tsdown+typert-generator@0.1.6-alpha.2";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 服务名模块增强（形状与 adapter/core 的既有做法一致）

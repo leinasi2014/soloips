@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import { SOLOIPS_WEB_TOOLCHAIN } from "../src/index.js";
+
 const pkgRoot = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(pkgRoot, "..");
 const repoRoot = join(packageDir, "..", "..");
@@ -157,9 +159,46 @@ describe("soloips-web package contract", () => {
     // 声明与放行面必须一致，否则「能 import 但装不上」。
     expect(manifest.dependencies).toMatchObject({
       "@deepseek-ai/cordis": "4.0.2",
-      "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.1",
+      // 〔BE-0b-ii〕与运行时对齐：fork HEAD 的 dsh-typert-loader 实现
+      // alpha.2 的 `codec.create` 契约，而生成器 alpha.1 产出的是 alpha.1 的
+      // `codec.schema`；二者混用会让 soloips-web 的 typert entry 在宿主
+      // 冷启动时激活失败（宿主只发 warning、退出码仍为 0）。
+      "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.2",
       "soloips-core": "workspace:*",
     });
+  });
+
+  it("keeps SOLOIPS_WEB_TOOLCHAIN in step with the pinned generator version (BE-0b-ii 盲区 1)", () => {
+    // ── 为什么必须钉住 ────────────────────────────────────────────────────────
+    // `SOLOIPS_WEB_TOOLCHAIN` 是 `getStatus` 的返回值之一，**浏览器侧读到的就是它**；
+    // 它声称「本产物出自哪个生成器版本」，是工具链自证。写成旧版本即**假事实**
+    // ——BE-0b-ii 实测过：升级到 alpha.2 后常量仍是 alpha.1，浏览器返回
+    // `toolchain: "tsdown+typert-generator@0.1.6-alpha.1"` 而产物实际由 alpha.2 生成。
+    //
+    // ── 为什么不能靠别的门禁 ──────────────────────────────────────────────────
+    // 根 `package.json` 的**依赖钉版**漂移能被 `--frozen-lockfile` 拦下（exit 1），
+    // 但**源码常量**漂移不能：QA 实测把本常量回退成 alpha.1 后，
+    // test / build / delivery-load **全绿**。故必须有本条断言。
+    //
+    // ── 判据形态：从根 manifest 读版本，而非在本文件硬编码 ─────────────────────
+    // 硬编码 `"0.1.6-alpha.2"` 会让「升级依赖时忘了改常量」**继续漏网**（本文件也
+    // 得跟着改，但没有任何东西强制两处同步）。改读根 `package.json` 的 generator
+    // 钉版后，**任一侧单独漂移即红**：升依赖不升常量 → 红；降常量不降依赖 → 红。
+    const rootManifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+      devDependencies?: Record<string, string>;
+    };
+    const pinnedGenerator = rootManifest.devDependencies?.["@deepseek-ai/dsh-typert-generator"];
+    expect(
+      pinnedGenerator,
+      "根 package.json 必须钉住 @deepseek-ai/dsh-typert-generator",
+    ).toBeDefined();
+
+    // 常量形如 `tsdown+typert-generator@<version>`，须含根 manifest 的钉版串。
+    expect(
+      SOLOIPS_WEB_TOOLCHAIN,
+      `SOLOIPS_WEB_TOOLCHAIN（${SOLOIPS_WEB_TOOLCHAIN}）必须含根 manifest 的 generator 钉版（${String(pinnedGenerator)}）` +
+        "——不一致时浏览器读到的「工具链自证」是假事实。改依赖版本请同步 packages/web/src/index.ts。",
+    ).toContain(String(pinnedGenerator));
   });
 
   it("pins the web import allowlist to an exact set (BE-0a 变异 #5)", () => {
