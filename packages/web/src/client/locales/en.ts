@@ -1,0 +1,106 @@
+/**
+ * SOLOIPS-WEB-I18N-EN
+ *
+ * `soloips` 命名空间的**英文字典**，按 `zh`（键集真源）检查完备性。
+ *
+ * 完备性由类型强制，不靠人工比对：
+ *  - `zh` 的键集是 `SoloipsLocaleKey`（见 `./zh.js`）；
+ *  - 本文件声明 `satisfies Record<SoloipsLocaleKey, string>`——**少一个键即
+ *    编译失败**，多一个键同样失败（对象字面量的多余属性检查）。
+ *  - 运行期再做一次键集双向断言（`packages/web/tests/i18n-assets.spec.ts`）：
+ *    类型层的 `satisfies` 覆盖不到「有人把 zh 与 en 都改成同一份错误形状」这类
+ *    协同改动，运行期断言把「两字典键集相等」变成可观察事实（设计 §7 V1）。
+ *
+ * 〔约束〕本文件**不得**成为第二份键集真源：任何新增键先加 `zh`，再补本文件；
+ * 反向操作（先写 en）会让「键集真源」这一约定失去意义。
+ *
+ * 〔约束〕与 `zh` 同：通用词（`ok`/`cancel`/`close`/`save`/`loading`…）**不在**
+ * 本命名空间定义，由 DSH `common` 命名空间提供（设计 §6「`common` 复用」）。
+ */
+
+import type { SoloipsLocaleKey } from "./zh.js";
+
+export const en = {
+  // ── 错误码文案 ────────────────────────────────────────────────────────────
+
+  "soloips.error.unknown": "Something went wrong ({code}). Copy the diagnostics and try again.",
+  "soloips.error.configInvalid":
+    "The deployment configuration is invalid, so the service did not start. Ask an administrator to check it.",
+  "soloips.error.adapterInvalid":
+    "The runtime interface does not match the expected contract, so the service did not start. Ask an administrator to check it.",
+  "soloips.error.storeClosed":
+    "The data store is closed; the workspace is read-only and this action is unavailable.",
+  "soloips.error.leaseLost":
+    "The write lease is no longer held, so nothing was written. Do not retry automatically — first check whether another process is writing.",
+  "soloips.error.leaseUnknown":
+    "The write-lease state could not be confirmed, so nothing was written. Verify it and try again.",
+  "soloips.error.validation": "The input does not meet the requirements. Check it and try again.",
+  "soloips.error.precondition":
+    "The current state does not allow this action (the target may be missing or revoked). Refresh and check again.",
+  "soloips.error.conflict":
+    "This operation id is already used by a different operation, so nothing was written.",
+  "soloips.error.accountMismatch":
+    "The account binding does not match, so access to this data root was refused. Ask an administrator to verify the deployment account.",
+  "soloips.error.recordInvalid":
+    "Stored data does not match the expected structure (possible corruption). Copy the diagnostics so it can be investigated.",
+  "soloips.error.adapter.generic":
+    "A runtime interface call failed ({code}). Copy the diagnostics so it can be investigated.",
+  "soloips.error.diagnosticCopy": "Copy diagnostics",
+
+  // ── 入职缺项文案 ──────────────────────────────────────────────────────────
+
+  "soloips.onboarding.gap.generic":
+    "An onboarding item is not satisfied ({reason}). Copy the diagnostics so it can be investigated.",
+
+  "soloips.onboarding.gap.employee.employeeNotFound":
+    "No record was found for this employee. Check that the employee exists and the id is correct.",
+  "soloips.onboarding.gap.appointment.appointmentMissing":
+    "This employee has no appointment yet. Create one first.",
+  "soloips.onboarding.gap.appointment.appointmentRevoked":
+    "All appointments for this employee have been revoked. Create a new appointment.",
+
+  "soloips.onboarding.gap.profile.documentMissing":
+    "No saved current version of the public profile exists. Save the public profile first.",
+  "soloips.onboarding.gap.profile.documentContentInvalid":
+    "The public profile content is invalid or does not match what was saved. Save it again.",
+  "soloips.onboarding.gap.profile.documentOwnerMismatch":
+    "The current public profile version is not owned by this employee. Save it again.",
+
+  "soloips.onboarding.gap.avatar.documentMissing":
+    "No saved current version of the avatar exists. Save the avatar first.",
+  "soloips.onboarding.gap.avatar.documentContentInvalid":
+    "The avatar content is invalid or does not match what was saved. Save it again.",
+  "soloips.onboarding.gap.avatar.documentOwnerMismatch":
+    "The current avatar version is not owned by this employee. Save it again.",
+
+  "soloips.onboarding.gap.soul.documentMissing":
+    "No saved current version of the SOUL document exists. Save it first.",
+  "soloips.onboarding.gap.soul.documentContentInvalid":
+    "The SOUL document content is invalid or does not match what was saved. Save it again.",
+  "soloips.onboarding.gap.soul.documentOwnerMismatch":
+    "The current SOUL document version is not owned by this employee. Save it again.",
+
+  "soloips.onboarding.gap.operating.documentMissing":
+    "No saved current version of the OPERATING document exists. Save it first.",
+  "soloips.onboarding.gap.operating.documentContentInvalid":
+    "The OPERATING document content is invalid or does not match what was saved. Save it again.",
+  "soloips.onboarding.gap.operating.documentOwnerMismatch":
+    "The current OPERATING document version is not owned by this employee. Save it again.",
+
+  "soloips.onboarding.gap.memory.memoryNotInitialized":
+    "This employee's memory has not been initialized yet. Initialize it first.",
+  "soloips.onboarding.gap.capability.capabilityNotVerified":
+    "The required capability “{capability}” has not been verified yet. Verify it first.",
+
+  "soloips.onboarding.gap.assembly.assemblyEvidenceMissing":
+    "There is no evidence that the required documents were actually assembled. Complete the assembly first.",
+  "soloips.onboarding.gap.assembly.assemblyEvidenceStale":
+    "The assembly evidence points at an older version; the current version has not been assembled. Assemble again.",
+
+  // ── 工作准入拒绝文案 ──────────────────────────────────────────────────────
+
+  "soloips.work.entry.refused.onboardingNotReady":
+    "Onboarding is not complete, so work cannot be claimed yet. Finish the onboarding items first.",
+  "soloips.work.entry.refused.employeeOperationUnknown":
+    "This employee has an operation with an unknown result, so new work cannot start. Reconcile the pending operation — do not retry under a new id.",
+} satisfies Record<SoloipsLocaleKey, string>;
