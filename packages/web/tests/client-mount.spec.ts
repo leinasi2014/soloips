@@ -159,7 +159,7 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     expect(
       mounted[0]?.descriptors?.map((descriptor) => descriptor.id),
       "挂载的必须是 Host 半边生成的 getStatus 描述符",
-    ).toContain("soloips-web#soloipsWeb/getStatus");
+    ).toContain("soloips-web#soloips/getStatus");
     expect(returned, "apply 必须透传 $mount 的 disposer").toBe(disposer);
   });
 
@@ -182,6 +182,7 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     let contribution:
       | {
           descriptors: {
+            id: string;
             parameters: {
               codec: {
                 mode: string;
@@ -201,8 +202,14 @@ describe("soloips-web browser half (BE-0b-i)", () => {
       },
     });
 
-    const descriptor = contribution?.descriptors?.[0];
-    expect(descriptor, "贡献必须带描述符").toBeDefined();
+    // 〔按 id 选，不按下标〕BE-6a 起本贡献含 6 条描述符（getStatus + 业务面五项），
+    // 且生成顺序由生成器决定。按 `descriptors[0]` 取会让本用例的**判据**随描述符
+    // 数量与顺序漂移——它想证明的是「getStatus 的 codec 是真 codec」，不是
+    // 「第一条描述符的 codec 是真 codec」。按 id 取使两者一致。
+    const descriptor = contribution?.descriptors?.find(
+      (entry) => entry.id === "soloips-web#soloips/getStatus",
+    );
+    expect(descriptor, "贡献必须带 getStatus 描述符").toBeDefined();
     // Client 端**拒绝挂载**缺少严格 codec 的 SRC 描述符（api-gateway.zh.md:137），
     // 因此 `mode: "strict"` 是能被挂载的前提，不是可选装饰。
     expect(descriptor?.parameters?.[0]?.codec.mode).toBe("strict");
@@ -297,7 +304,7 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     // 未解析的 `soloips-web/remote` 当作**外部依赖**留下，产物变成一个没有贡献对象的
     // 空壳。这正是本用例要固定的事实：物化步骤是**承载时序的必需件**，不是优化。
     const source = readFileSync(clientArtifact, "utf8");
-    expect(source, "产物必须内联生成的贡献（真内联）").toContain("soloipsWeb/getStatus");
+    expect(source, "产物必须内联生成的贡献（真内联）").toContain("soloips/getStatus");
     expect(source, "产物不得把 soloips-web/remote 留成外部 require（那是空壳形态）").not.toMatch(
       /require\(\s*["']soloips-web\/remote["']\s*\)/,
     );

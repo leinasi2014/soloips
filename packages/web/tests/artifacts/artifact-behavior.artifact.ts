@@ -105,7 +105,7 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     expect(
       mounted[0]?.descriptors?.map((descriptor) => descriptor.id),
       "挂载的必须是 Host 半边生成的 getStatus 描述符",
-    ).toContain("soloips-web#soloipsWeb/getStatus");
+    ).toContain("soloips-web#soloips/getStatus");
     expect(returned, "apply 必须透传 $mount 的 disposer").toBe(disposer);
   });
 
@@ -118,6 +118,7 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     let contribution:
       | {
           descriptors: {
+            id: string;
             parameters: {
               codec: {
                 mode: string;
@@ -137,8 +138,13 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
       },
     });
 
-    const descriptor = contribution?.descriptors?.[0];
-    expect(descriptor, "贡献必须带描述符").toBeDefined();
+    // 〔按 id 选，不按下标〕BE-6a 起本贡献含 6 条描述符（getStatus + 业务面五项），
+    // 顺序由生成器决定。按 `descriptors[0]` 取会让判据随数量与顺序漂移——本用例
+    // 要证明的是「getStatus 的 codec 是真 codec」，按 id 取才与标题一致。
+    const descriptor = contribution?.descriptors?.find(
+      (entry) => entry.id === "soloips-web#soloips/getStatus",
+    );
+    expect(descriptor, "贡献必须带 getStatus 描述符").toBeDefined();
     // Client 端**拒绝挂载**缺少严格 codec 的 SRC 描述符（api-gateway.zh.md:137），
     // 因此 `mode: "strict"` 是能被挂载的前提，不是可选装饰。
     expect(descriptor?.parameters?.[0]?.codec.mode).toBe("strict");
@@ -185,7 +191,7 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     // `soloips-web/remote` 当作**外部依赖**留下，产物变成一个没有贡献对象的空壳。
     // 本用例固定的事实：物化步骤是**承载时序的必需件**，不是优化。
     const source = readArtifact("lib/client.js");
-    expect(source, "产物必须内联生成的贡献（真内联）").toContain("soloipsWeb/getStatus");
+    expect(source, "产物必须内联生成的贡献（真内联）").toContain("soloips/getStatus");
     expect(source, "产物不得把 soloips-web/remote 留成外部 require（那是空壳形态）").not.toMatch(
       /require\(\s*["']soloips-web\/remote["']\s*\)/,
     );
@@ -236,9 +242,7 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     expect(host.TYPERT?.package).toBe(PACKAGE_ID);
     expect(host.TYPERT?.face).toBe("host");
     const ids = (host.TYPERT?.invocations ?? []).map((invocation) => invocation.id);
-    expect(ids, "Host face 必须含 getStatus invocation").toContain(
-      "soloips-web#soloipsWeb/getStatus",
-    );
+    expect(ids, "Host face 必须含 getStatus invocation").toContain("soloips-web#soloips/getStatus");
   });
 
   it("emits a mountable Remote contribution for the browser half", async () => {
@@ -257,7 +261,7 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     expect(remote.TYPERT_REMOTE, "Remote 产物必须导出 TYPERT_REMOTE").toBeDefined();
     expect(remote.TYPERT_REMOTE?.package).toBe(PACKAGE_ID);
     const descriptor = (remote.TYPERT_REMOTE?.descriptors ?? []).find(
-      (entry) => entry.id === "soloips-web#soloipsWeb/getStatus",
+      (entry) => entry.id === "soloips-web#soloips/getStatus",
     );
     expect(descriptor, "Remote 贡献必须含 getStatus 描述符").toBeDefined();
     // 运行时 `requireStrictCodec` 要求 `create` 是函数——这里是**执行判据**：
@@ -389,22 +393,22 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     // 1) 空日志：即使给了期望，也不能通过。
     const emptyResult = checkActivationEvidence({
       logText: "",
-      expectInvocations: ["soloipsWeb/getStatus"],
+      expectInvocations: ["soloips/getStatus"],
     });
     expect(emptyResult.violations.length, "空日志下正向确认必须失败").toBeGreaterThan(0);
 
     // 2) 目标 entry/调用缺失：必须失败（这正是「能力声明过强」的对照面）。
     const missing = checkActivationEvidence({
       logText: "dsh web: http://127.0.0.1:55311/?token=x\n",
-      expectInvocations: ["soloipsWeb/getStatus"],
+      expectInvocations: ["soloips/getStatus"],
     });
     expect(missing.violations.length, "期望调用缺失时必须失败").toBeGreaterThan(0);
-    expect(missing.violations.join("\n")).toContain("soloipsWeb/getStatus");
+    expect(missing.violations.join("\n")).toContain("soloips/getStatus");
 
     // 3) 证据存在但没有产物摘要：无法绑定候选 → 必须失败。
     const noDigest = checkActivationEvidence({
-      logText: "probe: soloipsWeb/getStatus ok\n",
-      expectInvocations: ["soloipsWeb/getStatus"],
+      logText: "probe: soloips/getStatus ok\n",
+      expectInvocations: ["soloips/getStatus"],
       artifactDigest: digest,
     });
     expect(noDigest.violations.length, "无产物摘要时必须失败（无法排除旧 lib）").toBeGreaterThan(0);
@@ -412,16 +416,16 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
 
     // 4) 摘要不一致：说明跑的不是本次候选 → 必须失败。
     const mismatch = checkActivationEvidence({
-      logText: `probe: soloipsWeb/getStatus ok sha256=${otherDigest}\n`,
-      expectInvocations: ["soloipsWeb/getStatus"],
+      logText: `probe: soloips/getStatus ok sha256=${otherDigest}\n`,
+      expectInvocations: ["soloips/getStatus"],
       artifactDigest: digest,
     });
     expect(mismatch.violations.length, "摘要不一致时必须失败").toBeGreaterThan(0);
 
     // 5) 正向通过：证据在、摘要与候选一致。
     const ok = checkActivationEvidence({
-      logText: `probe: soloipsWeb/getStatus ok sha256=${digest}\n`,
-      expectInvocations: ["soloipsWeb/getStatus"],
+      logText: `probe: soloips/getStatus ok sha256=${digest}\n`,
+      expectInvocations: ["soloips/getStatus"],
       artifactDigest: digest,
     });
     expect(ok.violations, "证据齐全且摘要一致时应通过").toEqual([]);

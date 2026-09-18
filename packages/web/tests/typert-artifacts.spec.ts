@@ -285,7 +285,12 @@ describe("soloips-web Typert artifacts", () => {
     // 生成器的 Host 产物是 TYPERT 常量：含 package/face 与 invocations 表。
     expect(host).toContain("export const TYPERT");
     expect(host).toContain("'soloips-web'");
-    expect(host).toContain("soloipsWeb/getStatus");
+    // 〔端点 id 用 wire namespace，不是服务键〕BE-6a 起 namespace 显式覆盖为
+    // `soloips`（data-contract §2.5 的调用面矩阵）；服务键仍是 `soloipsWeb`。
+    // 两者不同形是**刻意的**（§2.5 的「两套命名面」约束），故本断言固定端点 id，
+    // 并由紧随的断言固定服务键仍在产物里——只钉一个会漏掉「两者被合并」这一形态。
+    expect(host).toContain("soloips/getStatus");
+    expect(host, "服务键仍须是 soloipsWeb（与 wire namespace 分离）").toContain("'soloipsWeb'");
   });
 
   it("emits a mountable Remote contribution for the browser half", () => {
@@ -294,7 +299,7 @@ describe("soloips-web Typert artifacts", () => {
     const remote = readFileSync(path, "utf8");
     // Client 侧挂载的是 TYPERT_REMOTE（TypertRemoteContribution，含严格 codec）。
     expect(remote).toContain("export const TYPERT_REMOTE");
-    expect(remote).toContain("soloipsWeb/getStatus");
+    expect(remote).toContain("soloips/getStatus");
   });
 
   it("generates Remote consumer types from the public ./contracts subpath", () => {

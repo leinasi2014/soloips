@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { SOLOIPS_WEB_TOOLCHAIN } from "../src/index.js";
+import {
+  SOLOIPS_WEB_REMOTE_NAMESPACE,
+  SOLOIPS_WEB_SERVICE_NAME,
+  SOLOIPS_WEB_TOOLCHAIN,
+} from "../src/index.js";
 
 const pkgRoot = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(pkgRoot, "..");
@@ -256,5 +260,44 @@ describe("soloips-web package contract", () => {
       allowlisted.filter((entry) => entry.startsWith("soloips-") && !entry.includes("/")),
       "不得放行裸包名形式的 soloips-* 通配",
     ).toEqual([]);
+  });
+
+  it("pins the browser wire namespace to the frozen contract value (BE-6a)", () => {
+    // 〔为什么必须由测试钉，而不是靠源码里写常量〕
+    //
+    // Typert 分析器**只从字面量**读服务键与 namespace，传常量标识符即构建失败
+    // （实测两条：`Gateway service key must be a string literal` 与
+    // `Gateway namespace must be a string literal`）。因此
+    // `src/index.ts` 的 `super(ctx, "soloipsWeb", { namespace: "soloips" })`
+    // 里**必须**逐字写字符串；编译器与分析器都无法把那里的字面量与下面这两个
+    // 导出常量联系起来。若只留字面量，「有人把 namespace 改成别的值」不会有
+    // 任何门禁响应——而它是 `data-contract.md` §2.5 调用面矩阵的冻结项。
+    //
+    // 本用例把三者固定成一处可判定的事实：
+    //   ① 源码里的字面量与服务键常量一致（`"soloipsWeb"`）；
+    //   ② 源码里的 namespace 字面量与 `SOLOIPS_WEB_REMOTE_NAMESPACE` 一致；
+    //   ③ namespace 与服务键**不同值**（防止两者被「顺手统一」而静默改变
+    //      已冻结的浏览器调用面）。
+    const source = readFileSync(join(packageDir, "src", "index.ts"), "utf8");
+    const call = /super\(ctx,\s*"([^"]+)",\s*\{\s*namespace:\s*"([^"]+)"\s*\}\s*\)/.exec(source);
+    expect(
+      call,
+      'src/index.ts 必须以字面量形态调用 super(ctx, "…", { namespace: "…" })' +
+        "（分析器不接受常量标识符）",
+    ).not.toBeNull();
+
+    const serviceKey = call?.[1];
+    const namespace = call?.[2];
+    expect(serviceKey, "服务键字面量必须等于 SOLOIPS_WEB_SERVICE_NAME").toBe(
+      SOLOIPS_WEB_SERVICE_NAME,
+    );
+    expect(namespace, "wire namespace 字面量必须等于 SOLOIPS_WEB_REMOTE_NAMESPACE").toBe(
+      SOLOIPS_WEB_REMOTE_NAMESPACE,
+    );
+    // 契约值本身：`data-contract.md` §2.5 / §2.5.1 逐行写作 `ctx.remote.soloips.<method>`。
+    expect(namespace, "契约冻结的浏览器 namespace 是 soloips（§2.5 调用面矩阵）").toBe("soloips");
+    expect(namespace, "服务键与 wire namespace 必须分离——合并会静默改变已冻结的调用面").not.toBe(
+      serviceKey,
+    );
   });
 });
