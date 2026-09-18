@@ -89,6 +89,7 @@ import type {
   SoloipsCloseTeamInput,
   SoloipsCloseTeamResult,
   SoloipsCommitOutcome,
+  SoloipsCommitPreconditionVerdict,
   SoloipsCompanyId,
   SoloipsCompanyRecord,
   SoloipsCoreBinding,
@@ -139,6 +140,7 @@ import type {
   SoloipsWorkEntryInput,
   SoloipsWorkEntryOrigin,
   SoloipsWorkEntryOutcome,
+  SoloipsWorkEntryRefused,
 } from "./contracts.js";
 import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_PLACEHOLDER_ACCOUNT_ID } from "./contracts.js";
 import { SoloipsCommitGate } from "./commit-gate.js";
@@ -1411,6 +1413,35 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     // 两者互斥（角色不同即作用域 kind 不同，见 `ROLE_SCOPE_KIND`），故不可能
     // 同时命中；写成两条独立分支而不是一张表，是为了让各自的拒绝消息指向
     // 各自的契约条文。
+    //
+    // ── 〔BE-4c：契约扩展后的**兼容策略**（钉住 BE-2/BE-3 既有行为）〕──────────
+    //
+    // 门的 `precondition` 在 BE-4c 后**同时**接受「返回 `void` 并抛错」与
+    // 「返回 `{ ok: false, refusal }`」两种拒绝形态（见 `SoloipsCommitRequest`）。
+    // 本命令**继续使用抛错形态**，一字未改，理由：
+    //  1. 唯一性拒绝**不是**本命令公开返回面的一部分——`createAppointment` 的返回
+    //     类型是 `SoloipsCommitOutcome<SoloipsCreateAppointmentResult>`，拒绝以
+    //     `SOLOIPS_CORE_PRECONDITION` 异常呈现是**已验收**的契约（scope-role.spec.ts
+    //     的顺序与并发两条用例都按 `rejects.toMatchObject({code})` 断言）；
+    //  2. 改成拒绝载荷会**改变本命令的公开返回类型**（多出 `| R` 分支），那是需要
+    //     单独裁定的行为/契约变更，不属于 BE-4c 的「门扩展」范围（本片只做加法：
+    //     让拒绝载荷**可表达**，不迁移既有判定）；
+    //  3. 两种形态的**失败语义完全相同**——都在意图落盘之前、都在串行槽位内，
+    //     都是零业务写、零新增未决意图。区别只在「拒绝以值还是以异常抵达调用方」，
+    //     而这一点由各命令的既有公开契约决定，不由门决定。
+    //
+    // 〔为什么两种形态都不靠哨兵异常**翻译**〕「抛一个专用异常、由服务面 catch 后
+    // 转成返回值」的方案已被裁定否决——`contracts.ts` 的
+    // `SoloipsCommitPreconditionVerdict` 注释列了三条理由（失败语义与正常结果不
+    // 混用、类型层不可穷举、与 BE-5 配额拒绝同构），那是权威说明处。
+    //
+    // 〔预留：第三分支归属（**本片不实现**）〕data-contract §2.4.4 的 **DL-1**
+    // （同一部门至多一条有效 `department_lead`）与 **DL-2**（换任必须显式：先
+    // `revokeAppointment` 再 `createAppointment`）已裁定归属「BE-4c 或其后首个 core
+    // 切片」，落点正是**本三元表达式的第三个分支**（`role === 'department_lead'`
+    // 且 `scope.kind === 'department'` → `#assertNoActiveDepartmentLead(scope.departmentId)`）。
+    // 本片刻意**不**实现：它会把既有「后写者胜」的可见行为改为拒绝，属需要单独
+    // 验收的行为变更；且 §2.4.4 明确「本裁定不重开 BE-2」。
     const uniqueness =
       role === "general_assistant" && scope.kind === "company"
         ? () => this.#assertNoActiveGeneralAssistant(scope.companyId)
@@ -1799,6 +1830,66 @@ class SoloipsCompanyStore implements SoloipsCoreService {
 
   // ── 工作准入（SOLO-ACC-04：三条路径共用同一判定） ─────────────────────────
 
+  /**
+   * 工作准入前门（SOLO-ACC-04）：三条路径（经理派单/员工自领/自动调度）共用同一判定。
+   *
+   * ── 〔BE-4c：判定与提交落在**同一串行槽位**〕────────────────────────────────
+   *
+   * 本命令的**全部**判定——重放探测、未决阻塞、入职完备性——都在提交门的
+   * `precondition` 内执行，即持有本 store 串行槽位时。这是 R-5.1…R-5.5 的要求
+   * （`docs/prds/organization-full-backend-design-v0.1.md` §6「R-5 处置要求」，
+   * P2-003 升级为硬要求）：
+   *
+   *  - **R-5.1 probe 在队内**：重放探测由 `#commitLocked` 自己完成（它就是槽位内的
+   *    第一次读），不再有门外的 `probe()` 调用；
+   *  - **R-5.2 外部 probe 禁止**：本命令**不**做任何提交前预检。`checkOnboarding`
+   *    仍是可用的**展示用**查询（纯读、不参与提交决策），但其结果**不得**作为
+   *    提交依据传入——本命令的签名里没有任何承载它的字段；
+   *  - **R-5.3 判定输入在队内重取**：`evaluateOnboarding` 在 `precondition` 内调用，
+   *    且 `#readModel()` 返回的是**每次调用现读**的取值器（闭包内直接读 domain 表），
+   *    因此判定看到的是「本次写入将要基于的状态」；
+   *  - **R-5.4 未决检查同在队内**：`listPendingOperations` 的阻塞判定同样在
+   *    `precondition` 内；
+   *  - **R-5.5 失败方向不变**：任一判定不通过即返回可判定拒绝，零业务写、零新增
+   *    未决意图（`precondition` 在意图落盘之前）。**未放宽任何既有拒绝条件**。
+   *
+   * 〔为什么判定不能留在门外（修复前的形态）〕门外判定把「读-判-写」拆成两段：
+   * 两个并发准入可同时通过「入职已完备」的检查，各自建出一条准入事实；未决阻塞
+   * 检查也存在同样的窗口。M0.1 的单 operator 是**运行假设**，不是结构保证——契约
+   * 不得依赖使用方式（R-5 的「为什么升级为硬要求」段）。
+   *
+   * 〔拒绝为什么是**返回值**而不是异常〕本命令的拒绝是公开返回面的一部分
+   * （专属判别值 + 逐项缺项），故经 `SoloipsCommitPreconditionVerdict` 的
+   * `{ ok: false, refusal }` 返回——**哨兵异常方案已被裁定否决**，理由逐条见
+   * `contracts.ts` 的 `SoloipsCommitPreconditionVerdict` 注释（权威说明处）。
+   *
+   * 〔重放语义〕已提交的同 operationId 由门的重放分支直接返回原结果——**先于**
+   * 本命令的任何业务判定，故「后来状态变化」（如任职被撤销、文档被改写）不会把
+   * 一次已发生的准入重判为拒绝。这正是幂等性的定义：结果由首次执行决定。
+   *
+   * ── 〔BE-4c 的**行为变化**：三处，全部方向 fail-closed，逐条登记〕──────────
+   *
+   * 删除门外 probe 后，「同 operationId 命中既有记录」的分支改由门的重放检测承担。
+   * 两处的判据**不完全等价**，故有三处可观察的行为变化（均已由 `work-entry.spec.ts`
+   * 的用例钉住，且都只改变**拒绝的诊断码**，不放行任何此前被拒的输入）：
+   *
+   *  1. **同 ID + 别的 kind（未决）**：旧 → `unknown`（门外 probe 对 pending 一律
+   *     返回 unknown，不比对 kind）；新 → `SOLOIPS_CORE_CONFLICT`（门的重放检测
+   *     先比对 kind 字符串）。更严格：ID 复用被立即点破，而不是让调用方以为
+   *     「重试同 ID 可能有结果」。
+   *  2. **同 ID + committed 但缺 `result`**：旧 → `SOLOIPS_CORE_CONFLICT`（门外
+   *     probe 分支里手工判 `result === undefined`）；新 → `SOLOIPS_CORE_RECORD_INVALID`
+   *     （`#committedResult` 的既有判据）。新码更精确：记录标 committed 却缺载荷
+   *     是**介质不自洽**，不是 ID 复用。
+   *  3. **同 ID + 未知 kind（含 committed）**：旧 → `unknown`（probe 对未知 kind
+   *     一律 unknown）；新 → `SOLOIPS_CORE_CONFLICT`（kind 比对先于「能否重放」的
+   *     判断）。新行为与既有用例一致（`team-data.spec.ts`：未知 kind 的同 ID 换
+   *     kind 复用被拒，「未知不等于可复用」）。
+   *
+   * 〔为什么这些变化可接受〕三者都是**拒绝**（不写任何业务状态），变化只在错误码
+   * 或返回判别值；且新行为都指向更可行动的诊断。**没有**任何此前成功的输入在新实现
+   * 下失败——`work-entry.spec.ts` 的既有 5 条用例逐条通过（断言未删改）。
+   */
   async requestWorkEntry(input: SoloipsWorkEntryInput): Promise<SoloipsWorkEntryOutcome> {
     this.#assertOpen();
     requireOperationIdShape(input.operationId);
@@ -1810,61 +1901,93 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "origin 必须是三条准入路径之一");
     }
     const operationId = asOperationId(input.operationId);
+    const employeeId = input.employeeId;
+    const taskId = input.taskId;
+    const origin = input.origin;
 
-    const probe = this.#gate.probe(operationId);
-    if (probe === "unknown") {
-      return { status: "unknown" };
-    }
-    if (probe === "replayed") {
-      const record = this.#gate.getOperation(operationId);
-      if (
-        record === undefined ||
-        record.kind !== "work-entry.request" ||
-        record.result === undefined
-      ) {
-        throw new SoloipsCoreError("SOLOIPS_CORE_CONFLICT", "operationId 与既有操作冲突，无法重放");
-      }
-      // 受控单次断言：record.result 由本命令的 admitted 结果持久而来。
-      return {
-        status: "admitted",
-        replayed: true,
-        result: record.result as SoloipsWorkEntryAdmitted,
-      };
-    }
+    // 判定结论在槽位内产出、由 mutate 消费：precondition 与 mutate 之间**没有**
+    // 其他本地提交可插入（同一串行槽位），故这个交接不会与别的事实错位。
+    let admitted: SoloipsWorkEntryAdmitted | undefined;
 
-    // 该员工存在未决操作时阻塞新准入（ORG-05「未知仍阻止该员工其他新 operationId」）。
-    if (
-      this.#gate.listPendingOperations().some((record) => record.employeeId === input.employeeId)
-    ) {
-      return { status: "refused", reason: "employee-operation-unknown" };
-    }
-
-    const status: SoloipsOnboardingStatus = evaluateOnboarding(input.employeeId, this.#readModel());
-    if (!status.ready) {
-      // 拒绝不写任何状态：缺项可修正后重试（重试重新判定，重试有界=每次调用单次
-      // 判定、无内部循环重试；SOLO-ACC-04「任务保持 pending」——core 不产生准入事实）。
-      return { status: "refused", reason: "onboarding-not-ready", gaps: status.gaps };
-    }
-
-    const admitted: SoloipsWorkEntryAdmitted = {
-      status: "admitted",
-      employeeId: input.employeeId,
-      appointmentId: status.appointmentId,
-      generation: status.generation,
-      taskId: input.taskId,
-      origin: input.origin,
-    };
-    const outcome = await this.#gate.commit(
+    const outcome = await this.#gate.commit<SoloipsWorkEntryAdmitted, SoloipsWorkEntryRefused>(
       {
         operationId,
         kind: "work-entry.request",
-        employeeId: input.employeeId,
-        intent: { employeeId: input.employeeId, taskId: input.taskId, origin: input.origin },
+        employeeId,
+        intent: { employeeId, taskId, origin },
+        precondition: (): SoloipsCommitPreconditionVerdict<SoloipsWorkEntryRefused> => {
+          // ① 未决阻塞（ORG-05「未知仍阻止该员工其他新 operationId」；R-5.4）。
+          //
+          // 〔本次 vs 他人：本判据只阻塞**他人**的未决操作〕
+          //  - 同 operationId 的未决记录**走不到这里**：门的重放检测在 `precondition`
+          //    之前读同一张表，命中 pending 即按 `unknown` 返回（「结果未知，不得换
+          //    ID 重做」——那是结果语义，不是「该员工还有未结清的事」）；
+          //  - 本次请求的意图此刻**尚未落盘**：`precondition` 在意图写入之前执行，
+          //    故扫描本来就扫不到自己。
+          //
+          // 〔`record.id !== operationId` 是**冗余守卫**，但**不是**可删的装饰〕
+          // 上述两条已足以排除「本次意图被自己判成阻塞」，故本守卫在当前顺序下
+          // **不可达**——变异自检的实测结论：单独删掉它（M5）全绿，即它当前不载荷。
+          // 保留它有三个理由，且第三条是实测的：
+          //  1. 让「阻塞集 = 他人的未决」这条语义在源码里逐字可读（判据即文档）；
+          //  2. 本仓已有同类先例（`#scanAppointments` 的「不可能：Map 的值由上面
+          //     push 建出」注释、`activateTeam` 的显式判空）——用显式守卫替代
+          //     「靠顺序保证」的隐式前提，是本仓既有的防御风格；
+          //  3. **它在顺序被改动时变成载荷性的**：把意图写入提到判定之前（M4 变异）
+          //     后，带守卫时成功类用例仍全绿；**再去掉守卫**（M4+M5 复合变异）则
+          //     10 条用例失败——因为本次刚落的 pending 意图把自己判成了阻塞。
+          //     即：本守卫是「顺序契约被破坏」时的**第二道闸**，其代价为一次字符串
+          //     比较，收益是那种改动不会静默地把所有准入变成拒绝。
+          if (
+            this.#gate
+              .listPendingOperations()
+              .some((record) => record.id !== operationId && record.employeeId === employeeId)
+          ) {
+            return {
+              ok: false,
+              refusal: { status: "refused", reason: "employee-operation-unknown" },
+            };
+          }
+          // ② 入职完备性判定（R-5.3）：现读当前权威事实，不接受任何调用前算好的结论。
+          const status: SoloipsOnboardingStatus = evaluateOnboarding(employeeId, this.#readModel());
+          if (!status.ready) {
+            // 拒绝不写任何状态：缺项可修正后重试（重试重新判定，重试有界=每次调用
+            // 单次判定、无内部循环重试；SOLO-ACC-04「任务保持 pending」——core 不
+            // 产生准入事实）。
+            return {
+              ok: false,
+              refusal: { status: "refused", reason: "onboarding-not-ready", gaps: status.gaps },
+            };
+          }
+          admitted = {
+            status: "admitted",
+            employeeId,
+            appointmentId: status.appointmentId,
+            generation: status.generation,
+            taskId,
+            origin,
+          };
+          return { ok: true };
+        },
       },
-      () => Promise.resolve(admitted),
+      async () => {
+        // 〔为什么显式判空而不是断言〕`admitted` 的类型仍含 `undefined`（编译器不跨
+        // 回调传递收窄，与 `activateTeam` 同款）。断言（`as`）会让「precondition 忘
+        // 了产出结论」变成静默的类型欺骗；显式判空让那种情形在这里以明确错误失败。
+        if (admitted === undefined) {
+          throw new SoloipsCoreError(
+            "SOLOIPS_CORE_RECORD_INVALID",
+            "work-entry 提交路径缺准入结论：precondition 应已产出（内部一致性错误）",
+          );
+        }
+        return admitted;
+      },
     );
     if (outcome.status === "unknown") {
       return { status: "unknown" };
+    }
+    if (outcome.status === "refused") {
+      return outcome;
     }
     return { status: "admitted", replayed: outcome.status === "replayed", result: outcome.result };
   }
