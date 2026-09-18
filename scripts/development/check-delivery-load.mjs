@@ -32,7 +32,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..");
@@ -93,6 +93,53 @@ const browserOnlyEntries = [
     reason: "浏览器闭包工厂产物（依赖 window.__ModuleLoader__），Node 加载面不适用",
   },
 ];
+
+/**
+ * Host 侧 Typert 生成物的**文件名形态**：本门据此从文件系统**枚举**待检产物，
+ * 而不是依赖一份手写清单。
+ *
+ * 〔为什么按文件名枚举而不是维护清单（BE-0b-ii 盲区 2）〕
+ * 前一版把产物写成显式清单 `TYPERT_HOST_ARTIFACTS`，于是「从清单删一条」就能
+ * 让该产物的 codec 形态**完全不受检查**（QA 实测：删掉 remote 条目后，单独
+ * 变异 remote 产物 → 门 exit 0）。清单是**手写事实**，会与磁盘现实漂移；
+ * 按文件名 glob 枚举则是**从现实读取**——新增 `lib/typert.*.js` 产物自动进入
+ * 检查面，无需任何人记得改清单。
+ *
+ * 〔约束〕命名形态来自上游生成器的硬约定（`WorkspaceTypertGenerator.validateExport`：
+ * 产物必须是 `lib/typert.<face>.{js,d.ts}`），不是本仓的任意选择。
+ * `typert.remote-client.js` 亦匹配 `typert.*.js`。
+ */
+const TYPERT_ARTIFACT_PATTERN = /^typert\..*\.js$/;
+
+/** 已知产物 → 描述符容器键与导出名；未知产物按 `face` 推导。 */
+const TYPERT_ARTIFACT_SHAPES = {
+  "typert.host.js": {
+    exportName: "TYPERT",
+    descriptorsKey: "invocations",
+    // Host face 才有 `schemas`（运行时 `validateTypertManifest` 要求它是数组）；
+    // Remote 贡献（TYPERT_REMOTE）只有 package + descriptors，无 schemas 字段。
+    expectsSchemas: true,
+  },
+  "typert.remote-client.js": {
+    exportName: "TYPERT_REMOTE",
+    descriptorsKey: "descriptors",
+    expectsSchemas: false,
+  },
+};
+
+/**
+ * 枚举 `packages/<name>/lib/` 下所有匹配 {@link TYPERT_ARTIFACT_PATTERN} 的产物。
+ *
+ * @param {string} packageDir - 包目录。
+ * @returns {string[]} 产物文件名（排序稳定，便于输出比对）。
+ */
+function typertArtifactFiles(packageDir) {
+  const libDir = join(packageDir, "lib");
+  if (!existsSync(libDir)) return [];
+  return readdirSync(libDir)
+    .filter((entry) => TYPERT_ARTIFACT_PATTERN.test(entry))
+    .sort();
+}
 
 function fail(message) {
   process.stderr.write(`${message}\n`);
@@ -224,7 +271,194 @@ function checkDeclaredDependencies() {
   return violations;
 }
 
-function main() {
+/**
+ * 断言 Host 侧 Typert 生成物的 codec 形态**匹配运行时的 `requireStrictCodec`**。
+ *
+ * ── 为什么需要它（BE-0b-ii 盲区 2）───────────────────────────────────────────
+ * QA 实测：把 `packages/web/lib/typert.host.js` 的 `create:` 改回 `schema:`
+ * （**正是 BE-0b-ii 修复的缺陷类**）→ `test` / `check:build-repro` /
+ * `check:delivery-load` **全绿**。两个既有门禁都抓不到，原因不同：
+ *   - `check:build-repro` 会**删除并重建**产物，因此它只会「治愈」这类变异
+ *     （重建后自然是正确形态），而不是**检出**它——该门的语义是「构建可复现」，
+ *     不是「磁盘上的产物正确」；
+ *   - `check:delivery-load` 的入口 import 只覆盖模块图可加载性，而 codec 形态
+ *     是**描述符内部字段**，import 成功不代表运行时校验通过；
+ *     其 `--activation-log` 层读的是**已录制的**宿主 stderr 文本，对磁盘上
+ *     此刻的坏产物不可见。
+ *   对照：改 `lib/client.js` 的同一位点会被 `client-mount.spec` 抓到——因为
+ *   该测试**真的执行**了 bundle。Host 半边此前没有等价的门。
+ *
+ * ── 为什么落在这里（而不是测试套件）─────────────────────────────────────────
+ * 本门在 CI 中跑在 **build 之后**（`.github/workflows/verify.yml`），是这类
+ * 「产物形态」缺陷唯一能被自动抓到的时机：`test` 跑在 build **之前**，产物
+ * 可能尚未生成（`packages/web/tests/typert-artifacts.spec.ts` 头注释已说明
+ * 该分工）。因此本检查放在 build 之后的门里。
+ *
+ * ── 判据形态：**真的 import 产物并执行运行时的同一判据**，而非文本 grep ──────
+ * 运行时要求（fork `packages/typert/loader/src/index.ts:272-278` 的
+ * `requireStrictCodec`）：
+ *     codec.mode === 'strict' && typeof codec.create === 'function'
+ * 本检查 import 产物后对**每个 invocation 的每个参数 codec 与 result codec**
+ * 施加同一判据。不用正则匹配源码文本：文本可以出现 `create:` 而值不是函数
+ * （如 `create: null`），只有执行判据才等价于运行时行为。
+ *
+ * ── 判据与运行时的对齐（BE-0b-ii 盲区 3：本门曾比运行时**宽**）───────────────
+ * 运行时 `validateTypertManifest`（fork `packages/typert/loader/src/index.ts`）对
+ * 每个 invocation 走 `requireArray(pkgName, invocation.parameters, ...)`
+ * （源码 `:210`）：**`parameters` 不是数组即抛错**。
+ * 前一版本门写 `descriptor?.parameters ?? []`，于是「描述符级 `parameters` 被改名
+ * 为 `args`」时遍历空集、静默通过——QA 实测该变异下本门 exit 0，而真实运行时
+ * **会抛错**。门比运行时宽 = 真实漏检，不是等价判据。现改为**非数组即 FAIL**，
+ * 与运行时同语义。
+ *
+ * 〔为何不直接调运行时校验〕`@deepseek-ai/dsh-typert-loader` **不在本仓依赖面内**
+ * （`packages/web/package.json` 未声明；本机从 web 锚点解析为 MODULE_NOT_FOUND），
+ * 且 CI 上 fork 不可达。因此不新增依赖、不 import 运行时，而是**手抄判据**并
+ * 用 `packages/web/tests/typert-artifacts.spec.ts` 的「运行时源码对齐断言」钉住
+ * 抄写来源（该断言读 fork 不可用时跳过，见该用例注释）。
+ *
+ * ── 可测试性（盲区 1/2 的修法基础）───────────────────────────────────────────
+ * 本函数**导出**（`export async function`），使测试能**执行**它而非读源码文本：
+ * 对构造的坏产物调用它、断言返回非空违规列表。这同时证明「检查真实存在」与
+ * 「检查真的能发现问题」，且不受注释/死代码影响。
+ *
+ * @param {object} [options] - 可选注入点（测试用）。
+ * @param {string} [options.packageDir] - 被检包目录；默认 `packages/web`。
+ * @returns {Promise<string[]>} 违规描述（空数组 = 通过）。
+ */
+export async function checkTypertCodecContract(options = {}) {
+  const violations = [];
+  /** 与运行时 `requireStrictCodec` 同形的单点判据。 */
+  const inspectCodec = (codec, subject) => {
+    if (typeof codec !== "object" || codec === null) {
+      violations.push(`${subject}: codec 不是对象`);
+      return;
+    }
+    if (codec.mode !== "strict") {
+      violations.push(`${subject}: codec.mode 必须是 "strict"，实际 ${JSON.stringify(codec.mode)}`);
+      return;
+    }
+    if (typeof codec.typeSymbol !== "string") {
+      violations.push(`${subject}: codec.typeSymbol 必须是字符串`);
+    }
+    if (typeof codec.create !== "function") {
+      // 这是 BE-0b-ii 的真实缺陷形态：生成器 alpha.1 产出 `schema`（直接持 zod
+      // 对象），运行时（fork HEAD）要求 `create()`（惰性 thunk）。
+      violations.push(
+        `${subject}: codec 缺少可调用的 create()（运行时 dsh-typert-loader 的 ` +
+          `requireStrictCodec 要求 typeof codec.create === 'function'）` +
+          `——产物可能由旧版生成器（alpha.1 产出 codec.schema）生成`,
+      );
+      return;
+    }
+    // 更深一层：create() 必须真的能物化出带 parse 的 schema。只查
+    // `typeof create === 'function'` 会放过「是函数但返回坏值」的形态。
+    try {
+      const materialized = codec.create();
+      if (typeof materialized?.parse !== "function") {
+        violations.push(`${subject}: create() 未返回带 parse 的 schema`);
+      }
+    } catch (error) {
+      violations.push(`${subject}: create() 调用抛错：${String(error)}`);
+    }
+  };
+
+  const packageDir = options.packageDir ?? join(repoRoot, "packages", "web");
+  const packageLabel =
+    packageDir === join(repoRoot, "packages", "web") ? "packages/web" : packageDir;
+  const files = typertArtifactFiles(packageDir);
+  if (files.length === 0) {
+    // 一个 Typert 产物都没有：本检查对该包什么都没验证——假覆盖，必须失败。
+    violations.push(`${packageLabel}/lib 下没有任何 typert.*.js 产物（本检查未覆盖任何 codec）`);
+    return violations;
+  }
+
+  for (const file of files) {
+    const shape = TYPERT_ARTIFACT_SHAPES[file];
+    if (shape === undefined) {
+      // 未知命名形态：不能静默跳过（那会让新增产物逃出检查面）。显式失败，
+      // 提示补 TYPERT_ARTIFACT_SHAPES —— 或确认该文件不该匹配本模式。
+      violations.push(
+        `${packageLabel}/lib/${file} 匹配 typert 产物模式但未登记形态（${Object.keys(TYPERT_ARTIFACT_SHAPES).join(" / ")}）——` +
+          `请补 TYPERT_ARTIFACT_SHAPES，否则该产物的 codec 形态不受检查`,
+      );
+      continue;
+    }
+    const path = join(packageDir, "lib", file);
+    let module;
+    try {
+      module = await import(pathToFileURL(path).href);
+    } catch (error) {
+      violations.push(`${packageLabel}/lib/${file} 无法 import：${String(error)}`);
+      continue;
+    }
+    const manifest = module[shape.exportName];
+    if (typeof manifest !== "object" || manifest === null) {
+      violations.push(`${packageLabel}/lib/${file}: 未导出 ${shape.exportName} 对象`);
+      continue;
+    }
+    // schemas 面：仅 Host face 有该字段。与运行时一致——必须是数组
+    // （`requireArray`），逐项须有 create()。
+    if (shape.expectsSchemas) {
+      if (!Array.isArray(manifest.schemas)) {
+        violations.push(
+          `${packageLabel}/lib/${file}: schemas 必须是数组（运行时 requireArray 同判）`,
+        );
+      } else {
+        for (const schema of manifest.schemas) {
+          if (typeof schema?.create !== "function") {
+            violations.push(
+              `${file}: TYPERT schema "${String(schema?.name)}" 缺少可调用的 create()`,
+            );
+          }
+        }
+      }
+    }
+    // 描述符面：与运行时一致——容器键必须是数组，且**每个描述符的 parameters
+    // 必须是数组**（`requireArray`，源码 :210）；缺一即 FAIL，不再 `?? []` 兜底。
+    const descriptors = manifest[shape.descriptorsKey];
+    if (!Array.isArray(descriptors)) {
+      violations.push(
+        `${file}: ${shape.descriptorsKey} 必须是数组（运行时 requireArray 同判），实际 ${typeof descriptors}`,
+      );
+      continue;
+    }
+    if (descriptors.length === 0) {
+      violations.push(
+        `${file}: ${shape.descriptorsKey} 为空——本检查未覆盖任何 codec（形态变更或产物损坏？）`,
+      );
+      continue;
+    }
+    for (const descriptor of descriptors) {
+      const id = String(descriptor?.id ?? "<无 id>");
+      if (typeof descriptor !== "object" || descriptor === null) {
+        violations.push(`${file}: 描述符不是对象`);
+        continue;
+      }
+      const parameters = descriptor.parameters;
+      if (!Array.isArray(parameters)) {
+        // 盲区 3 的正是此处：`?? []` 会让「parameters 被改名」静默通过。
+        // 运行时会抛 `typert-loader: ... parameters must be an array`。
+        violations.push(
+          `${file} "${id}": parameters 必须是数组（运行时 requireArray 同判；` +
+            `typert-loader: ... parameters must be an array），实际 ${typeof parameters}`,
+        );
+      } else if (parameters.length === 0) {
+        // 空参数集：对「无参方法」合法，但本包的 getStatus 有 1 个具名参数；
+        // 不做数量断言（会随业务面变化），只保证下方遍历有实际覆盖。
+        violations.push(`${file} "${id}": parameters 为空——本描述符的参数 codec 未被覆盖`);
+      } else {
+        parameters.forEach((parameter, index) => {
+          inspectCodec(parameter?.codec, `${file} "${id}" parameter[${index}] codec`);
+        });
+      }
+      inspectCodec(descriptor.result, `${file} "${id}" result codec`);
+    }
+  }
+  return violations;
+}
+
+async function main() {
   const options = parseArgs(process.argv.slice(2));
 
   // 构建产物必须存在：exports 指向 lib/。
@@ -252,6 +486,30 @@ function main() {
       process.stdout.write(
         "\n产物使用了未声明的依赖。隔离安装可能因 pnpm 提升/传递依赖而**碰巧通过**，\n" +
           "但 tarball 消费者不享有该保证（无关包升级即静默失效）。请补进该包 dependencies。\n",
+      );
+      process.exit(1);
+    }
+
+    // 0b) 产物形态：Host 侧 Typert codec 必须匹配运行时 `requireStrictCodec`。
+    //
+    // 放在 build 之后（本门在 CI 的位置即是）、隔离安装之前：它是**确定性**的
+    // （只读磁盘上的产物），且正是「产物由哪个生成器版本产出」这类缺陷唯一
+    // 可被自动检出的位置。`check:build-repro` 抓不到——它删产物再重建，
+    // 属治愈而非检出；`test` 抓不到——它跑在 build 之前。
+    // 详见 checkTypertCodecContract 的注释。
+    const codecViolations = await checkTypertCodecContract();
+    process.stdout.write("\nTypert codec 契约检查（产物形态 ⊆ 运行时 requireStrictCodec）：\n");
+    if (codecViolations.length === 0) {
+      process.stdout.write("  OK   全部 Host 侧 Typert 产物的 codec 均为可调用的 create() 形态\n");
+    } else {
+      for (const violation of codecViolations) process.stdout.write(`  FAIL ${violation}\n`);
+      process.stdout.write(
+        "\nHost 侧 Typert 产物的 codec 形态与运行时不符。运行时 " +
+          "`dsh-typert-loader` 的 `requireStrictCodec` 要求\n" +
+          "`codec.mode === 'strict'` 且 `typeof codec.create === 'function'`；不满足时该 entry 在宿主\n" +
+          "冷启动时**激活失败**，而宿主只发 warning、退出码仍为 0（故必须在此显式失败）。\n" +
+          "最常见原因：生成器版本与运行时契约不匹配——alpha.1 产出 `codec.schema`，alpha.2 产出\n" +
+          "`codec.create`。请核对根 package.json 的 @deepseek-ai/dsh-typert-generator 钉版。\n",
       );
       process.exit(1);
     }
@@ -402,4 +660,8 @@ function main() {
   }
 }
 
-main();
+// 〔约束〕仅在被直接执行时跑主流程。测试要 import 本模块以**执行**判据
+// （见 checkTypertCodecContract 的可测试性说明），若此处无条件 `await main()`
+// 会让 import 触发完整门禁（打包 + 隔离安装），既慢又污染测试语义。
+// `import.meta.main` 在 Node 22.15+/24 可用（本仓 engines: ^22.19 || >=24）。
+if (import.meta.main) await main();
