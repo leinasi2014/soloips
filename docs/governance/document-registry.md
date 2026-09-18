@@ -61,6 +61,7 @@
 | **多公司实现** | `docs/design/multi-company-implementation.md` | 〔已取代〕历史稿；实现以 data-contract.md 为准 | architecture-owner |
 | **弊端与优化** | `docs/design/tradeoffs-and-optimizations.md` | 每个设计的潜在弊端+优化方案对照表 | architecture-owner |
 | **运营服务接口（预留）** | `docs/design/operation-services.md` | 用户认证、订阅财务、模型计费接口契约（后期实现） | architecture-owner |
+| **国际化分层设计** | `docs/design/backend-i18n-design.md` | `SOLO-I18N-01`；跨层 i18n：七类文本分层归属、错误码→用户文案映射表落点、`gaps[].message` 处置、模型面文本语言策略、字典资产与门禁接线（契约侧落点在 data-contract §2.7） | architecture-owner |
 
 > **注**：`multi-company-organization.md` 和 `multi-company-implementation.md` 中的冲突内容已被 `data-contract.md` 取代，且两文顶部已标〔已取代〕；实现时应以 `data-contract.md` 为准。
 
