@@ -695,6 +695,13 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 
 **P-9 三步成团协议（BE-001，2026-09-18 冻结）**〔约束〕：
 
+> **⚠️ 口径关系（2026-09-18 OPS-00 标注，#35 §3.2 第 7 项）**：本协议**取代** P-1/P-2 对「成团写入形态」的描述——
+> P-1「同一操作内预先分配 ID」与 P-2「经**同一** `operationId` 关联写入」写于「成团可能是一次操作」的假设下；
+> P-9 冻结后成团是**三步、三个 kind、三个 `operationId`**，故 P-1/P-2 在本节**只保留其不变量**（ID 可预先分配以便引用；崩溃后按未决 `operationId` 核对并补齐、**不重新分配 ID**），
+> **不再**读作「Team 与组长任职必须同一 `operationId`」——那是被取代的旧口径。
+> P-3~P-8 继续有效（P-8 里「P-1/P-2 的『同一操作内写入』在崩溃后可能留下中间态」一句，按 P-9 的三步中间态理解）。
+> 历史表述保留于此，避免两种现行口径并存。
+
 **成团不是一次原子提交**（提交门不提供跨表事务），故把「建团队 + 建组长任职」冻结为**三步、三个 kind、三个 `operationId`**：
 
 | 步 | kind | 动作 | 写入后状态 | 校验 |
@@ -725,6 +732,31 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 **与 DSH Team roster 的分工**：本协议约束 **core 侧 `Team` 记录与任职**；DSH roster 的 `role: 'lead' | 'teammate'` 是**另一层**词表（见 §2.1 `SoloipsTeamRecord` 的两套词表不可混用）。M0.1 不接 DSH Team（§1.2 C-6），故本协议在 M0.1 内自成闭环。
 
 **〔待实现〕**：P-1…P-9 均为 M0.1 目标要求（`team` 表尚未建，见 §0）；BE-3 须逐条验收。
+
+**P-10 `reconcileTeams` 的调用范围裁定（2026-09-18，补 BE-3 遗留；#35 §3.2 第 8 项）**〔约束〕：
+
+**问题**：`reconcileTeams` 是 core 内**第二处不经提交门的写**（第一处是账户绑定元数据写入），因此必须查清它的实际可调用范围——若运行期可与正常写入并行，它就是一个绕过「意图先行 + 串行槽位」的口子。
+
+**已核事实**（读源确认 `store.ts:2040-2120`，2026-09-18）：
+
+| 事实 | 证据 |
+|---|---|
+| 它是**显式命令**，**不在** `open` 时自动执行 | 实现者在注释中写明三条理由；`openSoloipsCompanyStore` 路径不含它 |
+| 写入**前复核写权** | `#reconcileOne` 首行 `await this.#lease.assertHeld()`，失权即拒（`team-reconcile` 包装） |
+| **幂等收敛**：多次 `update` 之间崩溃留下的部分标记是收敛中间态 | 已标记保持 `inactive`，未标记下次扫描继续 |
+| **读面不依赖标记** | `#isUsableTeam` 始终按 P-4 实时核验——「标记没跑全」不会让失效团队被读作可用（P-8.2 由读面自身满足） |
+| 写入形态为 `update`（读-改-写），不是整条 `put` | 不会用陈旧快照覆盖其他字段 |
+
+**裁定**：
+
+| # | 规则 |
+|---|---|
+| **P-10.1** | **当前形态在 M0.1 可接受**——它不经门，但满足「写前复核写权 + 幂等收敛 + 读面不依赖标记」三条补偿；其写入是**收敛型**（只把失效团队标记为 `inactive`），不是业务语义写入 |
+| **P-10.2** | **不得暴露给任何非 Host-内部主体**：不进 §2.5 工具面、不进 §2.5.1 的 Remote 面（矩阵已列）；调用者是**运维/恢复流程**，不是 UI 或模型 |
+| **P-10.3** | **若后续裁定要求「core 内全部业务写都经提交门」**，则为它登记 `team.reconcile` kind 并改为经门提交（入参加 `operationId`）——这是一次机械改造，语义与读面纪律不变。**登记为 BE-4c/后续切片候选**，不在 M0.1 强制 |
+| **P-10.4** | **不得**把它的存在当成「读 API 可以悄悄变成写 API」的先例——它之所以可豁免门，是因为**收敛型 + 幂等 + 读面自足**三条同时成立；不满足这三条的写入一律走门 |
+
+**〔待实现〕**：P-10.3 的收紧路径未实施（当前形态即上文已核事实）。**在收紧前，不得声称「core 内全部写都经提交门」。**
 
 #### 2.1.2 MCP：期望与生效的分工（2026-09-18 裁定）〔约束〕
 
@@ -1776,3 +1808,4 @@ export function register(client: ClientModules): void {
 | 2026-09-18 | **OPS-00 同步（#35 §3.2）**：§0 对照 `contracts.ts`@8abf815 修正 5 处滞后行——①Department 补 `leaderAppointmentId?`；②Appointment 补 `scope?`/`role?` 与 `departmentId?` 可选、状态改「已实现」；③Operation 补 `schemaVersion?`（BE-3 交付）、删「未实现」；④能力面补 team 四命令 + `getTeam`/`listTeams` + `reconcileTeams`、缺口改为 5 个未落地读方法；⑤Team 实体行改「已实现」、TeamBinding 行拆分独立；§3.1 C-2 注从〔待实现〕改〔已实现〕（BE-1 交付：根级绑定元数据 + 占位拒绝 + 真实 accountId）；§2.4.1 SA-01 注指向 BE-4a 切片 | OPS-00 接管收口（#35 §3.2「§0 滞后」项）；逐项对照源码核验（附行号） |
 | 2026-09-18 | **新增 §2.5.1 调用暴露矩阵（OPS-00 / #35 §3.2「调用暴露边界」）**：以「谁是行为主体」分面消除「§2.5 登记 20 项模型工具名」与「§2.4.3 SA-04 系统助理不得代为执行组织动作」的冲突——①组织写动作（createCompany/createDepartment/createEmployee/createAppointment/revokeAppointment/saveEmployeeDocument/team 四命令）**走用户确认的可信 Remote，不注册为模型工具**；②`requestWorkEntry`/`initializeEmployeeMemory`/`verifyEmployeeCapability`/`recordAssemblyEvidence`/`reconcileTeams`/`close` 全面 fail-closed；③只读投影需浏览器可达路径（§2.5「—」含义收口为「不因本表暴露」，非永久不暴露）；④身份分层（accountId 部署注入、actor 半可信、模型面强制 agent 上下文、用户 Remote 不得误要求 agent 上下文）；⑤`system-assistant-backend-design` §4.1 BE-6 验收① 行为主体由「模型」更正为「用户」 | OPS-00 收口；BE-6a 派发前置裁定（C 亲手） |
 | 2026-09-18 | **新增 §2.4.4 部门部长唯一性与换任（OPS-00 / #35 §3.2「部长唯一性遗留」）**：补 BE-2 缺失的部长唯一性规则——**DL-1** 同一部门至多一条有效 `department_lead`（与总助理同构的拒绝、零业务写）；**DL-2** 换任必须显式（先 revoke 再 create，禁隐式后写者胜、禁自动继任）；**DL-3** `leaderAppointmentId` 是当前有效部长引用，撤销时联动清除（比 P-8 团队处置更强：撤销即清除）；**DL-4** 读面显式表达「无部长」（BE-4a `getDepartment` 已满足形状）。实现归属：DL-1/DL-2 → BE-4c 或其后 core 切片；DL-3 → 随 `revokeAppointment`；DL-4 → FE-2b 界面 | OPS-00 收口；BE-2 实现者的诚实披露触发（后写者胜为未裁定行为） |
+| 2026-09-18 | **新增 P-10 `reconcileTeams` 调用范围裁定 + P-9 口径关系标注（OPS-00 / #35 §3.2 第 7、8 项）**：①**P-10** 核清 `reconcileTeams` 为显式恢复命令、不经门但有「写前复核写权 + 幂等收敛 + 读面不依赖标记」三条补偿——裁定其当前形态在 M0.1 可接受，但**不得暴露**给非 Host-内部主体，收紧路径（登记 `team.reconcile` kind 改经门）登记为后续切片候选；②**P-9 标注**：明确 P-9 三步协议**取代** P-1/P-2 关于「同一 `operationId` 关联写入」的旧口径，P-1/P-2 只保留不变量（ID 预分配、崩溃后不重分配 ID），P-3~P-8 继续有效 | OPS-00 收口（#35 §3.2「P-1/P-2 与 P-9」「reconcileTeams 遗留」两项）；逐项对照 `store.ts:2040-2120` 核验 |
