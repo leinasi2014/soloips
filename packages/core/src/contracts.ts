@@ -602,6 +602,128 @@ export type SoloipsOnboardingStatus =
     };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// §4.5 读投影（BE-4a：只读查询的返回形状）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 员工任职归属的**解析结果**（`listEmployees` 的投影）。
+ *
+ * 〔为什么需要它〕`SoloipsEmployeeRecord` **没有** `companyId`/`departmentId`
+ * （`contracts.ts` §3 原文）——员工与公司/部门的关联**只经 appointment**表达
+ * （data-contract §2.3；`appointment.scope` 的三分支各自携带 `companyId`）。
+ * 因此「按公司/部门列员工」必须**两跳**：先解析任职作用域，再取 `employeeId`。
+ *
+ * 〔为什么必须由读面给出解析结果〕§2.3 的三分支解析要读 `department` 表
+ * （分支 2 的 `companyId` 由部门记录反解），调用方无法自己实现——若只返回
+ * `SoloipsEmployeeRecord`，调用方拿不到「这个员工属于哪家公司/部门」，
+ * 会退回「直接读 `appointment.scope`」这一 D-1 登记过的缺陷路径（缺 `scope`
+ * 的存量记录上会读到 `undefined`）。故归属在此**显式**给出。
+ *
+ * 〔约束〕`companyId` 恒为**解析后**的公司（不是「记录上写了什么」）：
+ * 与 `getAppointment` 的 `scope` 同一口径，且**不写回**介质（§2.3）。
+ */
+export type SoloipsEmployeeAffiliation = {
+  readonly employeeId: SoloipsEmployeeId;
+  /** 员工记录本体（`employee` 表的读面形状）。 */
+  readonly employee: SoloipsEmployeeRecord;
+  /** 解析出的公司归属（§2.3 三分支解析结果，恒存在）。 */
+  readonly companyId: SoloipsCompanyId;
+  /**
+   * 该员工在本次查询范围内**解析出**的全部任职 id（按介质遍历顺序、去重）。
+   *
+   * 〔约束〕同一员工多条任职命中时**只出现一次**（去重键 = `employeeId`）：
+   * 「按公司列员工」是**员工集合**语义，不是任职集合语义——同一人挂两条同公司
+   * 任职（如部门级 + 团队级）不应在结果里出现两次。需要逐条任职的调用方用
+   * `listAppointments`（它**不去重**，一条任职一项）。
+   */
+  readonly appointmentIds: readonly SoloipsAppointmentId[];
+};
+
+/**
+ * 任职读投影（`listAppointments` 的返回项）。
+ *
+ * 〔与 `getAppointment` 的同一口径〕`scope` **恒为解析后**的作用域：存量记录
+ * （无 `scope`、只有 `departmentId`）按 §2.3 分支 2 补出
+ * `{kind:'department', companyId: <由部门反解>, departmentId}`；不可判定（分支 3）
+ * 抛 `SOLOIPS_CORE_RECORD_INVALID`。**不写回介质**。
+ *
+ * 〔与记录本体的区别〕本投影**不**省略 `departmentId`/`role` 等可选字段的
+ * 原始形态（直接展开记录），只在 `scope` 上做解析——使「记录上的字段」与
+ * 「解析出的归属」同时可见，便于诊断存量形状。
+ */
+export type SoloipsAppointmentView = SoloipsAppointmentRecord & {
+  /** 恒为解析后的作用域（见上；分支 3 抛 `SOLOIPS_CORE_RECORD_INVALID`）。 */
+  readonly scope: SoloipsAppointmentScope;
+};
+
+/**
+ * 总助理读面状态（SA-01.1 的**显式状态**形状，data-contract §2.4.1）。
+ *
+ * 〔契约要求〕读面**必须**能区分「该公司**没有**有效 `general_assistant` 任职」
+ * 与「查询未覆盖该公司 / 查询失败」——**不得**用「字段缺省」「空数组」
+ * 「不返回该节点」等方式让调用方无法区分（SA-01.1 原文）。
+ *
+ * 本形状用**三个判别分支**承载三种事实，缺一不可：
+ *  - `uncovered`：公司记录**不存在**（该公司不在本读面覆盖范围内）；
+ *  - `vacant`：公司存在，但**没有**有效的公司级 `general_assistant` 任职
+ *    （即 §2.4.1 的「待招募」合法状态；SA-01.3 据此显示引导，**不是**空白、
+ *    **不是**错误态）；
+ *  - `present`：存在**恰好一条**有效任职（唯一性由 §2.4.2 的写面保证；读面
+ *    若发现多于一条，以 `vacant` 之外的 `inconsistent` 如实呈现，见下）。
+ *
+ * 〔为什么「查询失败」不在此形状内〕失败以**抛出的错误**呈现（如
+ * `SOLOIPS_CORE_STORE_CLOSED`、`SOLOIPS_CORE_RECORD_INVALID`、底层介质错误），
+ * 不以「某个分支」呈现——把失败编码成返回值会让调用方把「读不到」误读成
+ * 「没有」。这与「`vacant` 是**成功**读取的结论」严格区分：本投影的每个分支
+ * 都表示**查询已成功执行**。
+ */
+export type SoloipsAdministratorProjection =
+  | {
+      readonly status: "uncovered";
+      readonly companyId: SoloipsCompanyId;
+      /** 人类可读说明（`status` 是契约、本字段是诊断，DEV-06）。 */
+      readonly message: string;
+    }
+  | {
+      readonly status: "vacant";
+      readonly companyId: SoloipsCompanyId;
+      /**
+       * 恒为空数组：显式给出（而不是省略字段）使「没有」这件事在结构上可判定
+       * ——调用方不必区分「字段缺省」与「空集合」。
+       */
+      readonly administrators: readonly SoloipsAdministratorView[];
+      readonly message: string;
+    }
+  | {
+      readonly status: "present";
+      readonly companyId: SoloipsCompanyId;
+      readonly administrators: readonly SoloipsAdministratorView[];
+    }
+  | {
+      /**
+       * 数据不一致：同一公司出现**多于一条**有效公司级 `general_assistant`。
+       *
+       * 〔为什么不折成 `present` 取首条〕§2.4.2 要求「同一时刻至多一条」；
+       * 取首条会**静默掩盖**写面/迁移缺陷，而按 ORG-05 的哲学（读不懂不等于
+       * 可忽略）这种不一致必须可见。故独立分支 + 全量清单，由调用方处置。
+       */
+      readonly status: "inconsistent";
+      readonly companyId: SoloipsCompanyId;
+      readonly administrators: readonly SoloipsAdministratorView[];
+      readonly message: string;
+    };
+
+/** 总助理条目（`SoloipsAdministratorProjection` 的元素；只含已核验的事实）。 */
+export type SoloipsAdministratorView = {
+  readonly appointmentId: SoloipsAppointmentId;
+  readonly employeeId: SoloipsEmployeeId;
+  /** 恒为 `active`（投影只收录有效任职；撤销的任职不入本清单）。 */
+  readonly status: "active";
+  /** 恒为解析后的**公司级**作用域（SA-01.1 的判据口径，见 store 的实现注释）。 */
+  readonly scope: SoloipsAppointmentScope;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // §5 命令输入与结果
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1068,6 +1190,19 @@ export interface SoloipsCoreService {
   getCompanyTree(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[];
   listDepartments(companyId: SoloipsCompanyId): readonly SoloipsDepartmentRecord[];
   /**
+   * 读取部门（`get*` 惯例：未找到返回 `undefined`，**不抛**）。
+   *
+   * 〔与 `#readDepartment` 的分工〕写路径的 `#readDepartment` 在缺失时抛
+   * `SOLOIPS_CORE_PRECONDITION`（「引用的既有事实不存在」）——那是**命令**语义。
+   * 本方法是**查询**：调用方（如组织树渲染）按 id 取一个部门，缺失是可预期结果，
+   * 故遵循 `getCompany`/`getEmployee` 等同族方法的口径返回 `undefined`。
+   * **不得**复用写路径辅助（那会让「部门不存在」在查询里表现为异常）。
+   *
+   * 〔形状校验〕非法 id 形状抛 `SOLOIPS_CORE_VALIDATION`（与全部 `get*` 同口径，
+   * 依据 `src/ids.ts` 的「边界校验」段：调用方传来的 id 不受类型系统保护）。
+   */
+  getDepartment(id: SoloipsDepartmentId): SoloipsDepartmentRecord | undefined;
+  /**
    * 读取团队（读面，**不产生 kind**；BE-3 验收⑤）。
    *
    * 〔P-8.2/P-9.1 读面纪律〕返回**任何状态**的团队（含 `pending`/`inactive`/
@@ -1082,10 +1217,24 @@ export interface SoloipsCoreService {
    * 〔P-3/P-8.2/P-9.1〕默认只返回**可用**团队（`status='active'` 且组长引用
    * 满足 P-4）。`includeUnusable: true` 时返回全部（含 `pending`/`inactive`/
    * `archived`），各项仍带 `usable` 与 `leadReference` 显式状态。
+   *
+   * 〔`departmentId` 过滤（BE-4a 扩键）〕`listTeams(departmentId)` 这一调用形态
+   * （组织树「部门 → 团队」、`organization-full-backend-design` 的编组场景）需要
+   * 按部门收窄。**扩键而非新增方法**：同一份可用性判据与投影（`usable`/
+   * `leadReference`）不应存在第二条实现路径——多一个查询方法就多一处可能与
+   * P-4 判据漂移的读面。缺省（不给该键）＝不过滤，**既有语义不变**。
+   *
+   * 〔两个过滤条件的合并语义〕`departmentId` 与 `companyId` 是**与**关系：
+   * 团队必须同时属于该部门与该部门所属公司。跨公司部门 id 不产生结果
+   * （不报错）——查询语义是「在这个范围内找」，空结果是合法结论。
    */
   listTeams(
     companyId: SoloipsCompanyId,
-    options?: { readonly includeUnusable?: boolean },
+    options?: {
+      readonly includeUnusable?: boolean;
+      /** 只返回归属该部门的团队；缺省即不过滤（`team.departmentId` 为可选字段）。 */
+      readonly departmentId?: SoloipsDepartmentId;
+    },
   ): readonly SoloipsTeamView[];
   getEmployee(id: SoloipsEmployeeId): SoloipsEmployeeRecord | undefined;
   getAppointment(id: SoloipsAppointmentId): SoloipsAppointmentRecord | undefined;
@@ -1093,6 +1242,104 @@ export interface SoloipsCoreService {
   getOperation(id: SoloipsOperationId): SoloipsOperationRecord | undefined;
   /** 未决操作清单：接管方重开后核对（SOLO-FENCE-01 §3「核对未决 operationId」）。 */
   listPendingOperations(): readonly SoloipsOperationRecord[];
+
+  // ── 读投影扩容（BE-4a；全部**只读**：不产生 kind、不写状态、无恢复副作用） ──
+
+  /**
+   * 列员工（按公司**或**按部门）——两跳查询（`appointment` → `employee`）。
+   *
+   * 〔为什么必须两跳〕员工记录**没有**公司/部门字段（见
+   * `SoloipsEmployeeAffiliation` 的注释），归属只经任职作用域表达。
+   *
+   * 〔过滤参数二选一，恰好一个〕：
+   *  - `{ companyId }`：该公司的员工（任职作用域解析后 `companyId` 相符，
+   *    **任意** kind——公司级/部门级/团队级皆算「在该公司」）；
+   *  - `{ departmentId }`：该部门的员工（仅 `scope.kind='department'` 且
+   *    `departmentId` 相符）。**公司级/团队级任职不属于任何部门**，故不入选
+   *    ——部门视图不得把不挂该部门的人算进来（团队归属由 `listTeams` 表达）。
+   *
+   * 〔去重口径〕**去重键 = `employeeId`**：同一员工多条任职命中（如同一公司下的
+   * 部门级 + 团队级任职）只出现一次；命中的任职 id 全部收在
+   * `affiliation.appointmentIds`（见其注释）。结果**不去重之外**的任何加工：
+   * 不做排序（按介质遍历顺序，与 `listSubsidiaries`/`listDepartments` 一致）、
+   * 不做角色筛选（要按角色/状态筛选用 `listAppointments`）。
+   *
+   * 〔status 过滤口径〕**只计 `status='active'` 的任职**：撤销的任职不构成当前
+   * 归属（否则「撤职后员工仍在部门名单里」会成为隐藏语义）。这与
+   * `#assertNoActiveGeneralAssistant` 的「撤销不占名额」同一方向。
+   *
+   * 〔分支 3 的处置〕任职缺 `scope` 且解析不出公司（§2.3 分支 3）→
+   * `SOLOIPS_CORE_RECORD_INVALID` **冒泡**，不跳过。理由与总助理唯一性判定
+   * 同向（fail-closed）：一条不可判定的任职**可能**属于本次查询的公司/部门，
+   * 跳过它会让结果**静默漏掉**该员工——「能定则定、不能定即报错」。
+   * 〔边界〕该错误使整个查询失败（不是返回部分结果）：调用方须先处置损坏记录，
+   * 这与 `getAppointment` 在同一形状上的行为一致。
+   */
+  listEmployees(
+    filter:
+      | { readonly companyId: SoloipsCompanyId; readonly departmentId?: undefined }
+      | { readonly departmentId: SoloipsDepartmentId; readonly companyId?: undefined },
+  ): readonly SoloipsEmployeeAffiliation[];
+
+  /**
+   * 列任职（按公司 / 部门 / 员工过滤；**不去重**——一条任职一项）。
+   *
+   * 〔与 `listEmployees` 的分工〕本方法返回**任职集合**（同一员工可多条），
+   * `listEmployees` 返回**员工集合**（去重）。两者的过滤语义一致（见下）。
+   *
+   * 〔过滤条件〕三个键可**任意组合**（与关系），全缺省即返回全部任职：
+   *  - `companyId`：作用域解析后 `companyId` 相符（任意 kind）；
+   *  - `departmentId`：仅部门级任职且 `departmentId` 相符；
+   *  - `employeeId`：该员工的任职（`employeeId` 是记录上的**直接**字段，无需解析）；
+   *  - `includeRevoked`：缺省 `false` —— **只返回 `active`**（与 `listEmployees`
+   *    同一口径）。`true` 时返回全部（含 `revoked`），供历史/审计视图使用。
+   *
+   * 〔返回形状〕`SoloipsAppointmentView`：`scope` 恒为解析后（分支 3 抛
+   * `SOLOIPS_CORE_RECORD_INVALID`，**不跳过**——见 `listEmployees` 的同款说明）。
+   */
+  listAppointments(filter?: {
+    readonly companyId?: SoloipsCompanyId;
+    readonly departmentId?: SoloipsDepartmentId;
+    readonly employeeId?: SoloipsEmployeeId;
+    readonly includeRevoked?: boolean;
+  }): readonly SoloipsAppointmentView[];
+
+  /**
+   * 列某员工的全部文档版本（历史，含非当前版本）。
+   *
+   * 〔与 `employee.currentDocuments` 的分工〕当前引用只指向**每类必需文档的一个**
+   * 版本（`SoloipsEmployeeRecord.currentDocuments`）；本方法是**版本历史**
+   * （`saveEmployeeDocument` 的 CAS 冲突路径会把未提升的版本也持久保留——
+   * 02-company-contract §11.1），故按 `ownerId` 全量返回，**不按文档类型收窄**。
+   *
+   * 〔不排序、不去重〕按介质遍历顺序返回；版本之间经 `previousVersionId` 形成
+   * 链，顺序由调用方按需重建（读面不替调用方排序，与既有列表方法一致）。
+   *
+   * 〔非法 id 形状〕抛 `SOLOIPS_CORE_VALIDATION`；员工**不存在**返回空数组
+   * （与「查询未命中」的列表语义一致——列表方法不因过滤键指向不存在的实体而报错，
+   * 需要存在性判定用 `getEmployee`）。
+   */
+  listDocumentVersions(employeeId: SoloipsEmployeeId): readonly SoloipsDocumentVersionRecord[];
+
+  /**
+   * 总助理读面（SA-01.1 的**显式状态**实现；data-contract §2.4.1）。
+   *
+   * 〔必须区分三件事〕「没有有效总助理」（`vacant`，§2.4.1 的合法「待招募」态）、
+   * 「公司不在覆盖范围内」（`uncovered`）、「查询失败」（**抛出**）。三者不得
+   * 互相冒充——空数组不得用来表达前两者中的任何一个。
+   *
+   * 〔判据（与 `#assertNoActiveGeneralAssistant` 同一口径）〕有效 =
+   * `status='active'` 且 `role='general_assistant'` 且作用域解析后为
+   * `{kind:'company', companyId: <目标公司>}`。**作用域必须先经 §2.3 三分支
+   * 解析再比较**：存量记录（无 `scope`、只有 `departmentId`）解析为**部门级**，
+   * 因此不会被误算作公司总助理；反过来，一条 `role='general_assistant'` 但
+   * 解析不出归属的记录（分支 3）**不可判定**——按 fail-closed 与
+   * `#assertNoActiveGeneralAssistant` 同向处置：**抛** `SOLOIPS_CORE_RECORD_INVALID`，
+   * 而不是「它不是总助理」这种猜测（猜测会让「待招募」在数据损坏时被误报）。
+   *
+   * 〔读面纪律〕不产生 kind、不写状态、不跑 reconcile。
+   */
+  listAdministrators(companyId: SoloipsCompanyId): SoloipsAdministratorProjection;
 
   /** 逆序释放：domain → stack → lease（SEAM-14）。幂等；关闭后全部写命令拒绝。 */
   close(): Promise<void>;
