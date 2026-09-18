@@ -195,29 +195,41 @@ describe("T01 assembly contract: patch shape (0.1.6 parser requirements)", () =>
   });
 });
 
-describe("T01 assembly contract: web defers dsh.client to T07", () => {
-  it("ships no dsh.client while the client entry does not exist", () => {
-    // 0.1.6 的实现：未声明 dsh.client 的包被 client-modules 安全跳过；
-    // 但**声明了却没有 exports["./client"] 会抛错**
-    // （"declares dsh.client but exports no ./client bundle"）。
-    // 客户端实现属 T07，因此现在不得声明，否则指向不存在的文件。
+describe("T01→T07 assembly contract: web declares dsh.client with a real client bundle", () => {
+  // 〔翻转记录，2026-09-18，指挥〕本组原为「T07 之前不得声明 dsh.client」的**状态型
+  // 断言**（断言「当前不存在」）。BE-0b-i（T07）交付浏览器半边后该前提被推翻，故按
+  // 「正当同步翻转」改为断言**新事实**——保留为回归保护，**不是**删除。
+  //
+  // 为什么留在 bundle 测试：本组守的是**装配契约**（声明与产物必须一致），不是 web
+  // 包的实现细节。该风险翻转后依然存在：声明了 dsh.client 却缺 ./client 产物会让宿主
+  // 启动时抛 "declares dsh.client but exports no './client' bundle"（0.1.6 实测）；
+  // 误删产物或改错 exports 同样会踩。
+  it("declares dsh.client only together with an existing client entry and ./client export", () => {
     const manifest = readManifest("web");
-    expect(existsSync(join(packagesRoot, "web", "src", "client")), "客户端入口尚不存在").toBe(
-      false,
-    );
-    expect(manifest.dsh?.client, "T07 之前不得声明 dsh.client").toBeUndefined();
+    expect(existsSync(join(packagesRoot, "web", "src", "client")), "客户端入口必须存在").toBe(true);
+    // dsh.client 与 ./client 必须**成对**成立：只有一方即宿主启动失败（见上）。
+    const clientDeclaration = manifest.dsh?.client;
+    const clientExport = manifest.exports?.["./client"];
     expect(
-      manifest.exports?.["./client"],
-      "T07 之前不得暴露 ./client（会指向不存在的文件）",
-    ).toBeUndefined();
+      clientDeclaration === undefined,
+      "dsh.client 与 exports[./client] 必须成对出现（只有声明没有产物会抛错）",
+    ).toBe(clientExport === undefined);
+    expect(clientDeclaration, "T07 之后必须声明 dsh.client").toBeDefined();
+    expect(clientExport, "T07 之后必须暴露 ./client").toBeDefined();
+    // 产物路径必须被 files 覆盖，否则发布后 ./client 指向不存在的文件。
+    const files: string[] = manifest.files ?? [];
+    expect(
+      files.some((entry) => entry.startsWith("lib/client")),
+      "files 必须覆盖 client 产物",
+    ).toBe(true);
   });
 
-  it("keeps registerClient disabled until the client side exists", () => {
+  it("keeps registerClient enabled now that the client side exists", () => {
     // config.registerClient 控制 apply() 的运行行为，与 manifest 的安全跳过是两回事。
     const parsed = loadPatch(join(packagesRoot, "web", "cordis.patch.yml")) as {
       insert?: { config?: { registerClient?: boolean } }[];
     }[];
     const config = parsed.find((entry) => entry.insert)?.insert?.[0]?.config;
-    expect(config?.registerClient, "T07 之前必须显式 false").toBe(false);
+    expect(config?.registerClient, "T07 之后必须显式 true").toBe(true);
   });
 });

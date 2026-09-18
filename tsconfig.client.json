@@ -1,0 +1,59 @@
+{
+  // Typert 生成用的 **Client 分析面聚合配置**（BE-0b-i）。
+  //
+  // 与 `tsconfig.host.json` 对称：生成器的 workspace 模式在**工作区根**读
+  // `tsconfig.client.json`（`dsh-typert-generator/lib/index.js:120` 的
+  // `clientConfig ?? "tsconfig.client.json"`），按其中的 **projectReferences**
+  // 登记 client face 的包，并用**本文件的 compilerOptions** 为 client face 建程序。
+  //
+  // ── 为什么需要它 ─────────────────────────────────────────────────────────
+  //  `soloips-web` 自 BE-0b-i 起是**双半边包**：package.json 同时有 `dsh.client`
+  //  与 `exports["./client"]`，即生成器 `isDualFacePackage` 判定的双面形态
+  //  （`lib/index.js:2019-2022`）。本文件让 client face 有一条**显式的登记路径**，
+  //  而不是只能依赖 host 聚合的双面展开副作用。
+  //
+  // ── 引用指向包的 **client 工程**，不是包根 tsconfig（实测约束）─────────────
+  //  host 聚合引用包根 `packages/web/tsconfig.json`，而该文件为让 Host 工程不产
+  //  自引用 JS 中间产物而 `exclude: ["src/client/**"]`（理由见该文件注释）。生成器的
+  //  双面展开对 dual-face 包会用**包根 tsconfig 的 fileNames** 建 client 程序，
+  //  于是 `exports["./client"]` 反推出的 `src/client/index.ts` 不在程序里，报
+  //  `typert(client): soloips-web export ./client resolves to missing source …`
+  //  （实测，`faces: ["host", "client"]`）。
+  //  因此本文件**必须**指向 `packages/web`（只含
+  //  `src/client/**` 的独立工程）。改动引用前先读
+  //  `packages/web/tests/client-mount.spec.ts` 的 face-posture 用例。
+  //
+  // ── 与 host 聚合的关键差异（有意为之）────────────────────────────────────
+  //  - **不**声明 `@deepseek-ai/dsh-typert-protocol` 的 `paths` shim：该 shim 的
+  //    唯一用途是让生成器在 **host** face 识别 `@Remote` 装饰器（见
+  //    `typert-analysis-protocol.d.ts` 的实测矩阵）。client face 不产出
+  //    invocation（`FaceAnalyzer.analyzePackage` 的 `invocations` 仅 host face
+  //    收集），因此无需重定向。
+  //  - `lib` 含 DOM、`types` 清空 node：浏览器半边的环境与 Node 半边不同。
+  //  - 当前根 `tsdown.config.ts` 的 Typert 插件只跑 `faces: ["host"]`：client face
+  //    目前**没有服务面**（浏览器半边只挂载 Remote 贡献，不发布 cordis 服务），
+  //    `generate(["client"])` 因此不产出任何 artifact。该 face 一旦有服务面，
+  //    生成器会在 `validateExport` 里**报错要求** `exports["./client/typert"]`
+  //    与 `lib/typert.client.*`——这是有意的 fail-closed，不预先声明空产物。
+  //  - 〔实测的未解冲突〕请求 client face **当前会失败**：
+  //    `typert(client): soloips-web export ./client resolves to missing source
+  //     …/src/client/index.ts`。原因是生成器对 dual-face 包做**双面展开**时用的是
+  //    **包根 `tsconfig.json` 的 fileNames**（`lib/index.js:292-300`），而该文件为让
+  //    Host 工程不产自引用 JS 中间产物而 `exclude` 了 `src/client/**`。
+  //    实测：把本文件的引用目标从 `packages/web/tsconfig.client.json` 改成
+  //    `packages/web`，报错**不变**——胜出的登记来自双面展开，不是本文件的引用。
+  //    故本文件当前是「为将来就位的登记入口 + 环境声明」，**不是**让 client face 可
+  //    生成的开关；修复方向在包内配置形态（把 Host 与 client 拆成各自 fileNames 正确
+  //    的 tsc 工程），不在本文件。改动前先读
+  //    `packages/web/tests/client-mount.spec.ts` 的 face-posture 用例。
+  //
+  // 〔约束〕本文件只被生成器消费，不参与 `tsc -b`（根 `tsconfig.json` 是纯
+  // references 壳，其 `packages/web` 引用会经包内 references 链到 client 工程）。
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "files": [],
+  "references": [{ "path": "packages/web/tsconfig.client.json" }]
+}

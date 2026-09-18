@@ -9,5 +9,16 @@
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"]
+  // 〔BE-0b-i〕本工程只编译 **Host 半边**；浏览器半边由 `tsconfig.client.json`
+  // 单独编译（declaration-only），两者文件集**不相交**。理由：
+  //  1. 浏览器半边以运行时值导入 `soloips-web/remote`（本包自我引用）。若 Host 工程
+  //     也编译它，会写出 `lib/types/client/index.js`——该中间产物带裸说明符
+  //     `soloips-web/remote`，被 `check-delivery-load` 的
+  //     `checkDeclaredDependencies`（扫 `lib/**/*.js`）读作「未声明的依赖」而失败。
+  //     它是构建输入、不是交付面（`exports["./client"].default` 指向 tsdown 的
+  //     `lib/client.js`），因此不该存在。
+  //  2. 两个工程若都编译同一文件，会争写 `lib/types/client/index.d.ts`。
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
+  "references": [{ "path": "./tsconfig.client.json" }]
 }
