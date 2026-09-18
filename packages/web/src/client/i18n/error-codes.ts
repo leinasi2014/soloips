@@ -55,9 +55,14 @@ export const SOLOIPS_CORE_ERROR_CODE_KEYS = {
   SOLOIPS_CORE_ADAPTER_INVALID: "soloips.error.adapterInvalid",
   /** 只读态提示。 */
   SOLOIPS_CORE_STORE_CLOSED: "soloips.error.storeClosed",
-  /** 写权失守——文案须含「**不自动重试**」（项目红线第 1 条）。 */
+  /**
+   * 写权失守——文案须含「**不自动重试**」（项目红线第 1 条），且**不得**承诺
+   * 零副作用（F-02：本码可能在意图已落盘、乃至业务已部分写入之后才发生；
+   * 依据 `packages/core/src/commit-gate.ts:336-347` 的发布顺序与 `:371-405`
+   * 的逐点复核）。断言在 `packages/web/tests/error-copy-claims.spec.ts`。
+   */
   SOLOIPS_CORE_LEASE_NOT_HELD: "soloips.error.leaseLost",
-  /** 写权状态未知。 */
+  /** 写权状态未知——与上一条同源，同样**不得**承诺零副作用（F-02）。 */
   SOLOIPS_CORE_LEASE_CHECK_FAILED: "soloips.error.leaseUnknown",
   /** 输入校验失败。 */
   SOLOIPS_CORE_VALIDATION: "soloips.error.validation",
