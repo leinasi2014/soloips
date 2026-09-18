@@ -7,7 +7,11 @@
  * （durable 边界只回写声明字段）。对象装配处的单次受控断言有注释说明。
  */
 
-import type { SoloipsJsonValue, SoloipsOperationIntent } from "./contracts.js";
+import type {
+  SoloipsJsonValue,
+  SoloipsOperationIntent,
+  SoloipsUnknownOperationKind,
+} from "./contracts.js";
 import { SoloipsCoreError } from "./errors.js";
 
 export interface SoloipsSchemaIssue {
@@ -141,6 +145,47 @@ export function literalUnionSchema<const V extends readonly string[]>(
       return typeof value === "string" && allowed.has(value)
         ? ok(value as V[number]) // 受控断言：allowed 由 values 生成，has 已证明成员资格
         : fail([{ path: "", message: `应为以下值之一：${[...allowed].join(" | ")}` }]);
+    },
+    parse(value) {
+      return parsed(this.safeParse(value));
+    },
+  };
+}
+
+/**
+ * **开放**词表：已知值原样通过，**其余非空白字符串同样通过**（收窄为
+ * `SoloipsUnknownOperationKind`）。
+ *
+ * 〔用途〕`operation.kind` 的持久校验：台账里可能存有**未来版本**写入的、本版本
+ * 不认识的 kind（数据根被新版本写过、又用旧版本打开）。用封闭的
+ * `literalUnionSchema` 校验会让这类记录判 `RECORD_INVALID` → 整次 open 拒绝
+ * → **恢复锚点丢失**（而台账正是崩溃恢复的核对锚点）。「读不懂」不等于
+ * 「可忽略」，故读面必须放行（详见 `contracts.ts` 的
+ * `SoloipsUnknownOperationKind` 与 `SoloipsOperationRecord.schemaVersion`）。
+ *
+ * 〔与 `literalUnionSchema` 的分工〕**写路径仍用封闭词表**：`SoloipsCommitRequest`
+ * 的 `kind` 是 `SoloipsOperationKind`，拼错即编译失败。本组合子**只用于持久
+ * 读取**——它放宽的是「别人写的东西能不能读进来」，不是「我能写什么」。
+ *
+ * 〔为什么收在 schema.ts〕DEV-05：品牌断言只出现在受控收窄点。本函数是该品牌的
+ * **唯一**产出点（`ids.ts` 的工厂负责 id 品牌，这里负责 kind 品牌）。
+ */
+export function openLiteralUnionSchema<const V extends readonly string[]>(
+  values: V,
+): SoloipsSchema<V[number] | SoloipsUnknownOperationKind> {
+  const allowed = new Set<string>(values);
+  return {
+    safeParse(value) {
+      if (typeof value !== "string" || value.trim().length === 0) {
+        return fail([{ path: "", message: "应为非空白字符串（操作种类）" }]);
+      }
+      if (allowed.has(value)) {
+        return ok(value as V[number]); // 受控断言：allowed 由 values 生成，has 已证明成员资格
+      }
+      // 受控单次断言：上面的分支已证明它是非空白字符串，且不在已知词表内——
+      // 这正是「未知 kind」的定义。品牌只表示「非本版本词表项」，不表示任何
+      // 额外的形状保证（故不做进一步校验，也不判损坏）。
+      return ok(value as SoloipsUnknownOperationKind);
     },
     parse(value) {
       return parsed(this.safeParse(value));

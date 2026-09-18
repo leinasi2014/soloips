@@ -36,6 +36,22 @@ export const SOLOIPS_COMPANY_DOMAIN_NAME = "soloips_company";
 export const SOLOIPS_COMPANY_DOMAIN_VERSION = 1;
 
 /**
+ * operation 台账记录的 **kind 词表版本**（BE-002 / BE-3 实现）。
+ *
+ * 取值口径（本切片裁定，data-contract §2.1「取值口径与版本戳机制留 BE-2/BE-3
+ * 实现裁定」）：**单调递增的正整数，只随 `SoloipsOperationKind` 的扩展递增**。
+ * 当前为 `1`（词表含 10 项存量 + 4 项 BE-3 新增 `team.*`）。
+ *
+ * 为什么不用「每次 schema 改动都递增」：本字段的语义是「用哪个版本的 kind
+ * 词表解释这条记录」（data-contract §2.1 原文），而它服务的唯一问题是
+ * 「kind 联合扩展后旧记录是否可读」。domain 版本位（
+ * `SOLOIPS_COMPANY_DOMAIN_VERSION`）与 unit version 戳是**另一套**机制
+ * （§2.3 P1，属后续切片）——两者不共用递增规则，见 `SoloipsOperationRecord`
+ * 的兼容策略注释。
+ */
+export const SOLOIPS_OPERATION_SCHEMA_VERSION = 1;
+
+/**
  * 占位账户名：BE-1 之前 `createCompany` 硬编码写入的 `accountId`（历史数据标记）。
  *
  * 〔约束〕不得作为部署账户使用：`SoloipsCoreConfig.accountId` 与
@@ -98,6 +114,45 @@ export type SoloipsWorkEntryOrigin = "manager-dispatch" | "self-claim" | "schedu
 export type SoloipsAppointmentStatus = "active" | "revoked";
 
 /**
+ * 团队状态（**四值**，BE-3 裁定，data-contract §2.1「字段形态留 BE-3 裁定」）。
+ *
+ * 四值直白承载语义四分（契约把「不可用」的**语义**写死、把**字段形态**留给本
+ * 切片，见 §2.1 的 `status` 注与 §2.1.1 P-6 的「或等效的显式标记」）：
+ *
+ * | 值 | 语义 | 读面（P-3/P-8.2/P-9.1 同一判据） |
+ * |---|---|---|
+ * | `pending` | **成团中间态**：记录已建、组长任职未建或未验证（P-9 第①步后、第③步前） | **不得**出现在可用结果中 |
+ * | `active` | **可用**：组长引用满足 P-4 四项且未归档 | 可出现在可用结果中 |
+ * | `inactive` | **不可用**：无有效组长（撤职未换任 P-6，或引用悬挂未修复 P-8） | **不得**出现在可用结果中 |
+ * | `archived` | **归档**：`team.close` 后的终态，只读保留供追溯（P-7） | 不参与 P-8 扫描（P-8.6） |
+ *
+ * 〔为什么另立第四值而不是「由组长引用有效性导出」〕契约允许两者之一，本切片
+ * 选**显式第四值**，理由三条：
+ *  1. **可区分成因**（P-9.4 要求）：`pending` 与「成团后组长失效」都不得读作
+ *     可用，但**成因与恢复路径不同**（`pending` 走续做/收敛，`inactive` 走
+ *     修复/换任）。若把不可用「导出」自引用有效性，读面只能回答「不可用」，
+ *     回答不了「为什么」——而 P-8.5 明确要求不可用必须以显式状态呈现。
+ *  2. **落盘即事实**：`inactive` 是 P-8.1 扫描的**结果**（只标记、不自动修复，
+ *     P-8.3）。它是恢复流程写下的持久事实，不是每次读都重算的派生值——
+ *     派生值无法承载「扫描已执行过」这一审计信息。
+ *  3. **新表无存量**：`team` 表由本切片首次创建，**没有**存量记录需要兼容，
+ *     故不存在「多一个值就要迁移」的代价（对比 `appointment.scope` 为何先可选）。
+ *
+ * 〔P-9.3 约束〕`active` 只能由 `team.activate` 写入：**没有**任何命令可以
+ * 「直接改 `status`」（`team.update-function` 不碰 status，`team.close` 只写
+ * `archived`）。
+ */
+export type SoloipsTeamStatus = "pending" | "active" | "inactive" | "archived";
+
+/**
+ * 团队职能来源（审计「谁定义了职能」）。
+ *
+ * 〔约束〕**枚举扩展〔待决 M0.2+〕**：`'user'`/`'template'`/`'import'` 等来源
+ * **尚未裁定**——未裁定前实现**不得**自行新增取值（data-contract §2.1 原文）。
+ */
+export type SoloipsTeamFunctionSource = "leader-defined" | "system-suggested";
+
+/**
  * 任职作用域（判别联合）——区分公司级、部门级、团队级任职。
  *
  * 〔约束〕**三分支各自携带 `companyId`**（data-contract §2.1 原文）：作用域比较
@@ -136,7 +191,33 @@ export type SoloipsAppointmentRole =
   /** 普通成员。 */
   | "member";
 
-/** 本切片实际存在的持久写操作种类；用于恢复核对与 operationId 冲突检测。 */
+/**
+ * 本切片实际存在的持久写操作种类；用于恢复核对与 operationId 冲突检测。
+ *
+ * 〔BE-3〕新增 `team.*` 四项（`team.create` / `team.update-function` /
+ * `team.activate` / `team.close`）。**四处同步点**（缺一即不一致，见
+ * `docs/prds/system-assistant-backend-design-v0.1.md` BE-3 行的「三处同步」）：
+ *  1. 本联合（kind 词表的权威）；
+ *  2. `src/domain.ts` 的 `SOLOIPS_PERSISTED_OPERATION_KINDS`——持久校验器的
+ *     词表（经 `openLiteralUnionSchema` 放宽为开放词表：**未知项也放行**，
+ *     故漏改不会让新 kind 写入失败，而是让它被读作「未知」——所以这一处的
+ *     同步义务必须由测试断言「与联合双向相等」来承担）；
+ *  3. `src/store.ts` 的命令实现——每个 kind 必须有一个服务方法与一个已登记的
+ *     `#gate.commit({kind})` 调用点（§2.5 边界 2：无 kind 的动作不得暴露为写工具）；
+ *  4. `src/commit-gate.ts` 的 `KNOWN_OPERATION_KINDS`——「能否当作可重放结果
+ *     返回」的运行期判据（未知 kind 只能按 `unknown` 处置）。
+ * 第 2、4 处都是「运行期投影」，两处均以 `as const satisfies readonly
+ * SoloipsOperationKind[]` 钉住「清单 ⊆ 联合」，并由测试对**双向相等**做断言
+ * （漏项 = 自己刚写的操作重放时返回 unknown；多出假项 = 把不认识的 kind 当
+ * 已知项，两者都是可观察失败）。
+ *
+ * 〔读面不产生 kind〕`listTeams` / `getTeam` 是查询，**不创建 operation**
+ * （§2.5 表内读面各行；BE-3 验收⑤）。
+ *
+ * 〔`team.activate` 为什么独立成 kind〕P-9.3 要求「`activate` 是唯一的
+ * pending→可用 通道」：把它折进 `team.update-function` 会让「改职能」顺带
+ * 完成成团，从读面看「一个操作做了两件事」，也让 P-9.3 在 kind 层不可核对。
+ */
 export type SoloipsOperationKind =
   | "company.create"
   | "department.create"
@@ -147,7 +228,39 @@ export type SoloipsOperationKind =
   | "employee.verify-capability"
   | "employee.record-assembly"
   | "document.save"
-  | "work-entry.request";
+  | "work-entry.request"
+  /** ① 建团队记录（`status='pending'`，**无组长**——P-9 第一步）。 */
+  | "team.create"
+  /** 改团队职能定义（不改变 `status`；**不得**越过 P-9.3 完成成团）。 */
+  | "team.update-function"
+  /** ③ `pending` → 可用（P-4 四项校验通过才转；**唯一**的成团通道，P-9.3）。 */
+  | "team.activate"
+  /** 归档（`→ archived` 终态）；**不是删除**——P-7 禁物理删除。 */
+  | "team.close";
+
+declare const soloipsUnknownKindBrand: unique symbol;
+
+/**
+ * 当前代码**不认识**的 kind 值（未来版本的词表项，被本版本代码读到）。
+ *
+ * 〔为什么需要这个类型〕`SoloipsOperationKind` 是**封闭联合**，而它只描述
+ * 「本版本能**发起**的操作」。台账里可能存有**未来版本**写入的记录（数据根被
+ * 新版本写过、又用旧版本打开；或升级回退）。若把 `kind` 的类型直接钉死为封闭
+ * 联合，读取这类记录只有两条路：判损坏（→ 恢复锚点丢失，违背 §2.1 的
+ * 「读不懂不等于可忽略」）或静默丢弃（更坏）。故读面的 `kind` 是**开放**的。
+ *
+ * 〔品牌而非 `string`〕刻意**不用** `string`：那会让「拼错的 kind」（如
+ * `"team.creat"`）在类型层与「未来版本的真实 kind」不可区分，写路径的拼写
+ * 错误就会静默通过。本类型带品牌，**只能**由持久校验器（`src/domain.ts` 的
+ * `operationKindSchema`，唯一收窄点）产出；写路径的 `kind` 仍是封闭联合
+ * （`SoloipsCommitRequest.kind`），拼错即编译失败。
+ */
+export type SoloipsUnknownOperationKind = string & {
+  readonly [soloipsUnknownKindBrand]: "unknown-operation-kind";
+};
+
+/** 读面 `kind` 的类型：本版本已知的词表 ∪ 未来版本的未知项。 */
+export type SoloipsOperationKindValue = SoloipsOperationKind | SoloipsUnknownOperationKind;
 
 export type SoloipsOperationStatus = "pending" | "committed";
 
@@ -274,15 +387,127 @@ export type SoloipsDocumentVersionRecord = {
   readonly appointmentId?: SoloipsAppointmentId;
 };
 
+/**
+ * 团队（SoloIPs 业务层团队实体）——`team` 表由 BE-3 首次创建。
+ *
+ * 依据 data-contract §2.1 的目标形状（:243-293）逐字段落地；组长落点见 C-5
+ * （**`leadAppointmentId`**，不落 `TeamBinding`——M0.1 不建绑定层，C-6）。
+ *
+ * 〔与 DSH 官方 roster 的分工〕两套角色词表**不得混用**：core 用
+ * `'team_lead'`/`'member'`（`SoloipsAppointmentRole`），DSH roster 用
+ * `'lead'`/`'teammate'`。core 记录里**不得**写后者。
+ *
+ * 〔M0.1 边界〕本记录**不引用任何任务/attempt 字段**（CUR-03：任务状态归官方
+ * Team，core 不建第二状态机；BE-3 验收④）。
+ */
+export type SoloipsTeamRecord = {
+  readonly id: SoloipsTeamId;
+  readonly companyId: SoloipsCompanyId;
+  /**
+   * 可选归属部门（data-contract §2.1）。
+   *
+   * 〔边界〕本字段**不承载授权**：团队级任职的作用域由
+   * `appointment.scope.kind='team'` 承载，「团队属于哪个部门」与「谁能管这个
+   * 团队」是两件事（§2.3 的三分支以 `companyId` 做归属比较）。
+   */
+  readonly departmentId?: SoloipsDepartmentId;
+  readonly name: string;
+  /**
+   * 本团队职能定义（纯文本，非空白）。
+   *
+   * 〔约束〕**不承载能力项**——能力走 `appointment.requiredCapabilities`
+   * （data-contract §2.1 原文）。
+   */
+  readonly function: string;
+  readonly functionSource: SoloipsTeamFunctionSource;
+  /**
+   * 确认者任职 ID：`functionSource='system-suggested'` 时**必填**。
+   *
+   * 系统建议**本身不是**职能定义——须由一名有效任职确认后才成为团队职能。
+   * `'leader-defined'` 时可省略（定义者即 `leadAppointmentId`）。
+   * **缺 `confirmedBy` 的 `system-suggested` 记录 = 未确认草稿**，不得被读作
+   * 团队职能、不得作为分配/准入的依据（data-contract §2.1 原文）。
+   *
+   * 〔写入方〕`team.create` / `team.update-function` 校验该配对（见
+   * `src/store.ts` 的 `#requireFunctionSourcePairing`）。
+   */
+  readonly confirmedBy?: SoloipsAppointmentId;
+  /**
+   * 团队组长任职（**唯一**组长引用；与 `role:'team_lead'` 的任职一致）。
+   *
+   * **pending 期可缺省**（BE-001 三步成团协议的必然结果）：`team.create` 只建
+   * `status='pending'` 团队、**此时尚无组长**——若本字段必填，第一步就无法写入。
+   * 故：`pending` 时可缺省；`active` 时**必须存在且满足 P-4 四项**（`team.activate`
+   * 的校验内容）；归档时**保留最后有效值**（历史事实，不因归档清空）。
+   *
+   * 〔读面纪律〕本字段是 P-3/P-8 判据的输入：**指向的任职不存在或不满足 P-4
+   * 即视为无效引用**，该团队不得作为可用团队返回（见 `src/store.ts` 的
+   * `#evaluateLeadReference` 与 `#isUsableTeam`）。
+   */
+  readonly leadAppointmentId?: SoloipsAppointmentId;
+  /**
+   * 团队状态。语义与四值理由见 `SoloipsTeamStatus`。
+   *
+   * 〔禁物理删除〕P-7：Team **不得**被物理删除（无 delete 路径），只能经
+   * `status` transition 变更语义。理由：任职、skill 分配、规范确认、装配证据
+   * 均以 `teamId` 为引用键，物理删除会制造悬挂引用并让历史取证失去所指。
+   */
+  readonly status: SoloipsTeamStatus;
+  readonly createdAt: string;
+};
+
 export type SoloipsOperationRecord = {
   readonly id: SoloipsOperationId;
-  readonly kind: SoloipsOperationKind;
+  /**
+   * 操作种类。读面类型是**开放**的（`SoloipsOperationKindValue`）：可能读到
+   * 未来版本写入的、本版本不认识的 kind——此时**保留原样**，不判损坏
+   * （见 `SoloipsUnknownOperationKind` 与下方 `schemaVersion` 的读取策略）。
+   */
+  readonly kind: SoloipsOperationKindValue;
   readonly status: SoloipsOperationStatus;
   /** 未知结果按员工阻塞相关新操作的核对锚点（ORG-05「未知仍阻止该员工其他新 operationId」）。 */
   readonly employeeId?: SoloipsEmployeeId;
   readonly intent: SoloipsOperationIntent;
   /** 已提交时的结果；status 为 committed 时必须存在。 */
   readonly result?: SoloipsOperationResult;
+  /**
+   * 写入该记录时的 **kind 词表版本**（data-contract §2.1 BE-002，本切片实现）。
+   *
+   * 〔为什么需要〕`kind` 是封闭联合，而契约扩展（BE-3 新增 `team.*`）会不断
+   * 加项。若台账不带版本，旧写入的记录在新版本代码下可能不可读（`kind` 不在
+   * 联合内 → schema 校验失败）；而台账是**崩溃恢复的核对锚点**——不可读即
+   * **无法恢复**，未决操作会永久悬挂。本字段使「用哪个版本的 kind 词表解释
+   * 这条记录」成为**记录自身的属性**。
+   *
+   * 〔约束〕**新写入必须带当前版本**（`SOLOIPS_OPERATION_SCHEMA_VERSION`；
+   * 新记录不豁免）——写入点在 `src/commit-gate.ts`。
+   *
+   * 〔约束〕**可选**：存量记录（BE-2 及之前写入）**无**此字段。设为必填会让
+   * 整次 open 失败（介质层 `invalidRecords` 默认拒绝，且 sqlite 后端无逃生
+   * 通道）——与 `appointment.scope` 先可选的同一理由（见 `src/domain.ts` 的
+   * 「兼容边界登记」块）。缺省语义见下条。
+   *
+   * 〔读取策略，本切片裁定〕**`kind` 的持久校验按「当前词表 ∪ 未知形状」放行，
+   * 即不因词表扩展判记录损坏**（`src/domain.ts` 的 `operationKindSchema`）。
+   * 具体：
+   *  - **有 `schemaVersion` 且 ≤ 当前版本**：按当前词表解释（旧版本的 kind 词表
+   *    是当前词表的**子集**——本切片只增项、不改语义、不删项，故按当前词表解释
+   *    旧记录是安全的）；
+   *  - **无 `schemaVersion`**：视为**版本 1 之前**的存量记录，同样按当前词表
+   *    解释（存量 kind 十项全在当前词表内；这是「存量记录可读」的必要条件，
+   *    否则 BE-2 之前的数据根会因缺字段而不可读）；
+   *  - **`kind` 不在当前词表内**（未来版本的记录被旧代码读到）：**保留原样读出**
+   *    （类型层以 `SoloipsUnknownOperationKind` 宽联合承载），**不得**判损坏、
+   *    不得丢弃——「读不懂」不等于「可忽略」（§2.1 原文）。读面因此把这类记录
+   *    当**不透明台账项**呈现（`kind` 原字符串 + `status`），恢复路径可据
+   *    `status='pending'` 继续阻塞对应员工的新操作。
+   *
+   * 〔收紧路径〕待 §2.3 P1（unit version 戳 + `compatibleVersions`）落地后，
+   * 「未知 kind」可按 `schemaVersion` 精确路由到该版本的词表，本字段的
+   * 「宽联合放行」即可收紧为「按版本词表校验」；届时 `SoloipsUnknownOperationKind`
+   * 的存在性可被移除。**当前不满足**该介质能力（sqlite 后端不写版本戳）。
+   */
+  readonly schemaVersion?: number;
 };
 
 /**
@@ -480,6 +705,76 @@ export interface SoloipsWorkEntryInput {
   readonly origin: SoloipsWorkEntryOrigin;
 }
 
+// ── 团队命令（BE-3；三步成团协议 P-9 的①③ + 改职能 + 归档） ────────────────
+
+/**
+ * 建团队（P-9 第①步）：**只建记录**，`status='pending'`、**无组长**。
+ *
+ * 〔约束〕本命令**不建组长任职**——组长是第②步 `appointment.create`
+ * （`role='team_lead'` + `scope.kind='team'`）。三步三个 `operationId` 各自
+ * 独立可恢复；**不得**把三步合并成一次提交（P-9 原文：不得声称成团是原子的）。
+ */
+export interface SoloipsCreateTeamInput {
+  readonly operationId: SoloipsOperationId;
+  readonly companyId: SoloipsCompanyId;
+  /** 可选归属部门；提供时须属于 `companyId`（跨公司引用即拒绝）。 */
+  readonly departmentId?: SoloipsDepartmentId;
+  readonly name: string;
+  /** 团队职能定义（纯文本，非空白）。**不承载能力项**。 */
+  readonly function: string;
+  /** 职能来源；缺省 `leader-defined`（见 `SoloipsTeamRecord.functionSource`）。 */
+  readonly functionSource?: SoloipsTeamFunctionSource;
+  /**
+   * 确认者任职 ID：`functionSource='system-suggested'` 时**必填**（未确认草稿
+   * 不得被读作团队职能）。
+   */
+  readonly confirmedBy?: SoloipsAppointmentId;
+}
+
+/**
+ * 改团队职能定义。**不改变 `status`**——不得经此越过 P-9.3 完成成团。
+ */
+export interface SoloipsUpdateTeamFunctionInput {
+  readonly operationId: SoloipsOperationId;
+  readonly teamId: SoloipsTeamId;
+  readonly function: string;
+  /** 缺省时保留记录上的既有值（不做静默降级为 `leader-defined`）。 */
+  readonly functionSource?: SoloipsTeamFunctionSource;
+  readonly confirmedBy?: SoloipsAppointmentId;
+}
+
+/**
+ * 激活团队（P-9 第③步）：校验 `leadAppointmentId` 满足 **P-4 四项**后
+ * `pending` → `active`。不满足即拒绝，团队留在 `pending`。
+ *
+ * 〔P-9.3〕本命令是**唯一**的 `pending` → `active` 通道。
+ */
+export interface SoloipsActivateTeamInput {
+  readonly operationId: SoloipsOperationId;
+  readonly teamId: SoloipsTeamId;
+  /**
+   * 组长任职引用。**可选**：缺省即用记录上已有的 `leadAppointmentId`。
+   *
+   * 〔为什么允许显式传入〕P-9 第②步写入的任职不自动回填到 team 记录
+   * （`appointment.create` 对团队级任职**不写回** team 表——见 store 的说明），
+   * 因此「哪条任职是组长」需要一个显式指认点；本字段就是它。提供时**同时**
+   * 写回 `leadAppointmentId`（P-8.4 的「换任」路径：建立新 `team_lead` 任职
+   * 并显式改指）。
+   */
+  readonly leadAppointmentId?: SoloipsAppointmentId;
+}
+
+/**
+ * 归档团队（`→ archived` 终态）。**不是删除**（P-7 禁物理删除）。
+ *
+ * 〔用途〕P-9 恢复入口的「收敛」路径：确认第②步未提交且不再需要的 `pending`
+ * 团队，经此显式归档，**不得**让其长期悬挂（也**不得**物理删除）。
+ */
+export interface SoloipsCloseTeamInput {
+  readonly operationId: SoloipsOperationId;
+  readonly teamId: SoloipsTeamId;
+}
+
 // 注：命令结果一律用 type 别名（非 interface）声明——持久载荷约束
 // `T extends SoloipsCommandResult`（JSON 记录）依赖对象字面量类型的隐式
 // 索引签名，interface 不具备（TS 行为，非业务规则）。
@@ -540,6 +835,113 @@ export type SoloipsWorkEntryAdmitted = {
 };
 
 export type SoloipsWorkEntryRefusalReason = "onboarding-not-ready" | "employee-operation-unknown";
+
+export type SoloipsCreateTeamResult = {
+  readonly teamId: SoloipsTeamId;
+  /** 恒为 `'pending'`（P-9 第①步的定义特征）；显式给出使读面无需回查。 */
+  readonly status: SoloipsTeamStatus;
+};
+
+export type SoloipsUpdateTeamFunctionResult = {
+  readonly teamId: SoloipsTeamId;
+  readonly function: string;
+  readonly functionSource: SoloipsTeamFunctionSource;
+  readonly status: SoloipsTeamStatus;
+};
+
+export type SoloipsActivateTeamResult = {
+  readonly teamId: SoloipsTeamId;
+  readonly status: SoloipsTeamStatus;
+  readonly leadAppointmentId: SoloipsAppointmentId;
+};
+
+export type SoloipsCloseTeamResult = {
+  readonly teamId: SoloipsTeamId;
+  readonly status: SoloipsTeamStatus;
+};
+
+/**
+ * 团队读面投影（`getTeam` / `listTeams` 的返回形状）。
+ *
+ * 〔P-3/P-8.2/P-9.1 的读面纪律落点〕**可用**结果集排除 `pending`/`inactive`；
+ * 需要展示它们时必须以显式状态呈现（P-8.5/P-9.2「读面不得静默降级」），故
+ * 本投影携带 `status` 与 `usable` 两个字段：
+ *  - `usable`：本团队**当前是否可参与协作**（`status === 'active'` 且组长引用
+ *    经 P-4 复核有效）；
+ *  - `leadReference`：组长引用的**核验结论**（P-4 四项逐项结果或无效原因）。
+ *    使调用方不必自己实现 P-4（D-1 式缺陷的预防：读面已给结论）。
+ */
+export type SoloipsTeamView = {
+  readonly id: SoloipsTeamId;
+  readonly companyId: SoloipsCompanyId;
+  readonly departmentId?: SoloipsDepartmentId;
+  readonly name: string;
+  readonly function: string;
+  readonly functionSource: SoloipsTeamFunctionSource;
+  readonly confirmedBy?: SoloipsAppointmentId;
+  readonly leadAppointmentId?: SoloipsAppointmentId;
+  readonly status: SoloipsTeamStatus;
+  readonly createdAt: string;
+  /** 是否可用（P-3/P-8.2/P-9.1 的可用判据；`false` 即不得读作可用团队）。 */
+  readonly usable: boolean;
+  /** 组长引用核验结论；`leadAppointmentId` 缺省时为 `{ valid: false, reason: 'absent' }`。 */
+  readonly leadReference: SoloipsLeadReferenceVerdict;
+};
+
+/**
+ * 组长引用核验结论（P-4 四项的逐项结果）。
+ *
+ * 四项（全部满足才算有效）：① 任职 `status='active'`；② **同公司**
+ * （`scope.companyId === team.companyId`）；③ **同团队**（`scope.kind='team'`
+ * 且 `scope.teamId === team.id`）；④ `role === 'team_lead'`。
+ */
+export type SoloipsLeadReferenceVerdict =
+  | {
+      readonly valid: true;
+      readonly appointmentId: SoloipsAppointmentId;
+      readonly employeeId: SoloipsEmployeeId;
+    }
+  | {
+      readonly valid: false;
+      /**
+       * 无效原因。`absent`：无引用；`appointment-missing`：引用的任职不存在；
+       * `revoked`：任职已撤销；`not-team-scope`：作用域不是该团队；
+       * `company-mismatch`：作用域公司与该团队不符；`role-mismatch`：角色不是
+       * `team_lead`；`scope-unresolvable`：任职缺 `scope` 且解析不出（§2.3 分支 3）。
+       */
+      readonly reason:
+        | "absent"
+        | "appointment-missing"
+        | "revoked"
+        | "not-team-scope"
+        | "company-mismatch"
+        | "role-mismatch"
+        | "scope-unresolvable";
+      readonly appointmentId?: SoloipsAppointmentId;
+      /** 人类可读说明（DEV-06 可行动诊断；`reason` 是契约、本字段是诊断）。 */
+      readonly message: string;
+    };
+
+/**
+ * 悬挂处置的扫描结论（`reconcileTeams`）。
+ *
+ * 〔P-8.3 不自动修复〕本命令**只标记**：把 `status='active'` 但组长引用失效的
+ * 团队转为 `inactive`；**不**补任职、**不**改指引用、**不**自动指定新组长。
+ */
+export type SoloipsTeamReconcileResult = {
+  /** 本次扫描过的 `active` 团队数（P-8.6：`archived` 不参与扫描）。 */
+  readonly scanned: number;
+  /** 本次被标记为 `inactive` 的团队 id（按扫描顺序）。 */
+  readonly markedInactive: readonly SoloipsTeamId[];
+  /**
+   * `pending` 团队 id 清单（P-9 恢复入口的「续做/收敛」线索）。
+   *
+   * 〔约束〕**只报告、不处置**：续做需建组长任职（`appointment.create`），
+   * 收敛需显式归档（`team.close`）——两者都是显式操作，且「不得自动建组长」
+   * （P-9 的「不得自动」行）。本命令因此只给出待处置清单。
+   */
+  readonly pending: readonly SoloipsTeamId[];
+};
 
 /**
  * 提交门的幂等结果：
@@ -622,6 +1024,40 @@ export interface SoloipsCoreService {
    */
   requestWorkEntry(input: SoloipsWorkEntryInput): Promise<SoloipsWorkEntryOutcome>;
 
+  // ── 团队命令（BE-3；三步成团协议 P-9） ──────────────────────────────────
+
+  /** P-9 第①步：建 `pending` 团队，**无组长**。 */
+  createTeam(input: SoloipsCreateTeamInput): Promise<SoloipsCommitOutcome<SoloipsCreateTeamResult>>;
+  /** 改职能定义；**不**改变 `status`（不得越过 P-9.3 完成成团）。 */
+  updateTeamFunction(
+    input: SoloipsUpdateTeamFunctionInput,
+  ): Promise<SoloipsCommitOutcome<SoloipsUpdateTeamFunctionResult>>;
+  /** P-9 第③步：P-4 四项校验通过才 `pending` → `active`；**唯一**成团通道。 */
+  activateTeam(
+    input: SoloipsActivateTeamInput,
+  ): Promise<SoloipsCommitOutcome<SoloipsActivateTeamResult>>;
+  /** 归档（终态）；**不是删除**（P-7）。 */
+  closeTeam(input: SoloipsCloseTeamInput): Promise<SoloipsCommitOutcome<SoloipsCloseTeamResult>>;
+  /**
+   * 悬挂组长引用的恢复辅助（P-8.1）：扫描全部 `status='active'` 团队，核验 P-4，
+   * 失效者标记为 `inactive`（**不自动修复**，P-8.3）。
+   *
+   * 〔为什么是独立命令而非「open 时自动跑」〕P-8.1 允许两种时机（每次打开数据根
+   * **或**每次执行团队读面）。本切片选**显式命令**，理由：
+   *  1. 打开路径（`openSoloipsCompanyStore`）的职责是「取写权 → 开 domain →
+   *     校验账户绑定」，在其中做业务写会让「打开」变成有副作用的操作——而
+   *     打开可能由只读消费者发起，写入超出其意图；
+   *  2. 显式命令的**结论可观察**（返回 `markedInactive` 清单），自动跑则结论
+   *     只落介质，接管方仍需回查；
+   *  3. 与 `listPendingOperations` 同一恢复哲学：**core 不自动清理崩溃遗留**，
+   *     交由接管方核对（`src/store.ts` 文件头「失败语义」段）。
+   *
+   * 读面（`getTeam`/`listTeams`）**同时**执行同判据的**纯读**核验（不写状态），
+   * 因此「未跑 reconcile 也不会把失效团队读作可用」——P-8.2 的读面要求由读面
+   * 自身满足，本命令只负责把结论**落盘**为 `inactive`。
+   */
+  reconcileTeams(): Promise<SoloipsTeamReconcileResult>;
+
   /** 纯读判定：不写状态、不持锁（无需强制非事务快照，ORG-05）。 */
   checkOnboarding(employeeId: SoloipsEmployeeId): SoloipsOnboardingStatus;
 
@@ -631,6 +1067,26 @@ export interface SoloipsCoreService {
   /** 获取公司树（顶层公司及所有下级公司） */
   getCompanyTree(companyId: SoloipsCompanyId): readonly SoloipsCompanyRecord[];
   listDepartments(companyId: SoloipsCompanyId): readonly SoloipsDepartmentRecord[];
+  /**
+   * 读取团队（读面，**不产生 kind**；BE-3 验收⑤）。
+   *
+   * 〔P-8.2/P-9.1 读面纪律〕返回**任何状态**的团队（含 `pending`/`inactive`/
+   * `archived`），但以 `usable` 显式标注是否可用——**不得**把 `pending` 或
+   * 失效团队读作可用（P-8.5/P-9.2「读面不得静默降级」）。需要「只看可用」的
+   * 调用方用 `listTeams`。
+   */
+  getTeam(id: SoloipsTeamId): SoloipsTeamView | undefined;
+  /**
+   * 列团队（读面，**不产生 kind**）。
+   *
+   * 〔P-3/P-8.2/P-9.1〕默认只返回**可用**团队（`status='active'` 且组长引用
+   * 满足 P-4）。`includeUnusable: true` 时返回全部（含 `pending`/`inactive`/
+   * `archived`），各项仍带 `usable` 与 `leadReference` 显式状态。
+   */
+  listTeams(
+    companyId: SoloipsCompanyId,
+    options?: { readonly includeUnusable?: boolean },
+  ): readonly SoloipsTeamView[];
   getEmployee(id: SoloipsEmployeeId): SoloipsEmployeeRecord | undefined;
   getAppointment(id: SoloipsAppointmentId): SoloipsAppointmentRecord | undefined;
   getDocumentVersion(id: SoloipsDocumentVersionId): SoloipsDocumentVersionRecord | undefined;

@@ -7,6 +7,31 @@
  *
  * 职责边界（CUR-03 / ORG-05 裁定）：任务、attempt、占用状态归官方 Team，
  * core 不建第二份任务状态机；core 持有组织事实、个人文档版本与操作台账。
+ *
+ * ── §2.5 边界登记（BE-3）──────────────────────────────────────────────────
+ *
+ * data-contract §2.5 的**边界 2** 规定：「每个『写』工具必须对应一个已登记的
+ * 命令 `kind` 和服务方法；无 `kind` 的动作不得暴露为写工具」。该节同时把
+ * `SoloipsOperationKind` 无 `team.*` 项列为**阻塞工具名定稿**的原因——故
+ * `soloips_team_create` / `soloips_team_update_function` / `soloips_team_close` /
+ * `soloips_team_list` 等名字在本切片**之前**属〔待决〕。
+ *
+ * 本切片新增四个 kind（`team.create` / `team.update-function` / `team.activate` /
+ * `team.close`）与四个服务方法（`createTeam` / `updateTeamFunction` /
+ * `activateTeam` / `closeTeam`），**三处同步**（kind 联合 / 本文件表声明 /
+ * store 命令实现）因此成立，§2.5 的该阻塞**解除**。
+ *
+ * 〔边界——本切片**不**定稿工具名〕「kind 已登记」是工具名成立的**必要条件**，
+ * 不是充分条件：工具注册（`adapter.tools` 的 `soloips_*` 名字面量）属 **BE-6**
+ * 的 Host 半边，§2.5 的清单本身仍标注为「〔待实现〕本清单是目标形状，无任何
+ * 一项已注册实现」。因此本切片**只在 core 内**登记 kind 与服务方法，
+ * **不**写入任何工具名——避免出现「文档说工具已注册、实际没有」的假事实。
+ * 另注：`team.activate` 是**唯一**的 pending→可用 通道（P-9.3），其工具名同样
+ * 须先有 kind 才成立——本切片已登记该 kind。
+ *
+ * 〔读面不产生 kind〕`getTeam` / `listTeams` / `reconcileTeams` 是读面（后者只
+ * 做「标记失效」这一类状态收敛，见 store 的说明），前两者**不创建 operation**
+ * （§2.5「查询不要求创建 operation」；BE-3 验收⑤）。
  */
 
 import type {
@@ -28,9 +53,11 @@ import type {
   SoloipsEmployeeId,
   SoloipsEmployeeRecord,
   SoloipsOperationId,
+  SoloipsOperationKind,
   SoloipsOperationRecord,
   SoloipsRootBindingRecord,
   SoloipsTeamId,
+  SoloipsTeamRecord,
 } from "./contracts.js";
 import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_COMPANY_DOMAIN_VERSION } from "./contracts.js";
 import {
@@ -41,6 +68,7 @@ import {
   literalUnionSchema,
   nonEmptyStringSchema,
   objectSchema,
+  openLiteralUnionSchema,
   optionalSchema,
   positiveIntegerSchema,
   stringSchema,
@@ -251,6 +279,41 @@ const documentVersionRecordSchema: SoloipsSchema<SoloipsDocumentVersionRecord> =
   });
 
 /**
+ * 持久校验器认得的 kind 词表（**第二处同步点**的运行期投影）。
+ *
+ * 〔为什么抽成具名常量〕原先这串字面量内联在 `openLiteralUnionSchema([...])` 的
+ * 实参里，于是「第二处同步点是否真的包含某个 kind」在**运行期不可观察**——
+ * 开放词表对未知项同样放行，`safeParse` 的结果无法区分「在词表内」与「未知」。
+ * 把它抽成导出的具名常量后，测试可以对它做**与 kind 联合的双向相等**断言
+ * （漏项与多出假项都能被抓住），同步义务从「注释声称」变成「可断言事实」。
+ *
+ * 〔与其它两处的关系〕本常量只放宽「别人写的东西能不能读进来」；写路径仍是
+ * `contracts.ts` 的封闭联合 `SoloipsOperationKind`，运行期清单在
+ * `commit-gate.ts`（第三、四处，见那里的说明）。
+ *
+ * 〔收紧路径〕若后续把这串清单从「与联合并列维护」改为「由联合派生」，则本
+ * 同步点变成机械同步、断言退化为恒真——那是可接受的简化，登记为遗留项。
+ */
+export const SOLOIPS_PERSISTED_OPERATION_KINDS = [
+  "company.create",
+  "department.create",
+  "employee.create",
+  "appointment.create",
+  "appointment.revoke",
+  "employee.initialize-memory",
+  "employee.verify-capability",
+  "employee.record-assembly",
+  "document.save",
+  "work-entry.request",
+  // BE-3 新增（kind 联合的第二处同步点；第一处在 contracts.ts 的
+  // SoloipsOperationKind，第三处在 store.ts 的命令实现）。
+  "team.create",
+  "team.update-function",
+  "team.activate",
+  "team.close",
+] as const satisfies readonly SoloipsOperationKind[];
+
+/**
  * operation（操作台账 = 「准入」候选表）：DEV-08 operationId 纪律 + ORG-05 恢复窗口。
  * - id：稳定操作键；ACC-05「核对 operationId」、幂等重放的主键。
  * - kind：恢复核对路由 + operationId 跨种类复用冲突检测。
@@ -260,27 +323,95 @@ const documentVersionRecordSchema: SoloipsSchema<SoloipsDocumentVersionRecord> =
  * - intent：恢复所需最小意图（大字段如正文不入意图，以 digest 代替）。
  * - result：已提交结果；同 operationId 重放直接返回，不重复执行
  *   （ACC-04「重试不产生第二条员工身份/第二个任职」）。
+ * - schemaVersion：写入该记录时的 kind 词表版本（BE-002/BE-3，见下）。
+ *
+ * ── 〔BE-3 兼容策略登记〕`kind` 用**开放**词表校验 ──────────────────────────
+ *
+ * `kind` 用 `openLiteralUnionSchema` 而不是 `literalUnionSchema`：**不在当前
+ * 词表内的 kind 一律放行**（收窄为 `SoloipsUnknownOperationKind`），不判损坏。
+ *
+ * 为什么必须开放（不开放会真实损坏恢复能力）：
+ *  - 介质层的存量记录校验是**整次 open 拒绝**（`invalidRecords` 默认拒绝，且
+ *    sqlite 后端无逃生通道——见本文件 `appointment` 的兼容边界登记）；
+ *  - 台账是崩溃恢复的**核对锚点**（SOLO-FENCE-01 §3）。若未来版本的记录让 open
+ *    失败，则**未决操作永久悬挂**，连读都读不到，更谈不上核对；
+ *  - data-contract §2.1 原文：读取遇 unknown kind 时「**不得**因词表扩展而判
+ *    记录损坏」「『读不懂』不等于『可忽略』」。
+ *
+ * 为什么放开不构成风险：写路径的 `kind` 仍是**封闭**联合
+ * （`SoloipsCommitRequest.kind: SoloipsOperationKind`），拼错即编译失败；
+ * 本组合子只放宽「别人写的东西能不能读进来」。未知项在读面原样保留（`kind`
+ * 是原字符串），恢复路径据 `status='pending'` 继续阻塞对应员工的新操作。
+ *
+ * 〔`schemaVersion` 的读取策略〕本切片**不做**按版本路由的校验（介质层尚不提供
+ * 版本戳能力，§2.3 P1 未落地），而是：
+ *  - **有 `schemaVersion` 且 ≤ 当前版本**：按当前词表解释。安全性来自「词表只
+ *    增项、不改语义、不删项」——旧版本的词表是当前词表的**子集**；
+ *  - **无 `schemaVersion`**：视为版本 1 之前的存量记录，同样按当前词表解释
+ *    （存量十项全在当前词表内）。这是「存量根可读」的必要条件；
+ *  - **kind 未知**：如上，保留原样读出。
+ * 收紧路径见 `contracts.ts` 的 `SoloipsOperationRecord.schemaVersion` 注释
+ * （待 §2.3 P1 的 unit version 戳落地后改为按版本词表校验）。
  */
 const operationRecordSchema: SoloipsSchema<SoloipsOperationRecord> =
   objectSchema<SoloipsOperationRecord>({
     id: operationIdSchema,
-    kind: literalUnionSchema([
-      "company.create",
-      "department.create",
-      "employee.create",
-      "appointment.create",
-      "appointment.revoke",
-      "employee.initialize-memory",
-      "employee.verify-capability",
-      "employee.record-assembly",
-      "document.save",
-      "work-entry.request",
-    ] as const),
+    kind: openLiteralUnionSchema(SOLOIPS_PERSISTED_OPERATION_KINDS),
     status: literalUnionSchema(["pending", "committed"] as const),
     employeeId: optionalSchema(employeeIdSchema),
     intent: jsonRecordSchema(),
     result: optionalSchema(jsonRecordSchema()),
+    // 可选：存量记录（BE-2 及之前）无此字段，必填会让整次 open 失败。
+    // 〔约束〕取值范围只校验正整数（0/负数/小数无意义）；「不得大于当前版本」
+    // 不在此处强制——未来的记录被旧代码读到是**预期情形**（回退/多版本共存），
+    // 判非法会让那种情形下的恢复失效。未知版本的处理与未知 kind 同策略：放行。
+    schemaVersion: optionalSchema(positiveIntegerSchema()),
   });
+
+/**
+ * team（SoloIPs 业务层团队实体，BE-3 首次建表）。
+ *
+ * 字段逐项锚定 data-contract §2.1 的目标形状（:243-293）：
+ * - companyId：归属核对（团队属于哪个公司）；scope 的公司比较以它为准。
+ * - departmentId（可选）：可选归属部门；不承载授权（见 contracts 的同名字段注释）。
+ * - name：读回可比对的业务值。
+ * - function：职能定义（纯文本，非空白）。**不承载能力项**——能力走
+ *   `appointment.requiredCapabilities`。
+ * - functionSource：`leader-defined` | `system-suggested` 两值（枚举扩展
+ *   〔待决 M0.2+〕，实现不得自行新增）。
+ * - confirmedBy（可选）：`system-suggested` 时必填（配对校验在 store 层，
+ *   schema 层不重复业务规则——与 `appointment.scope` 的分工一致）。
+ * - leadAppointmentId（可选）：**pending 期可缺省**（BE-001 三步成团协议的必然
+ *   结果：第①步尚无组长）。`active` 时必须存在且满足 P-4 四项（`team.activate`
+ *   的校验内容）。
+ * - status：四值（pending/active/inactive/archived）——**字段形态由 BE-3 裁定**
+ *   （data-contract §2.1「字段形态留 BE-3」）。语义与四值理由见 contracts.ts 的
+ *   `SoloipsTeamStatus`。
+ * - createdAt：创建时间。
+ *
+ * 〔新表无存量〕`team` 表由本切片首次创建，介质上**没有**存量记录，故不存在
+ * 「新增字段要先可选」的兼容负担（对比 `appointment.scope` 为何先可选）——
+ * 这里的所有必填字段都是**新写**记录的必填，不会让任何既有数据根 open 失败。
+ * 同理 `SOLOIPS_COMPANY_DOMAIN_VERSION` **不递增**：版本位管的是「存量记录的
+ * 解释方式」，而本表无存量；递增反而会让 json 单文件布局的严格相等判定拒绝
+ * 既有根（见 `appointment` 的兼容边界登记）。
+ *
+ * 〔禁物理删除，P-7〕本表**没有** delete 路径：`team.close` 只写 `archived`。
+ * 提交门的 publisher 虽有 `delete` 方法（通用面），但 core 的任何命令都不对
+ * `team` 调用它——测试中有断言钉住（见 `tests/team-data.spec.ts`）。
+ */
+const teamRecordSchema: SoloipsSchema<SoloipsTeamRecord> = objectSchema<SoloipsTeamRecord>({
+  id: teamIdSchema,
+  companyId: companyIdSchema,
+  departmentId: optionalSchema(departmentIdSchema),
+  name: nonEmptyStringSchema(),
+  function: nonEmptyStringSchema(),
+  functionSource: literalUnionSchema(["leader-defined", "system-suggested"] as const),
+  confirmedBy: optionalSchema(appointmentIdSchema),
+  leadAppointmentId: optionalSchema(appointmentIdSchema),
+  status: literalUnionSchema(["pending", "active", "inactive", "archived"] as const),
+  createdAt: nonEmptyStringSchema(),
+});
 
 /**
  * 根级绑定元数据（data-contract §3.1）：放在 domain 的 **global 单例槽**。
@@ -337,6 +468,8 @@ const SOLOIPS_COMPANY_TABLES: {
     SoloipsDocumentVersionRecord
   >;
   readonly operation: SoloipsDomainTableSpec<SoloipsOperationId, SoloipsOperationRecord>;
+  /** 团队表（BE-3 新增，第七张表）。 */
+  readonly team: SoloipsDomainTableSpec<SoloipsTeamId, SoloipsTeamRecord>;
 } = {
   company: { valueSchema: companyRecordSchema },
   department: { valueSchema: departmentRecordSchema },
@@ -344,6 +477,7 @@ const SOLOIPS_COMPANY_TABLES: {
   appointment: { valueSchema: appointmentRecordSchema },
   document_version: { valueSchema: documentVersionRecordSchema },
   operation: { valueSchema: operationRecordSchema },
+  team: { valueSchema: teamRecordSchema },
 };
 
 export const SOLOIPS_COMPANY_DOMAIN_SPEC = {
