@@ -958,6 +958,21 @@ export type SoloipsWorkEntryAdmitted = {
 
 export type SoloipsWorkEntryRefusalReason = "onboarding-not-ready" | "employee-operation-unknown";
 
+/**
+ * 工作准入的**可判定拒绝**（SOLO-ACC-04「任务保持 pending」——core 拒绝时不产生
+ * 任何准入事实）。
+ *
+ * 〔BE-4c：为什么从匿名分支提为具名类型〕门扩展后（`SoloipsCommitPreconditionVerdict`），
+ * 本形状同时是**提交门前置判定的拒绝载荷**与**服务面返回值**。提为具名类型使两者
+ * 在类型上是同一个东西——不产生「门内一套、服务面又包一层」的第二形状，也让
+ * 「拒绝原因只有这两种」这条契约（`SoloipsWorkEntryRefusalReason`）只有一个落点。
+ */
+export type SoloipsWorkEntryRefused = {
+  readonly status: "refused";
+  readonly reason: SoloipsWorkEntryRefusalReason;
+  readonly gaps?: readonly SoloipsOnboardingGap[];
+};
+
 export type SoloipsCreateTeamResult = {
   readonly teamId: SoloipsTeamId;
   /** 恒为 `'pending'`（P-9 第①步的定义特征）；显式给出使读面无需回查。 */
@@ -1078,8 +1093,56 @@ export type SoloipsCommitOutcome<T extends SoloipsCommandResult> =
   | { readonly status: "unknown" };
 
 /**
+ * **业务拒绝**的最小判别面（BE-4c）：经提交门前置判定返回的拒绝必须带
+ * `status: 'refused'`。
+ *
+ * 〔为什么要有这个约束〕前置判定（`SoloipsCommitPreconditionVerdict`）的拒绝载荷
+ * `R` 会**原样进入** `commit` 的返回联合，与 `SoloipsCommitOutcome` 的三态并列。
+ * 若 `R` 允许携带 `status: 'committed' | 'replayed' | 'unknown'`，那个联合就
+ * **在类型层说谎**——调用方按 `status` 判别时会把「拒绝」读成「已提交」。把
+ * 判别值固定在 `'refused'` 上，使「拒绝」与「结果三态」在类型层不可混淆。
+ *
+ * 〔放宽路径〕若后续切片需要别的拒绝判别值（如把配额拒绝与状态拒绝分成两个
+ * 判别值），改本类型一处即可——但**不得**引入与三态重名的值。
+ */
+export type SoloipsCommitRefusalShape = { readonly status: "refused" };
+
+/**
+ * 提交门前置判定的**结论**（BE-4c 门扩展）。
+ *
+ * - `{ ok: true }`：允许提交（继续意图先行 → 业务写 → 提交标记）；
+ * - `{ ok: false, refusal }`：**可判定的业务拒绝**——在意图落盘**之前**返回，
+ *   零业务写、零新增未决意图（与 BE-5 的配额拒绝同构）。
+ *
+ * 〔为什么不用哨兵异常〕「用特定异常子类承载业务拒绝、由服务面 catch 翻译回
+ * 返回值」的方案已被裁定**否决**（来源：`docs/prds/organization-full-backend-design-v0.1.md`
+ * §6 R-5 处置要求；`.artifacts/knowledge/be4-recon.md` 的落点表）。理由：
+ *  1. **失败语义 vs 正常结果**：业务拒绝是**可预期的正常结果**（调用方按值处理、
+ *     可穷举、可行动），异常是**失败**语义。两者共用通道后，服务面为翻译拒绝而
+ *     放宽的 catch 边界会连带吞掉真实失败（失权 `LEASE_*`、记录损坏
+ *     `RECORD_INVALID`）——正是本项目「catch 不吞错」纪律要避免的形状；
+ *  2. **类型层不可穷举**：TS 无 `throws` 类型，哨兵异常的**种类**无法被约束到
+ *     调用方的返回联合上；本形态下 `R` 直接参与返回类型，拒绝载荷的形状与可达性
+ *     都由编译器保证（`R extends SoloipsCommitRefusalShape` 再钉住判别值）；
+ *  3. **与 BE-5 同构**：配额拒绝同样是「状态不允许」的正常结果，必须能不经异常
+ *     返回——一次到位，不产生第二套机制。
+ *
+ * 〔与 `void`/抛错形态的关系〕**加法而非替换**：`precondition` 仍可返回 `void`
+ * 并以抛错表达拒绝（BE-2/BE-3 的唯一性判定即此形态），语义逐字不变——抛错即
+ * 整体拒绝、零业务写。迁移既有判定到拒绝载荷会改变对应命令的公开返回类型，
+ * 属**独立裁定**（见 `store.ts` 的 `createAppointment` 注释），不在 BE-4c 范围。
+ */
+export type SoloipsCommitPreconditionVerdict<R extends SoloipsCommitRefusalShape> =
+  { readonly ok: true } | { readonly ok: false; readonly refusal: R };
+
+/**
  * 工作准入结果：拒绝不写任何业务状态（SOLO-ACC-04「任务保持 pending」——
  * 任务状态本就归 Team，core 拒绝时不产生任何准入事实）。
+ *
+ * 〔BE-4c：`refused` 分支的来源〕它由提交门的**前置判定**在同一串行槽位内返回
+ * （`SoloipsCommitPreconditionVerdict`），不再是门外预先算好的结论——故与
+ * `SoloipsWorkEntryRefused` 是**同一个**类型（门扩展后它同时是拒绝载荷与服务面
+ * 返回值，不产生第二形状）。
  */
 export type SoloipsWorkEntryOutcome =
   | {
@@ -1087,11 +1150,7 @@ export type SoloipsWorkEntryOutcome =
       readonly replayed: boolean;
       readonly result: SoloipsWorkEntryAdmitted;
     }
-  | {
-      readonly status: "refused";
-      readonly reason: SoloipsWorkEntryRefusalReason;
-      readonly gaps?: readonly SoloipsOnboardingGap[];
-    }
+  | SoloipsWorkEntryRefused
   | { readonly status: "unknown" };
 
 // ─────────────────────────────────────────────────────────────────────────────
