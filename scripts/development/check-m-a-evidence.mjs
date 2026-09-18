@@ -94,6 +94,12 @@ const M_A_WRITE_SURFACE = [
  * 内容、必须触发证据检查），但**测试改动不改变交付产物**。把测试也算作「产品输入」
  * 会强迫每次补测试都重跑真实链路——那是不可执行的纪律，最终只会被绕过。
  * 本清单 = 「产物字节或装配行会变」的最小集合。
+ *
+ * 〔`packages/bundle/` 必须在内〕该层持**官方行覆写与装配顺序**
+ * （`packages/bundle/cordis.patch.yml` 是顺序契约的落点），改它即改装配路径。
+ * QA 独立验收实测复现过漏判：只改 bundle 的 patch 时门禁曾放行并打印
+ * 「均不触及 M-A 产品输入」——与本节声明的「装配行」口径矛盾，已补入。
+ * 唯一排除的是 bundle 的 `tests/`（测试不改变交付产物，与其余层同规则）。
  */
 const M_A_PRODUCT_INPUT = [
   /^packages\/web\/src\//,
@@ -102,6 +108,8 @@ const M_A_PRODUCT_INPUT = [
   /^packages\/web\/tsconfig\.json$/,
   /^tsdown\.config\.ts$/,
   /^packages\/adapter-dsh\/src\//,
+  // bundle 层：装配行覆写与顺序（排除其 tests/——测试不改变交付产物）。
+  /^packages\/bundle\/(?!tests\/)/,
 ];
 
 function sha256Of(path) {

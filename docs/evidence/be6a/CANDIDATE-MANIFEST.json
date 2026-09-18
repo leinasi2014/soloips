@@ -11,9 +11,14 @@
     "storageRoot": "D:/tmp/soloips-be6a/instance/storage-final2",
     "planCode": "free"
   },
-  "reports": ["e2e-company-final.json"],
+  "reports": [
+    "e2e-company-final.json"
+  ],
   "reportSha256": "20246ba9391f0a078013cc31a2ad1fb22a81fd17551f020eca13f3dba037936f",
-  "additionalEvidence": ["restart-readback.json"],
+  "additionalEvidence": [
+    "restart-readback.json",
+    "restart-readback-pair.json"
+  ],
   "qaVerdict": "pending",
   "ciRunId": "pending"
 }

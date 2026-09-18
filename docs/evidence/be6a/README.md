@@ -8,9 +8,9 @@
 |---|---|
 | candidate SHA | `cf56b2c44f50ede65ec490067e74f63d7b009243` |
 | 产物摘要（`packages/web/lib/client.js` sha256） | `8eafb230d7b2273f026e741b5aa6b3ef657b7430bab2e9765b9bafbaf15039b5` |
-| 页面实载产物 | `/plugins/??soloips-web/client.js&rev=15cc64f9d8390694-51`（`embedded: true`——候选字节确实在页面加载的 bundle 内） |
+| 页面实载产物 | `/plugins/??soloips-web/client.js&rev=70ff993dac79a093-51`（`embedded: true`——候选字节确实在页面加载的 bundle 内） |
 | DSH runtime | fork `deepseek-harness` 0.1.6-alpha.1（本机 `apps/cli/lib/bin.js`） |
-| 实例 | 隔离 DSH_HOME `D:/tmp/soloips-be6a/instance/home`；存储根 `…/storage-final`；`127.0.0.1:55321` |
+| 实例 | 隔离 DSH_HOME `D:/tmp/soloips-be6a/instance/home`；存储根 `…/storage-final2`；`127.0.0.1:55321` |
 | 计划码 | `free`（配额 1 公司 / 0 子公司） |
 
 **stale 规则**：上表任一元素对应的 SHA / 摘要变化 → 本目录证据自动失效，真实链路必须重跑。
@@ -21,7 +21,10 @@
 |---|---|---|
 | `e2e-company-final.json` | 完整 E2E 报告（真实浏览器 CDP 驱动，页面上下文内调 Remote）——**9 步全绿，无 `failure` 字段** | sha256 `20246ba9391f0a078013cc31a2ad1fb22a81fd17551f020eca13f3dba037936f` |
 | `restart-readback.json` | **进程重启后**读回（裁定六第 3 条） | 见文件内 `matched: true` |
+| `restart-readback-pair.json` | **重启前后对照复现**：同一 fact 在重启前后各读回一次，两次 PID 不同（`43716` → `38336`），读回结果**逐字一致** | 见文件内 `identical: true` |
 | `CANDIDATE-MANIFEST.json` | 候选绑定清单（由 CI 门 `check:m-a-evidence` 强制比对） | — |
+
+> **独立验收的证据边界**：独立 QA（`soloips-tester`）无 DSH fork 运行时与隔离实例，故**重启读回未经其独立复现**——QA 能且仅能证明证据文件内部自洽（31/31 核对通过）。本目录的 `restart-readback-pair.json` 是**指挥**（持实例角色）为补此边界所做的带时间戳对照复现；该边界在放行记录中显式登记。
 
 ## 实测结果（裁定六行为判据逐条）
 

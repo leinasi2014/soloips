@@ -209,6 +209,102 @@ describe("BE-6a 正例：合法用户 Remote 调用", () => {
     });
   });
 
+  it("公司投影是**白名单闭包**：core 记录里的未知字段不得过线", () => {
+    // ── 本用例守的性质 ──────────────────────────────────────────────────────
+    // 投影是「按显式字段列表**重建**对象」，不是「复制记录再删 accountId」。两者的
+    // 差别只在记录带上列表之外的键时暴露：复制形态会把它们原样转发给浏览器。
+    //
+    // 〔为什么既有断言抓不到〕上面的两条只钉：(a) `accountId` 键不存在；(b) 已知
+    // 字段逐字保留。它们对「多出来的键」都无鉴别力——判据是「列表里的都在」与
+    // 「accountId 不在」，而本用例要的是**「不在列表里的都不在」**（闭包性质）。
+    //
+    // 〔变异依据〕独立 QA 实测：把 `companyViewOf` 换成解构剩余项
+    // （`const { accountId: _drop, ...rest } = record; return rest`）后，449 条默认
+    // 用例、20 条产物用例、`check:build-repro` **全绿**——即本条性质此前无守卫。
+    // 该变异会把 `futureField`/`internalNote` 原样发给浏览器（真泄漏）。
+    //
+    // 〔为什么必须绕过 TS 的精确类型〕`SoloipsCompanyRecord` 不含这两个键，对象
+    // 字面量的多余属性检查会直接编译失败。而运行期记录不受该检查保护：结构化类型
+    // 只约束**字面量**，core 从持久介质重建的对象（或在类型标注之外用展开拼出的
+    // 对象）可以静默携带额外键。白名单形态的价值正是「上游多出什么字段都不过线」，
+    // 故守卫必须按运行期形态构造输入。
+    const { host, core } = hostWithCore({ published: true });
+    core.getCompany = () =>
+      ({
+        id: companyId("cmp_extra"),
+        accountId: "acct-deployed",
+        type: "enterprise",
+        name: "丙工作室",
+        status: "active",
+        createdAt: "2026-09-18T00:00:00.000Z",
+        futureField: "leak",
+        internalNote: 42,
+      }) as unknown as SoloipsCompanyRecord;
+
+    const read = host.getCompany({ companyId: companyId("cmp_extra") });
+    if (read.status !== "ok") throw new Error(`前置失败：期望 ok，实得 ${read.status}`);
+    const view = read.company as unknown as Record<string, unknown>;
+
+    // 判据取**键集合恰好相等**，不是「包含已知字段」——后者对多出来的键无鉴别力。
+    expect(Object.keys(view).sort(), "投影键集合必须**恰等于**白名单（多一个键即泄漏）").toEqual([
+      "createdAt",
+      "id",
+      "name",
+      "status",
+      "type",
+    ]);
+    // 键集合相等已蕴含下面两条；显式写出是为了给出可行动信息（哪个键过线了），
+    // 且判据与上面的 accountId 用例一致：键存在性（`Object.hasOwn`），不是值。
+    expect(Object.hasOwn(view, "futureField"), "未知字段不得过线").toBe(false);
+    expect(Object.hasOwn(view, "internalNote"), "未知字段不得过线").toBe(false);
+  });
+
+  it("公司投影不把显式 `parentCompanyId: undefined` 带成键（条件展开形态）", () => {
+    // ── 本用例守的性质 ──────────────────────────────────────────────────────
+    // 记录带 `parentCompanyId: undefined` 时，投影必须**不产生该键**。这不是措辞
+    // 问题：JSON 会丢弃 `undefined` 值，但在本进程内它仍是一个可被读到的键
+    // （`'parentCompanyId' in view === true`），而 `exactOptionalPropertyTypes` 下
+    // 「给了该键」与「没给该键」是两种形状（与 §7 的 listTeams 条件展开同一条纪律）。
+    //
+    // 〔为什么既有断言抓不到〕既有断言用的是**带值**的 `parentCompanyId`（钉「没剥
+    // 多」）或**完全没有该键**的记录；「显式 undefined」这一形态无人覆盖。
+    //
+    // 〔变异依据〕解构剩余项形态（M4b）会把该键原样带出——剩余项不区分「键不存在」
+    // 与「值为 undefined」，而该形态在全绿下存活。把条件展开换成
+    // `{ parentCompanyId: record.parentCompanyId }` 同样会红。
+    //
+    // 〔为什么绕过 TS〕`exactOptionalPropertyTypes` 下 `{ parentCompanyId: undefined }`
+    // 不可赋给 `parentCompanyId?: SoloipsCompanyId`；但运行期记录可以带这个键
+    // （例如从介质往返重建的对象），故按运行期形态构造输入。
+    const { host, core } = hostWithCore({ published: true });
+    core.getCompany = () =>
+      ({
+        id: companyId("cmp_explicit_parent"),
+        accountId: "acct-deployed",
+        parentCompanyId: undefined,
+        type: "subsidiary",
+        name: "丁子公司",
+        status: "active",
+        createdAt: "2026-09-18T00:00:01.000Z",
+      }) as unknown as SoloipsCompanyRecord;
+
+    const read = host.getCompany({ companyId: companyId("cmp_explicit_parent") });
+    if (read.status !== "ok") throw new Error(`前置失败：期望 ok，实得 ${read.status}`);
+    const view = read.company as unknown as Record<string, unknown>;
+
+    expect(
+      Object.hasOwn(view, "parentCompanyId"),
+      "缺省的可选字段不得以「值为 undefined」的键形态过线",
+    ).toBe(false);
+    expect(Object.keys(view).sort(), "键集合仍须恰等于白名单").toEqual([
+      "createdAt",
+      "id",
+      "name",
+      "status",
+      "type",
+    ]);
+  });
+
   it("公司树投影同样剥离 accountId（两条读路径共用同一出口）", () => {
     // 〔为什么单独测树〕`getCompany` 与 `getCompanyTree` 是**两条**读路径；只测
     // 前者无法排除「后者漏了剥离」。两者共用 `companyViewOf`，本用例把该事实钉住。
