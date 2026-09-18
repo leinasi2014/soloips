@@ -941,6 +941,28 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 
 **〔未验证〕**：本裁定是产品+契约层面的决定，不证明引导旅程已实现、不证明子公司视图已具备招募入口。
 
+#### 2.4.4 部门部长唯一性与换任（2026-09-18 裁定；补 BE-2 遗留）〔约束〕
+
+**问题的来由**：BE-2 实现 `department_lead` 任职时**回填** `department.leaderAppointmentId`，但当时**契约为部长登记的唯一性规则缺失**——团队组长有 §2.1.1 P-4/P-5/P-8，公司总助理有 §2.4.2，**部门部长没有**。实现者据此作出诚实披露：第二条 `department_lead` 任职会**覆盖** `leaderAppointmentId`（**后写者胜**），旧任职仍 `active`；该行为已在测试中钉住可见，并明确「不得据此声称部长唯一性已实现」。本裁定关闭该缺口（#35 §3.2「部长唯一性遗留」，FE-2b 暴露界面前必须收口）。
+
+**裁定：与总助理唯一性同构，写死四条。**
+
+| # | 规则 | 说明 |
+|---|---|---|
+| **DL-1** | **同一部门同一时刻至多一条有效 `department_lead` 任职** | 判据与总助理一致：只算 `status === 'active'` 的、作用域为该部门的部门级任职。第二条提交返回可判定拒绝（`SOLOIPS_CORE_PRECONDITION`），**零业务写**（判定在提交门串行槽位内、意图落盘前） |
+| **DL-2** | **换任必须显式**：先 `revokeAppointment` 旧任职，再 `createAppointment` 新任职 | **不得**依赖「后写者胜」隐式换任；不得引入自动继任策略（与 P-6 同理由：自动继任需要一套未裁定的「谁继任」规则） |
+| **DL-3** | **`leaderAppointmentId` 是「当前有效部长」的显式引用**，不是历史 | 撤销部长任职时**联动清除**该引用（与 P-8 的悬挂引用处置同向：失效可见、不静默保留）；清除后部门回到合法的「无部长态」（ORG-02 `awaiting_manager`） |
+| **DL-4** | **读面显式表达「无部长」** | 与 SA-01 对总助理的要求同构：部门读面**不得**用字段缺省让调用方无法区分「无部长」与「读面缺陷」。BE-4a 的 `getDepartment` 返回记录时 `leaderAppointmentId` 缺省即「无有效部长」，界面据此显示「待任命」引导 |
+
+**与 P-8 的关系**：§2.1.1 P-8 已经处理了「**团队**组长引用悬挂」的处置协议（不禁止介质短暂存在失效引用，但读面不得静默降级为可用）。DL-3 对部门采取**更强**的处置——**撤销即清除**（而非保留失效引用）：部门与团队的风险面不同，部门的「部长」引用不参与任何可用性判定（团队要判 `usable`），因此清除即最简且无歧义。
+
+**实现归属**：
+- **DL-1/DL-2**（唯一性拒绝）：**BE-4c 或其后首个 core 切片**补实现（`createAppointment` 的 `precondition` 已有总助理/组长两分支，追加第三分支）。**本裁定不重开 BE-2**——已合并的 BE-2 行为按 DL-1 收口即可。
+- **DL-3**（撤销清除）：随 `revokeAppointment` 的部门处理补。
+- **DL-4**（读面）：**BE-4a 的 `getDepartment` 已满足形状要求**（返回记录、缺省即无），界面侧归 FE-2b。
+
+**〔待实现〕**：DL-1/DL-3 的拒绝与清除逻辑**尚未实现**（当前为后写者胜）。**在实现落地前，不得声称部长唯一性已强制**；FE-2b 不得只按「最后写入者即唯一部长」呈现数据。
+
 #### 2.4.3 系统助理职责边界（SA-04，2026-09-18）〔约束〕
 
 **定位一句话**：**系统助理是系统级协调入口，不是组织最高决策主体**（防「隐形 CEO」）。
@@ -1753,3 +1775,4 @@ export function register(client: ClientModules): void {
 | 2026-09-18 | **ChatGPT 第三阶段终审 SA 建议（SA-01…SA-04，全部采纳）**：①**SA-01** §2.4.1 补「读面必须显式表达『无总助理』状态」（SA-01.1…SA-01.4）——BE-4 查询服务须能区分「无有效 `general_assistant` 任职」与「未覆盖/查询失败」，**不静默省略**，界面据此显示「待招募」引导；②**SA-02** §3.1 补「**Host 层 actor 属半可信输入**」声明（SA-02.1…SA-02.5）——非可信输入（部署面自证），**可作审计线索、不可作授权唯一依据**，**不得**与 ORG-05 可信身份链混同；`ExecutionBinding` 落地后重新评估；③**SA-03** 新增 **§3.4 员工自主循环的能力闸门**〔待实现 M0.2+，原则 M0.1 生效〕——七阶段循环（Observe→Plan→**Request capability**→Execute→Record evidence→Reflect→Continue）+ **四层检查**（身份→任职→工具授权→scope，全部通过与关系）+ 五条**反例明示禁止**（含「直接调用所有工具」）；④**SA-04** 新增 **§2.4.3 系统助理职责边界**——允许（引导招募/解释状态/协调流程/提供建议）与禁止（自建任职/改自身权限/绕过审批/替员工执行业务）分列，判据「**可以『说』，不可以『做组织动作』**」，定位写死为**系统级协调入口，不是组织最高决策主体（防「隐形 CEO」）** | ChatGPT 第三阶段终审 4 项 SA 建议；指挥核实裁定全部采纳（PR 收口补入） |
 | 2026-09-18 | **OPS-00 同步（#35 §3.2）**：§0 对照 `contracts.ts`@8abf815 修正 5 处滞后行——①Department 补 `leaderAppointmentId?`；②Appointment 补 `scope?`/`role?` 与 `departmentId?` 可选、状态改「已实现」；③Operation 补 `schemaVersion?`（BE-3 交付）、删「未实现」；④能力面补 team 四命令 + `getTeam`/`listTeams` + `reconcileTeams`、缺口改为 5 个未落地读方法；⑤Team 实体行改「已实现」、TeamBinding 行拆分独立；§3.1 C-2 注从〔待实现〕改〔已实现〕（BE-1 交付：根级绑定元数据 + 占位拒绝 + 真实 accountId）；§2.4.1 SA-01 注指向 BE-4a 切片 | OPS-00 接管收口（#35 §3.2「§0 滞后」项）；逐项对照源码核验（附行号） |
 | 2026-09-18 | **新增 §2.5.1 调用暴露矩阵（OPS-00 / #35 §3.2「调用暴露边界」）**：以「谁是行为主体」分面消除「§2.5 登记 20 项模型工具名」与「§2.4.3 SA-04 系统助理不得代为执行组织动作」的冲突——①组织写动作（createCompany/createDepartment/createEmployee/createAppointment/revokeAppointment/saveEmployeeDocument/team 四命令）**走用户确认的可信 Remote，不注册为模型工具**；②`requestWorkEntry`/`initializeEmployeeMemory`/`verifyEmployeeCapability`/`recordAssemblyEvidence`/`reconcileTeams`/`close` 全面 fail-closed；③只读投影需浏览器可达路径（§2.5「—」含义收口为「不因本表暴露」，非永久不暴露）；④身份分层（accountId 部署注入、actor 半可信、模型面强制 agent 上下文、用户 Remote 不得误要求 agent 上下文）；⑤`system-assistant-backend-design` §4.1 BE-6 验收① 行为主体由「模型」更正为「用户」 | OPS-00 收口；BE-6a 派发前置裁定（C 亲手） |
+| 2026-09-18 | **新增 §2.4.4 部门部长唯一性与换任（OPS-00 / #35 §3.2「部长唯一性遗留」）**：补 BE-2 缺失的部长唯一性规则——**DL-1** 同一部门至多一条有效 `department_lead`（与总助理同构的拒绝、零业务写）；**DL-2** 换任必须显式（先 revoke 再 create，禁隐式后写者胜、禁自动继任）；**DL-3** `leaderAppointmentId` 是当前有效部长引用，撤销时联动清除（比 P-8 团队处置更强：撤销即清除）；**DL-4** 读面显式表达「无部长」（BE-4a `getDepartment` 已满足形状）。实现归属：DL-1/DL-2 → BE-4c 或其后 core 切片；DL-3 → 随 `revokeAppointment`；DL-4 → FE-2b 界面 | OPS-00 收口；BE-2 实现者的诚实披露触发（后写者胜为未裁定行为） |
