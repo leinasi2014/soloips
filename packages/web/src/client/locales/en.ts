@@ -30,10 +30,14 @@ export const en = {
     "The runtime interface does not match the expected contract, so the service did not start. Ask an administrator to check it.",
   "soloips.error.storeClosed":
     "The data store is closed; the workspace is read-only and this action is unavailable.",
+  // 〔约束〕lease 两键**不得**承诺零副作用（F-02）：失权可能在 pending 意图已
+  // 落盘、乃至业务记录已部分写入之后才被检出（`core/src/commit-gate.ts:336-347`
+  // 的发布顺序 + `:371-405` 的逐点复核，无跨表回滚）。故只说明「写入已停止、
+  // 结果需核对」，并保留操作编号；对应中文见 `./zh.js` 的同名键。
   "soloips.error.leaseLost":
-    "The write lease is no longer held, so nothing was written. Do not retry automatically — first check whether another process is writing.",
+    "The write lease is no longer held, so writing has stopped. The result of this operation must be reconciled — it may already be partially written. Keep this operation id and do not resubmit it; do not retry automatically — first check whether another process is writing.",
   "soloips.error.leaseUnknown":
-    "The write-lease state could not be confirmed, so nothing was written. Verify it and try again.",
+    "The write-lease state could not be confirmed, so writing has stopped. The result of this operation must be reconciled — it may already be partially written. Keep this operation id and do not resubmit it; reconcile the pending operation and the lease state first.",
   "soloips.error.validation": "The input does not meet the requirements. Check it and try again.",
   "soloips.error.precondition":
     "The current state does not allow this action (the target may be missing or revoked). Refresh and check again.",

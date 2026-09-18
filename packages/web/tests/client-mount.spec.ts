@@ -183,9 +183,12 @@ describe("soloips-web browser half (BE-0b-i)", () => {
       | {
           descriptors: {
             parameters: {
-              codec: { mode: string; schema: { safeParse: (v: unknown) => { success: boolean } } };
+              codec: {
+                mode: string;
+                create: () => { safeParse: (v: unknown) => { success: boolean } };
+              };
             }[];
-            result: { schema: { safeParse: (v: unknown) => { success: boolean } } };
+            result: { create: () => { safeParse: (v: unknown) => { success: boolean } } };
           }[];
         }
       | undefined;
@@ -206,13 +209,22 @@ describe("soloips-web browser half (BE-0b-i)", () => {
 
     // 真实校验：接受正确载荷、拒绝错误类型——证明内联的是**真 codec**，
     // 而不是被内联成空壳的替身（那会让所有调用静默通过校验）。
-    const parameterSchema = descriptor?.parameters?.[0]?.codec.schema;
+    //
+    // 〔BE-0b-ii 契约变更〕codec 由 `schema: TypertSchema`（直接持 zod 对象）
+    // 改为 `create: () => TypertSchema`（惰性 thunk，首次边界使用时物化）。
+    // 依据：`@deepseek-ai/dsh-typert-protocol@0.1.6-alpha.2` 的 `TypertCodec`，
+    // 以及运行时 `dsh-typert-loader` 的 `requireStrictCodec`（要求
+    // `typeof codec.create === "function"`）。生成器 alpha.1 产出 `schema`、
+    // alpha.2 产出 `create`——运行时是 fork HEAD（alpha.2 契约），故本仓
+    // 生成器/协议必须同为 alpha.2，否则装配期 entry 激活失败。
+    // 注意 `create()` 每次调用返回同一惰性物化实例，故下面的两次断言
+    // 必须各自调用一次 `create()`，不能假设返回对象可跨调用复用身份。
+    const parameterSchema = descriptor?.parameters?.[0]?.codec.create();
     expect(parameterSchema?.safeParse({ note: "ping" }).success).toBe(true);
     expect(parameterSchema?.safeParse({ note: 1 }).success).toBe(false);
-    expect(
-      descriptor?.result.schema.safeParse({ service: "s", echo: "e", toolchain: "t" }).success,
-    ).toBe(true);
-    expect(descriptor?.result.schema.safeParse({ service: "s" }).success).toBe(false);
+    const resultSchema = descriptor?.result.create();
+    expect(resultSchema?.safeParse({ service: "s", echo: "e", toolchain: "t" }).success).toBe(true);
+    expect(resultSchema?.safeParse({ service: "s" }).success).toBe(false);
   });
 
   it("keeps server-side implementation and credentials out of the artifact (验收条款 5)", () => {

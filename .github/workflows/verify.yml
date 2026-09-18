@@ -53,6 +53,21 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # 产物行为套件（BE-0b-ii / F-03）：**必须在 build 之后**。
+      #
+      # 为什么必须是独立步骤：上面的 `Test` 步骤跑在 `build` **之前**，此时
+      # `lib/` 下只有 tsc 的声明面，tsdown 产物（`lib/client.js` / `lib/index.js` /
+      # `lib/typert.*.js`）**还不存在**。因此默认套件里的产物断言只能写成条件检查
+      # （`if (!hasArtifact) return`），那等于「产物行为测试从未在 CI 上执行」。
+      # `check:build-repro` 也补不上这个洞：它是「删产物 → 重建 → 字节比对」，
+      # **不执行** VM / 挂载 / codec 断言，而字节可复现 ≠ 产物可用。
+      #
+      # 本步骤跑 `packages/web/vitest.artifacts.config.ts`（include 只匹配
+      # `tests/artifacts/*.artifact.ts`，与默认套件不相交），要求产物存在、
+      # 真执行产物行为断言，并由 ArtifactSuiteGuard 核对「必需用例真的执行过」。
+      - name: Artifact behavior tests
+        run: pnpm run test:artifacts
+
       # 生成物可复现（BE-0a）：删生成物 → 重跑构建 → 逐文件比对 SHA-256。
       #
       # 为什么必须放在 CI 而不只在本地：本门禁是**唯一**检查 Typert 产物
@@ -109,6 +124,11 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      # 与主检查同一理由（见 verify job 内该步骤的注释）：产物行为断言必须在
+      # build **之后**执行，否则它们要么被条件跳过、要么因缺产物而红。
+      - name: Artifact behavior tests
+        run: pnpm run test:artifacts
 
       # 与主检查同一理由（见 verify job 内该步骤的注释）：产物有效性/可复现的
       # 硬检查只在 CI 的这一步发生。

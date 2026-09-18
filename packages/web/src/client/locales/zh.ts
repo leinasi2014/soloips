@@ -49,11 +49,26 @@ export const zh = {
   "soloips.error.adapterInvalid": "运行环境接口不符合约定，服务未启动。请联系管理员。",
   /** 只读态（`SOLOIPS_CORE_STORE_CLOSED`）。 */
   "soloips.error.storeClosed": "数据存储已关闭，当前为只读状态，无法执行该操作。",
-  /** 写权失守（`SOLOIPS_CORE_LEASE_NOT_HELD`）——**不自动重试**（项目红线）。 */
+  /**
+   * 写权失守（`SOLOIPS_CORE_LEASE_NOT_HELD`）。
+   *
+   * 〔约束〕文案**不得**承诺零副作用（F-02）：本码由提交门 `#createPublisher`
+   * 的**每个发布点前**复核抛出（`core/src/commit-gate.ts:371-405`），而发布顺序
+   * 是「意图落盘（:336）→ 业务发布（:345）→ committed（:347）」且**无跨表回滚**
+   * ——失权可能发生在意图已写、乃至业务记录已部分写入之后。故只能说明「写入已
+   * 停止、结果需核对」，不得写「未执行」。
+   * 〔约束〕须保留「**不自动重试**」（项目红线第 1 条）。
+   */
   "soloips.error.leaseLost":
-    "写入权已失效，本次操作未执行。请勿自动重试，先确认是否有其他进程正在写入。",
-  /** 写权状态未知（`SOLOIPS_CORE_LEASE_CHECK_FAILED`）。 */
-  "soloips.error.leaseUnknown": "无法确认写入权状态，本次操作未执行。请确认后再试。",
+    "写入权已失效，写入已停止，本次操作结果需核对（可能已部分写入）。请保留本次操作编号，勿重复提交，勿自动重试；先确认是否有其他进程正在写入。",
+  /**
+   * 写权状态未知（`SOLOIPS_CORE_LEASE_CHECK_FAILED`）。
+   *
+   * 〔约束〕与 `leaseLost` 同源（同一复核点，见 `errors.ts:34-39` 的码翻译）：
+   * 同样**不得**承诺零副作用，只能要求核对与保留编号。
+   */
+  "soloips.error.leaseUnknown":
+    "无法确认写入权状态，写入已停止，本次操作结果需核对（可能已部分写入）。请保留本次操作编号，勿重复提交；先核对未决操作与写入权状态。",
   /** 输入校验失败（`SOLOIPS_CORE_VALIDATION`）。 */
   "soloips.error.validation": "输入内容不符合要求，请检查后重试。",
   /** 状态不允许（`SOLOIPS_CORE_PRECONDITION`）。 */

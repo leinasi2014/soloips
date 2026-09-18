@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const pkgRoot = dirname(fileURLToPath(import.meta.url));
@@ -36,16 +37,29 @@ const tscArtifacts = [
  *
  * **分工（重要）**：本文件在 CI 上对 tsdown 产物的断言**恒为条件检查**
  * （`lib/` 不存在时直接返回），故它不承担「产物有效性」的验证职责。
- * 该职责由 CI 的 `check:build-repro` 步骤承担：它在 `build` **之后**运行，
- * 做「删产物 → 重跑构建 → 逐文件比对 SHA-256」，并显式失败于产物缺失。
+ * 该职责由两个 **build 之后**的步骤承担：
+ *  - `check:build-repro`：删产物 → 重跑构建 → 逐文件比对 SHA-256；
+ *  - `test:artifacts`（BE-0b-ii / F-03）：`packages/web/vitest.artifacts.config.ts`
+ *    驱动 `tests/artifacts/*.artifact.ts`，**要求产物存在**并真执行 VM / 挂载 /
+ *    codec 断言。它不在这里重复——产物用例写进本文件会在 `build` 之前跑，
+ *    那正是 F-03 要消除的形态。
  * 变异测试（BE-0a 补强）证明了这个分工的必要性：只在本文件断言「脚本已接线」
  * 而 CI 不跑该脚本，等于产物有效性在 CI 上**从未被验证**。
+ *
+ * 〔BE-0b-ii 修正（实测）〕此前本文件有两条**执行判据**用例（`the codec gate
+ * really flags a bad artifact` / `…covers every typert.*.js artifact on disk`），
+ * 它们会 `import` `lib/typert.host.js`。CI 的 `test` 跑在 `build` 之前、磁盘上
+ * 只有 `lib/types/**`，于是这两条**必然失败**（实测：`pnpm run test` exit 1，
+ * `Test Files 1 failed | 21 passed`）——即冻结提交把 CI 的 `Test` 步骤改红了。
+ * 它们已迁到 `tests/artifacts/artifact-behavior.artifact.ts`（build 之后跑，
+ * 判据不变、且额外补了正向用例）。本文件因此只保留**不依赖 tsdown 产物**的接线
+ * 断言与条件检查。
  *
  * 本测试因此断言两件在**任何**门禁顺序下都成立的事：
  *  1. tsdown 一旦跑过（`lib/index.js` 在），Typert 四个产物就**必须**齐全
  *     —— 这是「部分生成」这一真实故障模式的检查，非空断言；
- *  2. 可复现性证据**已接线**（脚本存在 + `package.json` 有 script +
- *     CI 两个 job 都真的调用它），使覆盖不会因误删/漏接而静默消失。
+ *  2. 可复现性证据与产物行为套件**已接线**（脚本/配置存在 + `package.json` 有
+ *     script + CI 两个 job 都真的调用它），使覆盖不会因误删/漏接而静默消失。
  */
 describe("soloips-web Typert artifacts", () => {
   const hasTsdownOutput = existsSync(join(libDir, "index.js"));
@@ -112,6 +126,150 @@ describe("soloips-web Typert artifacts", () => {
     }
     const missing = tsdownArtifacts.filter((file) => !existsSync(join(libDir, file)));
     expect(missing, "tsdown 已运行但 Typert 产物不齐（部分生成）").toEqual([]);
+  });
+
+  it("runs the artifact-behavior suite in CI, after build, in both jobs (BE-0b-ii / F-03)", () => {
+    // 〔为什么这条断言不能省〕F-03 的教训同型：只把产物用例写出来、而不断言
+    // CI **真的在 build 之后调用它**，等于覆盖在 CI 上不存在（删掉 workflow 里
+    // 那一行后全部测试仍绿）。本用例把「接线本身」变成断言。
+    //
+    // 三个事实缺一不可：
+    //  1. 根 package.json 有 `test:artifacts` script（调用点存在）；
+    //  2. 两个 job 都调用它，且**位置在 build 之后**（顺序是 F-03 的核心）；
+    //  3. 该套件用的是独立 config，且其 include 只匹配 `*.artifact.ts`
+    //     ——与默认 include（`*.spec.ts`）不相交，否则产物用例会在 build 之前
+    //     被默认套件捡走并因缺产物而红（实测）。
+    const rootManifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    expect(
+      rootManifest.scripts?.["test:artifacts"],
+      "根 package.json 必须保留 test:artifacts（否则该步骤不会被跑）",
+    ).toBe("vitest run --config packages/web/vitest.artifacts.config.ts");
+
+    const configPath = join(repoRoot, "packages", "web", "vitest.artifacts.config.ts");
+    expect(existsSync(configPath), "产物套件 config 必须存在").toBe(true);
+    const configSource = readFileSync(configPath, "utf8");
+    expect(
+      configSource,
+      "产物套件的 include 必须只匹配 *.artifact.ts（与默认套件 *.spec.ts 不相交）",
+    ).toContain("tests/artifacts/**/*.artifact.ts");
+
+    const workflowPath = join(repoRoot, ".github", "workflows", "verify.yml");
+    const workflow = readFileSync(workflowPath, "utf8");
+    const jobsAt = workflow.indexOf("\njobs:");
+    const jobsBlock = workflow.slice(jobsAt);
+    const headers = [...jobsBlock.matchAll(/^ {2}([A-Za-z0-9_-]+):$/gm)].map((match) => ({
+      name: match[1],
+      at: match.index,
+    }));
+    headers.forEach((header, index) => {
+      const next = headers[index + 1];
+      const section = jobsBlock.slice(header.at, next === undefined ? jobsBlock.length : next.at);
+      const buildAt = section.indexOf("pnpm run build");
+      const artifactsAt = section.indexOf("pnpm run test:artifacts");
+      expect(artifactsAt, `${header.name} 应含 test:artifacts 步骤`).toBeGreaterThanOrEqual(0);
+      expect(
+        artifactsAt,
+        `${header.name} 的 test:artifacts 必须在 build 之后（build 之前产物不存在，必红）`,
+      ).toBeGreaterThan(buildAt);
+    });
+  });
+
+  it("keeps the Typert codec-shape gate wired into CI after build (BE-0b-ii 盲区 2)", () => {
+    // 断言「门禁存在 + 真的在 CI 的 build 之后跑」。
+    //
+    // 为什么这层断言不能省（BE-0a 变异 #3 的同型教训）：只把检查写进
+    // check-delivery-load.mjs 而不断言 CI 调用它，等于该检查在 CI 上**从未执行**
+    // ——删掉 workflow 里那一行后全部测试仍绿。本用例把接线本身变成断言。
+    const gatePath = join(repoRoot, "scripts", "development", "check-delivery-load.mjs");
+    expect(existsSync(gatePath), "交付加载门禁脚本必须存在").toBe(true);
+
+    const workflowPath = join(repoRoot, ".github", "workflows", "verify.yml");
+    const workflow = readFileSync(workflowPath, "utf8");
+    const jobsAt = workflow.indexOf("\njobs:");
+    const jobsBlock = workflow.slice(jobsAt);
+    const headers = [...jobsBlock.matchAll(/^ {2}([A-Za-z0-9_-]+):$/gm)].map((match) => ({
+      name: match[1],
+      at: match.index,
+    }));
+    headers.forEach((header, index) => {
+      const next = headers[index + 1];
+      const section = jobsBlock.slice(header.at, next === undefined ? jobsBlock.length : next.at);
+      const buildAt = section.indexOf("pnpm run build");
+      const loadAt = section.indexOf("pnpm run check:delivery-load");
+      expect(loadAt, `${header.name} 应含 check-delivery-load 步骤`).toBeGreaterThanOrEqual(0);
+      expect(loadAt, `${header.name} 的 check:delivery-load 必须在 build 之后`).toBeGreaterThan(
+        buildAt,
+      );
+    });
+  });
+
+  it("main() really calls the codec check as a live statement (AST 判据；BE-0b-ii 盲区 1)", () => {
+    // 〔为什么不能用 `toContain`〕QA 实测两处漏检，都是纯子串匹配的固有缺陷：
+    //   - `// const x = await checkTypertCodecContract();`（**注释**）→ 字符串在源码里；
+    //   - `false ? await checkTypertCodecContract() : []`（**死分支**）→ 同上。
+    // 两种情况下套件全绿，而检查实际未运行。子串无法区分「活的调用语句」与
+    // 「注释/死代码里的同名字符串」。
+    //
+    // 〔判据〕用 TypeScript 自身的解析器读源码，在 **AST** 上找对
+    // `checkTypertCodecContract` 的 CallExpression：
+    //   - AST **不含注释**，故注释形态天然不产生 CallExpression；
+    //   - 再排除位于 ConditionalExpression（三元）内的调用，故死分支不满足。
+    // 这使判据与「运行时真的会执行它」对齐，而不是与「文本里出现过」对齐。
+    const gateSource = readFileSync(
+      join(repoRoot, "scripts", "development", "check-delivery-load.mjs"),
+      "utf8",
+    );
+    const source = ts.createSourceFile(
+      "check-delivery-load.mjs",
+      gateSource,
+      ts.ScriptTarget.ESNext,
+      true,
+      ts.ScriptKind.JS,
+    );
+
+    /** 收集所有对 `checkTypertCodecContract` 的调用及其是否位于三元分支内。 */
+    const calls: { insideConditional: boolean; insideLogical: boolean }[] = [];
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "checkTypertCodecContract"
+      ) {
+        let parent: ts.Node | undefined = node.parent;
+        let insideConditional = false;
+        let insideLogical = false;
+        // 向上找最近的语句：途中若穿过三元或 `&&`/`||` 短路，即非「无条件执行」。
+        while (parent !== undefined && !ts.isStatement(parent)) {
+          if (ts.isConditionalExpression(parent)) insideConditional = true;
+          if (ts.isBinaryExpression(parent)) {
+            const kind = parent.operatorToken.kind;
+            if (
+              kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+              kind === ts.SyntaxKind.BarBarToken
+            ) {
+              insideLogical = true;
+            }
+          }
+          parent = parent.parent;
+        }
+        calls.push({ insideConditional, insideLogical });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+
+    expect(
+      calls.length,
+      "check-delivery-load.mjs 必须存在对 checkTypertCodecContract 的调用表达式" +
+        "（注释与字符串不算——AST 里没有 CallExpression）",
+    ).toBeGreaterThan(0);
+    expect(
+      calls.filter((call) => !call.insideConditional && !call.insideLogical).length,
+      "checkTypertCodecContract 必须在**无条件**语句位置被调用" +
+        "（三元/短路分支里的调用是死代码，不能让门禁在 CI 上不执行）",
+    ).toBeGreaterThan(0);
   });
 
   it("emits tsc declarations for the Host entry and the contracts subpath", () => {
