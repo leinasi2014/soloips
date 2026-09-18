@@ -22,14 +22,23 @@
 - insert:
     - id: soloips-web
       name: "soloips-web"
-      # 无 inject：
-      #   - Host 半边是纯投影消费者，通过 ctx.inject([...], cb) 在服务就绪后注册，
-      #     不阻塞本行挂载；
-      #   - 客户端半边在浏览器内按 dsh.client.inject 排序（该字段在 package.json，
-      #     当前为 `["@deepseek-ai/dsh-api-remotes"]`：api-remotes 是 `ctx.remote`
-      #     的提供者，本包的 `$mount` 依赖它先就位）。
-      # 在 0.1.6 下把非必需服务写进 inject 只会让本行 pending 并静默不工作
-      # （W0 MECH-06 / SOLO-F04），不会报错 —— 因此这里刻意留空。
+      # inject 只声明**必需且由目标组合保证存在**的服务（与 core 行
+      # `inject: [soloipsAdapter]` 同构）。
+      #
+      # `soloipsCore`：Host 半边的全部业务方法（createCompany / getCompany /
+      # getCompanyTree / listDepartments / listTeams）经模块级 `coreOf(this.ctx)`
+      # 解析该服务（src/index.ts:224-227）；`getStatus` 探针不经它。
+      #
+      # 〔约束〕不得省略本声明：cordis 的 `ctx.get` 沿 **fiber 链**向上读各 fiber
+      # 的依赖快照（@deepseek-ai/cordis/lib/index.js:683-693），而该快照**只在行
+      # 声明 inject 时填充**——`_checkImpl` 由 `this.inject` 的键集驱动
+      # （同文件 :1097-1099），服务发布后的 notify 也只唤醒 `name in fiber.inject`
+      # 的行（:836-842）。即「服务已 provide ≠ 本行可见」：漏声明时业务调用
+      # **静默**返回 `core-unavailable`，无 warn、无报错。
+      #
+      # 客户端半边与本声明无关：`dsh.client` 是 package.json 字段（见文件头），
+      # 浏览器内按 `dsh.client.inject` 排序，不由行 inject 驱动。
+      inject: [soloipsCore]
       config:
         # 统一开关位；false 时 Host 桥不注册任何路由/投影。
         enabled: true

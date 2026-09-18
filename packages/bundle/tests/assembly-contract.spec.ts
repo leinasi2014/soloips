@@ -185,6 +185,31 @@ describe("T01 assembly contract: patch shape (0.1.6 parser requirements)", () =>
     expect(duplicated).toEqual([]);
   });
 
+  it("declares soloipsCore in the soloips-web row inject (fiber dependency snapshot)", () => {
+    // 〔为什么这条是契约而非实现细节〕web 的五个业务方法经模块级 `coreOf(ctx)`
+    // 解析 `soloipsCore`（packages/web/src/index.ts:224-227），而 cordis 的
+    // `ctx.get` 沿 **fiber 链**读各 fiber 的依赖快照，快照**只在行声明 inject 时
+    // 填充**（@deepseek-ai/cordis/lib/index.js:683-693 的解析循环；`_checkImpl`
+    // 由 `this.inject` 的键集驱动，:1097-1099；服务发布后的 notify 也只唤醒
+    // `name in fiber.inject` 的行，:836-842）。
+    //
+    // 漏声明的失效模式是**静默**的：服务已 provide 也查不到，五个业务方法全部
+    // 返回 `core-unavailable`，无 warn、无报错——真实浏览器 E2E 实测如此。
+    // 与 `soloips-core` 行 `inject: [soloipsAdapter]` 同构（core 消费 adapter
+    // 服务同样必须声明）。
+    const parsed = loadPatch(join(packagesRoot, "web", "cordis.patch.yml")) as {
+      insert?: { id?: string; inject?: string[] }[];
+    }[];
+    const row = parsed
+      .flatMap((entry) => entry.insert ?? [])
+      .find((item) => item.id === "soloips-web");
+    expect(row, "web patch 必须声明 soloips-web 行").toBeDefined();
+    expect(
+      row?.inject ?? [],
+      "soloips-web 行必须 inject soloipsCore（缺声明时业务面静默返回 unavailable）",
+    ).toContain("soloipsCore");
+  });
+
   it("does not insert the bundle package's own row (bundle only overwrites)", () => {
     // SOLO-C04：本层不新增业务行；三行由各能力包自己 insert。
     const parsed = loadPatch(join(packagesRoot, "bundle", "cordis.patch.yml")) as {

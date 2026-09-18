@@ -331,11 +331,19 @@ declare module "@deepseek-ai/cordis" {
  * 方法（见 {@link SoloipsWebCoreSurface}），`close()`、domain handle 与底层存储
  * 句柄都不在本类的可见面内（§2.5 边界 1）。
  *
- * 〔就绪策略：不 `inject`，按调用解析〕本类**不**声明 `ctx.inject(['soloipsCore'])`：
- * 那会让本行在 core 未就绪时保持 pending，连 `getStatus` 探针都不可用，且失败是
- * **静默**的（0.1.6 下未满足的 inject 只让行 pending，不报错——见
- * `cordis.patch.yml` 的既有说明）。改为每次调用时 `ctx.get()` 解析，未就绪时返回
- * `unavailable` 态（§2.5.1 裁定三：「不伪装空数据」）。
+ * 〔就绪策略：行声明 inject（可见性）+ 按调用解析（降级）〕两件事分工不同，缺一不可：
+ *
+ * - **行声明 `inject: [soloipsCore]`**（`cordis.patch.yml`）决定**可见性**：cordis 的
+ *   `ctx.get` 沿 **fiber 链**读各 fiber 的依赖快照，而快照**只在行声明 inject 时填充**
+ *   （`@deepseek-ai/cordis/lib/index.js:683-693`；`notify` 也只唤醒 `name in fiber.inject`
+ *   的行，`:836-842`）。**漏声明的失效是静默的**——服务已 provide 也查不到，五个业务
+ *   方法全部返回 `core-unavailable`，无 warn、无报错（真实浏览器 E2E 实测如此）。
+ * - **方法体内按调用 `coreOf(this.ctx)` 解析**决定**降级行为**：未就绪时返回
+ *   `unavailable` 态而非抛错（§2.5.1 裁定三：「不伪装空数据」）。
+ *
+ * 〔代价声明〕声明 inject 后本行在 core 就绪前保持 pending（宿主启动审计会出现一条
+ * 可恢复的 waiting 警告；core 被 disabled 时本行不激活、业务面 fail-closed）。
+ * 这是正确语义：core 是业务面的硬前提。
  *
  * 〔约束：方法体内**不得**经 `this` 访问任何私有（`#`）成员〕网关经 cordis 的
  * traceable Proxy 取接收者并 `Reflect.apply` 调用，Proxy 会把 `this` 改绑到 shadow，
