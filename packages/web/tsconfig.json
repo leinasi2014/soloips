@@ -7,7 +7,32 @@
     // 本形状与 DSH fork 的 UI 插件包一致（`packages/client/*/tsconfig.host.json`），
     // 也是 Typert 生成器 `sourcePathForExport` 的期望形状（`lib/types/**` → `src/**`）。
     "outDir": "lib/types",
-    "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "lib/tsconfig.tsbuildinfo",
+
+    // ── 只产声明：`lib/types/**` 下不得出现 `.js`（BE-6a 身份分裂修复）───────────
+    //
+    // 〔缺陷〕未开本项时 tsc 会把 Host 源码**再编译一份 JS**到
+    // `lib/types/index.js`（副本 A），而根 `tsdown.config.ts` 的 Node 半边又把它
+    // 打包成 `lib/index.js`（副本 B）。同一进程里 `SoloipsWebHost` 因此有**两份
+    // 互不相等的类定义**（实测 `A === B` 为 false、`prototype` 亦不同），
+    // `instanceof` 判别在装配路径上必然失败——E2E 表现为
+    // `soloips/createCompany → gateway/internal / "Receiver must be an instance of
+    // class SoloipsWebHost"`。
+    //
+    // 〔为什么本项不破坏 Typert 反推〕生成器的 `sourcePathForExport`
+    // （`@deepseek-ai/dsh-typert-generator/lib/types/analyzer.js:2514-2523`）是**纯
+    // 字符串→路径映射**：`lib/types/X.d.ts` → `src/X.ts`；它只对**源码**做
+    // `existsSync` 过滤（`entrySourcePaths`，`:352-362`），从不要求 `lib/types/X.js`
+    // 存在。故「只产声明」后 `exports["."].types` 仍写
+    // `./lib/types/index.d.ts` 即可，反推结果不变。
+    //
+    // 〔为什么 JS 必须消失而不是换个目录〕`check-delivery-load` 的
+    // `checkDeclaredDependencies` 递归扫 `lib/` 下**全部** `.js` 的裸说明符，而
+    // `files` 的 `lib/**/*.js` 又会把中间产物打进 tarball——`lib/types/**` 里的任何
+    // `.js` 都会被当成交付面证据。故判据是「该目录下只有 `.d.ts`」。
+    //
+    // 〔先例〕同包 `tsconfig.client.json:29` 已用同一项，理由同族（见该文件注释）。
+    "emitDeclarationOnly": true
   },
   // 〔BE-0b-i〕本工程只编译 **Host 半边**；浏览器半边由 `tsconfig.client.json`
   // 单独编译（declaration-only），两者文件集**不相交**。理由：

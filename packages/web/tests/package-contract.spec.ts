@@ -89,7 +89,29 @@ describe("soloips-web package contract", () => {
     // 生成的 .d.ts 无法解析。
     const contracts = manifest.exports["./contracts"] as ExportTarget;
     expect(contracts.types).toBe("./lib/types/contracts.d.ts");
-    expect(contracts.default).toBe("./lib/types/contracts.js");
+    // ── type-only（BE-6a 身份分裂修复）───────────────────────────────────────
+    //
+    // 〔为什么没有 `default`〕`src/contracts.ts` **零运行期导出**（全文只有类型
+    // 与 `export {}`），旧的 `default: "./lib/types/contracts.js"` 指向的是一个
+    // 只含 `export {}` 的空模块——它从来不是可用的运行期入口，只是「exports 全部
+    // 解析到存在的文件」这条检查的形式满足。
+    //
+    // 〔为什么必须去掉〕该 `default` 与 Host 入口的 JS 中间产物是**同一个机制**的
+    // 两处：都要求 tsc 在 `lib/types/` 下产 `.js`。BE-6a 起 Host 工程开
+    // `emitDeclarationOnly`（否则 `lib/types/index.js` 与 tsdown 的 `lib/index.js`
+    // 会构成两份 `SoloipsWebHost` 类定义，`instanceof` 判别在装配路径上失败），
+    // 该文件随之消失。故这里收敛为 **type-only**——与 `src/contracts.ts` 的实际
+    // 形态一致，且不再要求任何 tsc 的 JS 产物。
+    //
+    // 〔生成器侧不受影响〕`sourcePathForExport` 只读 exports 的**字符串目标**，
+    // 且按 `types` → `import` → `default` 顺序取第一个；去掉 `default` 后仍解析到
+    // `./lib/types/contracts.d.ts` → `src/contracts.ts`（实测：生成的
+    // `typert.remote-client.d.ts` 仍写 `from 'soloips-web/contracts'`）。
+    expect(contracts.default).toBeUndefined();
+    expect(
+      Object.keys(contracts),
+      "只留 types 条件——多一个运行期条件就要求 tsc 产 JS 中间产物（那正是身份分裂的来源）",
+    ).toEqual(["types"]);
   });
 
   it("declares ./typert and ./remote with the generator's exact expected shape", () => {

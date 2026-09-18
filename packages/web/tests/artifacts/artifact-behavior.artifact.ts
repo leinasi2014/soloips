@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import vm from "node:vm";
@@ -234,6 +242,118 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     for (const required of REQUIRED_ARTIFACTS) requireArtifact(required);
   });
 
+  it("exposes exactly one SoloipsWebHost class definition at runtime (身份唯一)", async () => {
+    // ── 本用例防的缺陷（BE-6a 的真实故障）────────────────────────────────────
+    //
+    // 旧构建面同时产出两份类定义：tsc 的 `lib/types/index.js`（`outDir: lib/types`
+    // 且未关 JS emit）与 tsdown 的 `lib/index.js`（`entry: ["lib/types/index.js"]`）。
+    // 同一进程里 `A === B` 为 false、`prototype` 也不同，于是 `instanceof` 判别在
+    // 装配路径上必然失败：E2E 报
+    // `soloips/createCompany → gateway/internal` /
+    // `"Receiver must be an instance of class SoloipsWebHost"`。
+    //
+    // 〔为什么这条必须在产物层测，而不是读配置文本〕配置面已由
+    // `packages/web/tests/typert-artifacts.spec.ts` 的「lib/types 无 JS」用例覆盖；
+    // 但那条判据是**路径形状**，任何别的机制（多一份产物、别名指向副本、打包器
+    // 意外内联）都能重建出两份定义而不违反它。本用例按**运行期事实**判定：
+    // 枚举 `lib/` 下每个可加载的 `.js`，真的 import，收集「导出名为
+    // SoloipsWebHost 的函数」，断言该集合恰有一个成员。
+    //
+    // 〔为什么不需要实例〕判据是**模块级导出身份**，不是对象归属：两份定义的
+    // 存在性与 `new` 无关。本套件不构造 Host（那需要真实 cordis Context 与
+    // core 服务，属 E2E 的范围）。
+    const libRoot = join(packageDir, "lib");
+    const modules = readdirSync(libRoot, { recursive: true })
+      .map((entry) => String(entry).replaceAll("\\", "/"))
+      .filter((entry) => entry.endsWith(".js"))
+      .sort();
+    expect(modules.length, "lib/ 下必须存在产物（本用例不得在空目录上通过）").toBeGreaterThan(0);
+
+    /** 导出名为 SoloipsWebHost 的函数定义（模块路径 + 导出键 + 类身份）。 */
+    const definitions: { file: string; key: string; ctor: unknown }[] = [];
+    const loaded: string[] = [];
+    for (const file of modules) {
+      const absolute = join(libRoot, file);
+      const source = readFileSync(absolute, "utf8");
+      // 浏览器闭包工厂在 Node 下必然失败（依赖 window.__ModuleLoader__），且它按
+      // 设计**不得**携带 Host 实现（验收条款 5 另有专条断言）。跳过它而不是
+      // 吞掉它的加载错误：判据是「产物注册形态」，不是「Node 可加载」。
+      if (source.startsWith("window.__ModuleLoader__.load(")) continue;
+      const namespace = (await import(pathToFileURL(absolute).href)) as Record<string, unknown>;
+      loaded.push(file);
+      for (const [key, value] of Object.entries(namespace)) {
+        if (typeof value !== "function" || value.name !== "SoloipsWebHost") continue;
+        definitions.push({ file, key, ctor: value });
+      }
+    }
+
+    expect(loaded, "至少有一个可加载的 Host 产物（否则本用例在空集合上通过）").toContain(
+      "index.js",
+    );
+
+    // 〔判据按**类身份**去重，不按（文件, 导出键）〕同一份定义可以有多个导出名
+    // （`export class SoloipsWebHost` + `export default SoloipsWebHost` 是**同一
+    // 对象**的两种引用）。按键计数会把「一份定义的两种引用」误报成两份。
+    // 真正要防的是**不同的类对象**：那才是 `instanceof` 判别失败的原因。
+    const distinctClasses = [...new Set(definitions.map((definition) => definition.ctor))];
+    expect(
+      distinctClasses.length,
+      "运行期只能有**一份** SoloipsWebHost 类定义——两份会让 instanceof 判别失败" +
+        `（E2E 报 gateway/internal）。实际来源：${definitions
+          .map((definition) => `${definition.file}#${definition.key}`)
+          .join(", ")}`,
+    ).toBe(1);
+
+    // 且它必须来自包根入口 `lib/index.js`（交付面指向的那一份）。若唯一定义来自
+    // 别处（如某个中间产物目录），说明交付面与实现分叉——那同样是缺陷，只是
+    // 形态不同。
+    //
+    // 〔为什么按文件去重再断言〕同一文件可以有多个导出名（具名 + default），
+    // 断言精确列表会把「导出名数量变化」误报成缺陷；本判据要的是**文件来源唯一**。
+    expect(
+      [...new Set(definitions.map((definition) => definition.file))].sort(),
+      "唯一的类定义必须由包根入口 lib/index.js 提供",
+    ).toEqual(["index.js"]);
+
+    // 包根入口的 default 与具名导出必须是**同一个**类对象（同一份定义的两种引用），
+    // 不是各自持有一份。旧形状下这条也可能被满足，但它是「一份定义」的必要条件，
+    // 与上面的集合断言互补：集合断言管「有几份」，本断言管「入口引用哪一份」。
+    const entry = (await import(pathToFileURL(requireArtifact("lib/index.js")).href)) as {
+      default?: unknown;
+      SoloipsWebHost?: unknown;
+    };
+    expect(entry.SoloipsWebHost, "包根入口必须导出 SoloipsWebHost").toBeDefined();
+    expect(entry.default, "default 与具名导出必须是同一个类对象（同一份定义）").toBe(
+      entry.SoloipsWebHost,
+    );
+
+    // 〔更深一层：基类身份〕产物里的 `TypertRemoteService` 必须与**本测试解析到的**
+    // 同一个模块实例。这正是身份分裂的镜像面：若产物把协议包内联成第二份副本，
+    // 网关（它持有自己那份协议）就认不出这个服务——`instanceof` 与
+    // `Symbol.metadata` 链都会断。此判据不需要实例（`instanceof` 在类对象上成立）。
+    const protocol = await import("@deepseek-ai/dsh-typert-protocol");
+    expect(
+      Object.getPrototypeOf(entry.SoloipsWebHost as object),
+      "类必须直接继承**同一份** TypertRemoteService（内联副本会让网关认不出该服务）",
+    ).toBe(protocol.TypertRemoteService);
+
+    // 类体必须是完整的 Host 实现（六个 Remote 方法都在原型上）。缺任一说明入口
+    // 指向了残缺定义（如只有装饰器桩），而不是真实现。
+    const methods = Object.getOwnPropertyNames(
+      (entry.SoloipsWebHost as { prototype: object }).prototype,
+    ).filter((name) => name !== "constructor");
+    expect(methods.sort(), "类原型必须带全部六个 Remote 方法（缺任一即入口指向残缺定义）").toEqual(
+      [
+        "createCompany",
+        "getCompany",
+        "getCompanyTree",
+        "getStatus",
+        "listDepartments",
+        "listTeams",
+      ].sort(),
+    );
+  });
+
   it("carries the getStatus invocation in the Host face model", async () => {
     const host = (await import(pathToFileURL(requireArtifact("lib/typert.host.js")).href)) as {
       TYPERT?: { package?: string; face?: string; invocations?: { id?: string }[] };
@@ -286,6 +406,43 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     // 存在意义随之消失——本断言把该约束固定在生成物上。
     expect(dts).toContain("from 'soloips-web/contracts'");
     expect(dts).toContain("getStatus");
+  });
+
+  it("resolves every package.json export target to an existing file (交付面自洽)", () => {
+    // 〔为什么本用例在这里〕它是**产物存在性**判据：`exports` 指向不存在的文件
+    // 只在安装后暴露（`ERR_MODULE_NOT_FOUND` / 类型解析失败），本地 worktree 一切
+    // 正常。判据按 manifest 逐条解析，与 `check:delivery-load` 的隔离安装互补：
+    // 那个门按包名 import，这个门逐条核对**每个子路径的每个条件**（含 `types`，
+    // 它不会被运行期 import 覆盖）。
+    //
+    // 〔BE-6a 的直接动因〕`./contracts` 的 `default` 曾指向
+    // `./lib/types/contracts.js`——那是 tsc 的 JS 中间产物，与 Host 入口的
+    // `lib/types/index.js` 同源。BE-6a 起 Host 工程只产声明，该文件不再存在；
+    // 本用例把「exports 全部解析到存在的文件」变成**每次构建后都执行**的事实，
+    // 使同类残留（改了 exports 却忘了改构建面）不会静默留到安装期。
+    const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
+      exports?: Record<string, string | { [condition: string]: string }>;
+    };
+    const dangling: string[] = [];
+    for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
+      const targets = typeof target === "string" ? [target] : Object.values(target);
+      for (const path of targets) {
+        if (typeof path !== "string" || !path.startsWith("./")) continue;
+        const absolute = join(packageDir, path.slice(2));
+        if (!existsSync(absolute)) dangling.push(`${subpath} → ${path}`);
+      }
+    }
+    expect(dangling, "exports 的每个条件都必须解析到存在的文件（悬空即交付不可用）").toEqual([]);
+
+    // 〔type-only 姿态〕`./contracts` 不得再有运行期条件：`src/contracts.ts` 零运行期
+    // 导出（全文只有类型与 `export {}`），任何 `default`/`import` 条件都只能指向
+    // 一个空模块——而它要求 tsc 在 `lib/types/` 下产 JS，正是身份分裂的来源。
+    const contracts = manifest.exports?.["./contracts"];
+    expect(contracts, "exports 必须保留 ./contracts（生成物的边界类型引用它）").toBeDefined();
+    expect(
+      typeof contracts === "string" ? contracts : Object.keys(contracts ?? {}),
+      "./contracts 必须是 type-only（只留 types 条件）",
+    ).toEqual(["types"]);
   });
 
   // ── F-04：激活日志的**失败诊断扫描**与**正向确认** ────────────────────────
