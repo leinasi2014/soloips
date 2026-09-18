@@ -1010,7 +1010,7 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
    - **每个「写」工具必须对应一个已登记的命令 `kind` 和服务方法**；无 `kind` 的动作不得暴露为写工具。`SoloipsOperationKind` 当前**无 `team.*` 项**，故编组/团队类写工具名（如 `soloips_team_update_function`）**待 BE-3 新增 kind 后才成立**——在此之前不得定稿，属〔待决〕。**BE-001 后新增的 `team.activate` 同样须先登记 kind 才可暴露工具名**（三步协议见 §2.1.1 P-9）。
    - **每个「读」工具必须对应一个已登记的查询服务**；**查询不要求创建 `operation`**（读路径不写台账，见 §2.5 表内读面各行）。
 
-**`@Remote` 列的「—」含义**〔约束〕：**不暴露**（该查询经**既有服务面**消费，不新增 Remote 方法）。上表第 11–20 行的读面因此只有模型工具名，没有 Remote 方法——**不是**「待补」。
+**`@Remote` 列的「—」含义**〔约束〕：**不因本表而暴露**（该查询经**Host 进程内**的既有服务面消费）。上表第 11–20 行的读面因此只有模型工具名、没有 Remote 方法——**不是**「待补」。但**浏览器不可直接到达 Host 进程内服务**，故当界面需要读回时，其 Remote 暴露由 **§2.5.1 调用暴露矩阵**决定（**不是**「永久不暴露」，2026-09-18 收口）。
 
 **不拆分 `tool-registry.md`（2026-09-18 登记：提案未采纳）**〔约束〕：
 
@@ -1019,6 +1019,55 @@ export type SoloipsAuditId = SoloipsCoreId<'audit'>;
 > **复议触发条件**：**工具数 > 40 时再议**。届时若清单长度确实影响本节可读性，可在**保持单一权威**的前提下拆分（拆分后须有一处为权威、其余为投影引用）。
 
 **`contract-doc-sync-check` CI（提案未采纳）**〔待决〕：审查曾提议新增 CI，自动核对文档中的模型/字段/工具名与 `packages/core/src/contracts.ts` 是否同步。**本轮不实施**，登记为 **P3 切片候选 BE-8**——**权威登记与理由见 §6.2**（本节不重复）。**M0.1 的替代纪律**：凡改 §0 已实现行，必须对照 `packages/core/src/contracts.ts` 核验（见 §0 开头注）。
+
+#### 2.5.1 调用暴露矩阵（2026-09-18 冻结；BE-6a 前置）〔约束〕
+
+**问题**（#35 §3.2「调用暴露边界」）：§2.5 登记了 20 项**模型工具名**，覆盖全部写命令；而 §2.4.3（SA-04）规定系统助理**不得代为执行组织动作**。两者相加会被读成「模型可调 `soloips_company_create` 建公司」——与 SA-04 冲突，也与 M-A「**用户**经可信入口创建公司」的表述冲突。本节消除该冲突，作为 BE-6a 的派发前置。
+
+**裁定一：以「谁是行为主体」分面，不以「工具名是否登记」分面。**
+
+§2.5 的表登记的是**工具名的命名面**（名称、形态约束、与 kind 的一一对应），**不构成「该工具应注册给任何 agent」的授权**。是否注册、注册给谁，由本节决定。**core 存在某个命令 ≠ 模型应当拥有该工具。**
+
+**裁定二：组织写动作走「用户确认的可信 Remote」，不注册为模型工具。**
+
+| 动作（core 命令） | 用户 Remote（浏览器） | 模型工具面 | 身份来源 | 拒绝方式 |
+|---|---|---|---|---|
+| `createCompany` | **✓（用户显式确认后触发）** | **✗ 不注册** | Host 会话 + 部署注入 `accountId` | 模型面：工具不存在；Remote：服务未就绪/范围不符各有稳定码 |
+| `createDepartment` | **✓（用户确认）** | **✗ 不注册** | 同上 | 同上 |
+| `createEmployee` | **✓（用户确认）** | **✗ 不注册** | 同上 | 同上 |
+| `createAppointment`（首任总助理/部长/组长） | **✓（用户确认）** | **✗ 不注册**（SA-04 明禁「自己创建任职」） | 同上 | 同上 |
+| `revokeAppointment` | **✓（用户确认）** | **✗ 不注册** | 同上 | 同上 |
+| `saveEmployeeDocument` | **✓（用户经员工配置页，代表员工）** | **✗ 不注册**（SA-04 禁「代写文档」） | 同上 | 同上 |
+| team 四命令（`createTeam`/`updateTeamFunction`/`activateTeam`/`closeTeam`） | **✓（用户确认）** | **✗ 不注册** | 同上 | 同上 |
+| `requestWorkEntry` | **✗**（不是浏览器面：属员工自身准入前门） | **✗** | 需 agent 上下文（DSH agents 端口强制） | 无 agent 凭证即 fail-closed（`ports/tools.ts`） |
+| `initializeEmployeeMemory` / `verifyEmployeeCapability` / `recordAssemblyEvidence` | **✗ fail-closed** | **✗ fail-closed** | 需可信流程（`ExecutionBinding` 未实现） | 入口不存在即拒；**不得**为开发方便开启，**不得**接受模型自报 |
+| `reconcileTeams` | **✗**（恢复辅助，非用户面） | **✗** | Host 内部运维入口 | 不注册 |
+| `close()` / 底层存储句柄 | **✗** | **✗** | — | §2.5 边界 1 |
+| 只读投影（`getCompany`/`listSubsidiaries`/`getCompanyTree`/`listDepartments`/`getTeam`/`listTeams`/`getEmployee`/`getAppointment`/`getDocumentVersion`/`getOperation`/`listPendingOperations` + BE-4a 五项） | **✓ 最小必要集**（见裁定三） | **✓**（§2.5 已登记；只读零业务写） | Host 会话 | 服务未就绪 → 「未就绪」态，**不伪装空数据** |
+
+**裁定三：只读面必须有浏览器可达路径（收口 §2.5 的「—」）。**
+
+§2.5 表第 11–20 行原注「不暴露（经既有服务面消费）」中的「既有服务面」是 **Host 进程内**的 `SoloipsCoreService`，**浏览器无法直接到达**。若界面需要读回（M-A 明确需要），就必须有 Remote 方法。**裁定**：
+
+- 读面按**最小必要**新增 `@Remote` 只读方法（M-A 集：公司状态与树、部门列表、团队列表；后续切片按界面需要扩）。
+- §2.5 表「`@Remote` 列 = —」的含义同步更正为：**该查询不因 `toolview` 卡片需要而自动暴露**，其 Remote 暴露由本矩阵与对应切片决定；**不是**「永久不暴露」。
+- 只读 Remote **不产生 `operation`**（§2.5 两条边界 2 后半）。
+
+**裁定四：身份与拒绝的分层（防止「靠 prompt 约定代替入口拒绝」）。**
+
+| 层 | 规则 |
+|---|---|
+| accountId | **不由任何 UI 或模型参数传入/覆盖**——来自部署注入 + 根级绑定元数据（§3.1） |
+| actor（`actorAppointmentId`） | 属**半可信输入**（§3.1 SA-02）：可作审计线索，**不可作授权唯一依据** |
+| 模型工具调用 | 强制要求 agent 上下文；无 agent 凭证即 fail-closed（**不能**靠菜单隐藏或 prompt 约定替代） |
+| 用户引导 Remote | **不得**误要求 agent 上下文——否则冷启动死锁（M-A 的用户确认路径必须可用） |
+| 未注册的工具 | 模型侧表现为**工具不存在**（不是「存在但调用被拒」）——这是本矩阵对 SA-04 的**技术强制**手段 |
+
+**裁定五：与既有验收口径的关系。**
+
+`system-assistant-backend-design-v0.1.md` §4.1 BE-6 验收①「模型经对话调用工具创建一条公司并读回」**被本节取代**——M-A 的读法是「**用户**经引导确认 → 可信 Remote → core 提交 → 读回」。该验收条目的功能等价物（创建并读回）保留，行为主体由「模型」更正为「用户」。**不改 BE-6 的其余验收**（②③④⑤继续有效，其中③「无 agent 上下文拒绝」按裁定四的适用范围解释）。
+
+**〔待实现〕**：本矩阵是 BE-6a 的**实现与验收依据**，M0.1 尚无 Host 半边（§0）。**在 BE-6a 落地前，不得声称该边界已被技术强制。**
 
 ### 2.6 公司树规则（2026-09-18 codex 终审补录）〔约束〕
 
@@ -1703,3 +1752,4 @@ export function register(client: ClientModules): void {
 | 2026-09-18 | **ChatGPT 第二阶段审查修正（BE-001…004 + P2-001…003）**：①**BE-001** §2.1.1 新增 **P-9 三步成团协议**（`team.create`(pending,无组长) → `appointment.create`(team_lead) → `team.activate`(P-4 校验后转可用)），三步三 kind 三 `operationId` 各自可恢复；恢复入口=扫描 pending 续做或收敛；四条读面纪律 P-9.1…P-9.4；`SoloipsTeamRecord.leadAppointmentId` 改**可缺省**（pending 期无组长）、`status` 增 `pending`；②**BE-002** 新增 **`SoloipsOperationRecord.schemaVersion`**〔待实现〕——新写入带当前版本、读取遇 unknown kind 按版本兼容，使 kind 联合扩展由破坏性降为兼容性变更；③**BE-003** §2.3 运行时推断**删除规则 2**（「首个 `general_assistant` → company 级」），改为**严格三分支**（有 scope 用之 / 无 scope 有 departmentId 归 department / 否则 invalid，不猜）；该推断**仅允许存在于 migration 工具且须人工确认**；D-1 同步改写；④**BE-004** `SoloipsTeamSkillAssignmentRecord.status` 扩为 **`requested`/`available`/`active`/`failed`/`revoked`** 五态 + 迁移矩阵（与 MCP 对齐，`revoked` 无出边；M0.1 只走 `requested`）；⑤§2.2 实体登记表行 1/2 同步 | ChatGPT 第二阶段审查（BE 切片闭合）；指挥逐条核实裁定（四条 P1 全采纳，P2 一采纳一折中一采纳） |
 | 2026-09-18 | **ChatGPT 第三阶段终审 SA 建议（SA-01…SA-04，全部采纳）**：①**SA-01** §2.4.1 补「读面必须显式表达『无总助理』状态」（SA-01.1…SA-01.4）——BE-4 查询服务须能区分「无有效 `general_assistant` 任职」与「未覆盖/查询失败」，**不静默省略**，界面据此显示「待招募」引导；②**SA-02** §3.1 补「**Host 层 actor 属半可信输入**」声明（SA-02.1…SA-02.5）——非可信输入（部署面自证），**可作审计线索、不可作授权唯一依据**，**不得**与 ORG-05 可信身份链混同；`ExecutionBinding` 落地后重新评估；③**SA-03** 新增 **§3.4 员工自主循环的能力闸门**〔待实现 M0.2+，原则 M0.1 生效〕——七阶段循环（Observe→Plan→**Request capability**→Execute→Record evidence→Reflect→Continue）+ **四层检查**（身份→任职→工具授权→scope，全部通过与关系）+ 五条**反例明示禁止**（含「直接调用所有工具」）；④**SA-04** 新增 **§2.4.3 系统助理职责边界**——允许（引导招募/解释状态/协调流程/提供建议）与禁止（自建任职/改自身权限/绕过审批/替员工执行业务）分列，判据「**可以『说』，不可以『做组织动作』**」，定位写死为**系统级协调入口，不是组织最高决策主体（防「隐形 CEO」）** | ChatGPT 第三阶段终审 4 项 SA 建议；指挥核实裁定全部采纳（PR 收口补入） |
 | 2026-09-18 | **OPS-00 同步（#35 §3.2）**：§0 对照 `contracts.ts`@8abf815 修正 5 处滞后行——①Department 补 `leaderAppointmentId?`；②Appointment 补 `scope?`/`role?` 与 `departmentId?` 可选、状态改「已实现」；③Operation 补 `schemaVersion?`（BE-3 交付）、删「未实现」；④能力面补 team 四命令 + `getTeam`/`listTeams` + `reconcileTeams`、缺口改为 5 个未落地读方法；⑤Team 实体行改「已实现」、TeamBinding 行拆分独立；§3.1 C-2 注从〔待实现〕改〔已实现〕（BE-1 交付：根级绑定元数据 + 占位拒绝 + 真实 accountId）；§2.4.1 SA-01 注指向 BE-4a 切片 | OPS-00 接管收口（#35 §3.2「§0 滞后」项）；逐项对照源码核验（附行号） |
+| 2026-09-18 | **新增 §2.5.1 调用暴露矩阵（OPS-00 / #35 §3.2「调用暴露边界」）**：以「谁是行为主体」分面消除「§2.5 登记 20 项模型工具名」与「§2.4.3 SA-04 系统助理不得代为执行组织动作」的冲突——①组织写动作（createCompany/createDepartment/createEmployee/createAppointment/revokeAppointment/saveEmployeeDocument/team 四命令）**走用户确认的可信 Remote，不注册为模型工具**；②`requestWorkEntry`/`initializeEmployeeMemory`/`verifyEmployeeCapability`/`recordAssemblyEvidence`/`reconcileTeams`/`close` 全面 fail-closed；③只读投影需浏览器可达路径（§2.5「—」含义收口为「不因本表暴露」，非永久不暴露）；④身份分层（accountId 部署注入、actor 半可信、模型面强制 agent 上下文、用户 Remote 不得误要求 agent 上下文）；⑤`system-assistant-backend-design` §4.1 BE-6 验收① 行为主体由「模型」更正为「用户」 | OPS-00 收口；BE-6a 派发前置裁定（C 亲手） |

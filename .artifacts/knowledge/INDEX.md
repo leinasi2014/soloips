@@ -22,7 +22,8 @@
 
 | 绑定版本 | 测试数（用例/文件） | 门禁 | 生成时间与入口 |
 |---|---|---|---|
-| main@8abf815 | 240 用例 / 20 文件 | format:check/lint/typecheck/test/build/check:build-repro/check:delivery-load 七项全绿（干净工作区，本机实跑）+ CI 双作业 success（run 35293379174） | 2026-09-18（OPS-00 接管基线；日志 `.artifacts/logs/baseline-8abf815/`） |
+| main@2d64aaf | 240 用例 / 20 文件 | 七项全绿（干净工作区，本机实跑）+ CI 双作业 success（PR #36） | 2026-09-18（OPS-00 收口合并后；日志 `.artifacts/logs/baseline-2d64aaf/`） |
+| main@8abf815 | 240 用例 / 20 文件 | 七项全绿（干净工作区，本机实跑）+ CI 双作业 success（run 35293379174） | 2026-09-18（OPS-00 接管基线；日志 `.artifacts/logs/baseline-8abf815/`） |
 
 > 规则：新合并 → 验证实际版本 → 新增行；未提交工作区不进此表；**手写 passed=违规**；不得把基线行的 SHA 改成最新 main 而沿用旧通过状态。测试数与文件数分字段写。
 > 〔已归档〕`main@8961d93`（240/20）与 `main@9282908`（182/19）为历史基线，证据入口见 Git 历史与 `logs/be3/`。
