@@ -76,7 +76,7 @@ function git(repo, args) {
   return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
 }
 
-/** M-A 写面：改动这些路径即视为触及装配/身份链路。 */
+/** M-A 写面：改动这些路径即视为触及装配/身份链路（含其测试——测试也是 PR 内容）。 */
 const M_A_WRITE_SURFACE = [
   /^packages\/web\/src\//,
   /^packages\/web\/cordis\.patch\.yml$/,
@@ -84,6 +84,23 @@ const M_A_WRITE_SURFACE = [
   /^packages\/web\/tsconfig\.json$/,
   /^tsdown\.config\.ts$/,
   /^packages\/bundle\//,
+  /^packages\/adapter-dsh\/src\//,
+];
+
+/**
+ * M-A **产品输入**：改动这些路径会改变**实际交付产物或装配路径**，故使既有证据失效。
+ *
+ * 〔为什么比 {@link M_A_WRITE_SURFACE} 窄〕写面包含测试与装配声明（它们属于 PR
+ * 内容、必须触发证据检查），但**测试改动不改变交付产物**。把测试也算作「产品输入」
+ * 会强迫每次补测试都重跑真实链路——那是不可执行的纪律，最终只会被绕过。
+ * 本清单 = 「产物字节或装配行会变」的最小集合。
+ */
+const M_A_PRODUCT_INPUT = [
+  /^packages\/web\/src\//,
+  /^packages\/web\/cordis\.patch\.yml$/,
+  /^packages\/web\/package\.json$/,
+  /^packages\/web\/tsconfig\.json$/,
+  /^tsdown\.config\.ts$/,
   /^packages\/adapter-dsh\/src\//,
 ];
 
@@ -141,10 +158,42 @@ try {
 }
 
 if (manifest.candidateSha !== head) {
-  fail(
-    `M-A 证据门失败：证据绑定的是 ${String(manifest.candidateSha)}，当前 HEAD 是 ${head}。\n` +
-      "  任一 SHA / 构建输入变化 → 真实链路证据自动 stale（裁定六的「候选身份绑定」纪律）。\n" +
-      "  请在本机重跑 E2E 并更新 manifest，不要沿用旧证据。",
+  // 〔判据为什么不是「manifest.candidateSha === HEAD」〕那会把**纯证据/测试/CI
+  // 提交**也判成 stale，强迫每次落盘证据后重跑真实链路——不可执行的纪律会被绕过。
+  // 审评要求的是「**改变装配路径**的 commit 后必须重新绑定」。故判据取：
+  // 从证据 SHA 到 HEAD 之间，**M-A 产品输入**（装配行 / Host 源码 / 构建入口 /
+  // 包清单）必须**未变**；只改测试、证据、CI、文档不算失效。
+  // 产物摘要比对（下方）仍是硬判据，二者合起来覆盖「装配路径未变」。
+  let evidenceToHead;
+  try {
+    evidenceToHead = git(repo, ["diff", "--name-only", `${String(manifest.candidateSha)}..HEAD`])
+      .split("\n")
+      .filter((line) => line.length > 0);
+  } catch (error) {
+    fail(
+      `M-A 证据门失败：无法计算 ${String(manifest.candidateSha)}..HEAD 的差异——` +
+        `证据绑定的 SHA 可能不在本仓库历史中。\n  ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+    );
+  }
+  const productInputsChanged = evidenceToHead.filter((path) =>
+    M_A_PRODUCT_INPUT.some((pattern) => pattern.test(path)),
+  );
+  if (productInputsChanged.length > 0) {
+    fail(
+      `M-A 证据门失败：证据绑定的是 ${String(manifest.candidateSha)}，当前 HEAD 是 ${head}，\n` +
+        `  且两者之间 **M-A 产品输入已变**（${productInputsChanged.slice(0, 5).join(", ")}${
+          productInputsChanged.length > 5 ? ` 等 ${String(productInputsChanged.length)} 个` : ""
+        }）。\n` +
+        "  任一 SHA / 构建输入变化 → 真实链路证据自动 stale（裁定六的「候选身份绑定」纪律）。\n" +
+        "  请在本机重跑 E2E 并更新 manifest，不要沿用旧证据。",
+    );
+  }
+  process.stdout.write(
+    `M-A 证据门：证据绑定 ${String(manifest.candidateSha).slice(0, 12)}，HEAD ${head.slice(0, 12)}；\n` +
+      `  两者之间改动 ${String(evidenceToHead.length)} 个文件，均**不触及 M-A 产品输入**` +
+      "（测试/证据/CI/文档）——证据仍有效，继续核对产物摘要。\n",
   );
 }
 
@@ -172,6 +221,18 @@ for (const reportName of reports) {
   if (!existsSync(reportPath)) {
     fail(`M-A 证据门失败：manifest 列出的报告不存在：docs/evidence/be6a/${String(reportName)}`);
   }
+  // 报告字节摘要：防止「报告文件被换掉而 manifest 未更新」。manifest 声明了
+  // reportSha256 就必须被强制——「声明了却不校验」正是本项目抓过的假绿形态
+  // （如 registerClient 声明了却不被读取）。
+  if (typeof manifest.reportSha256 === "string") {
+    const actualReportSha = sha256Of(reportPath);
+    if (manifest.reportSha256 !== actualReportSha) {
+      fail(
+        `M-A 证据门失败：${String(reportName)} 的实际 sha256=${actualReportSha}，\n` +
+          `  与 manifest.reportSha256=${manifest.reportSha256} 不符——报告文件被改动过。`,
+      );
+    }
+  }
   let report;
   try {
     report = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -195,6 +256,8 @@ for (const reportName of reports) {
 }
 
 process.stdout.write(
-  `M-A 证据门通过：触及 M-A 写面 ${String(touched.length)} 个文件；证据绑定候选 ${head.slice(0, 12)}，` +
+  `M-A 证据门通过：触及 M-A 写面 ${String(touched.length)} 个文件；证据绑定 ${String(
+    manifest.candidateSha,
+  ).slice(0, 12)}（HEAD ${head.slice(0, 12)}），` +
     `产物摘要一致，报告 ${String(reports.length)} 份且 embedded=true、无 failure。\n`,
 );
