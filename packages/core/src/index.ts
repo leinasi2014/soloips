@@ -22,7 +22,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { SoloipsAdapter, SoloipsStoragePort } from "soloips-adapter-dsh/contracts";
 
 import { SOLOIPS_ADAPTER_SERVICE_NAME } from "soloips-adapter-dsh/contracts";
-import type { SoloipsCoreService } from "./contracts.js";
+import type { SoloipsCoreService, SoloipsPlanCode } from "./contracts.js";
 import { SOLOIPS_CORE_SERVICE_NAME } from "./contracts.js";
 import { SoloipsCoreError } from "./errors.js";
 import { openSoloipsCompanyStore } from "./store.js";
@@ -79,6 +79,16 @@ export interface SoloipsCoreConfig {
    * 业务命令面**不**承载该值（`SoloipsCreateCompanyInput` 无此字段）。
    */
   readonly accountId?: string;
+  /**
+   * 部署层注入的订阅计划码（M0.1 形态：配置注入，不建 `entitlement` 表——C-1 口径）。
+   *
+   * 〔约束〕缺失时按 `free`（**最严格**计划：1 公司 / 0 子公司）发布；取值不在
+   * `free | pro | enterprise` 词表内时**不发布服务**（fail-closed）——拼错的计划码
+   * 若被静默当成 `free` 会误拒 `pro` 部署，若被当成无限制则会**放宽**限制，两个
+   * 方向都不可接受。与 `accountId` 的差别：账户缺失是「无法校验」（无安全缺省），
+   * 计划码缺失有**安全缺省**。
+   */
+  readonly planCode?: SoloipsPlanCode;
   readonly backend?: string;
 }
 
@@ -90,10 +100,15 @@ function parseCoreConfig(raw: unknown): SoloipsCoreConfig | undefined {
   const storageRoot = typeof value["storageRoot"] === "string" ? value["storageRoot"] : undefined;
   const accountId = typeof value["accountId"] === "string" ? value["accountId"] : undefined;
   const backend = typeof value["backend"] === "string" ? value["backend"] : undefined;
+  // 计划码：只做**字符串形状**收窄，词表校验留给 `openSoloipsCompanyStore` 的
+  // `validatePlanCode`（唯一落点）。在这里丢弃非词表值会让「配置写错」静默表现为
+  // 「按 free 运行」——那是最难排查的一类配置故障。
+  const planCode = typeof value["planCode"] === "string" ? value["planCode"] : undefined;
   return {
     ...(enabled === undefined ? {} : { enabled }),
     ...(storageRoot === undefined ? {} : { storageRoot }),
     ...(accountId === undefined ? {} : { accountId }),
+    ...(planCode === undefined ? {} : { planCode: planCode as SoloipsPlanCode }),
     ...(backend === undefined ? {} : { backend }),
   };
 }
@@ -182,6 +197,9 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
           storage,
           root,
           accountId,
+          // planCode 缺省由 store 取 `free`（最严格计划）；此处只在显式配置时透传，
+          // 词表校验在 store 的 validatePlanCode（唯一落点）。
+          ...(config.planCode === undefined ? {} : { planCode: config.planCode }),
           ...(config.backend === undefined ? {} : { backend: config.backend }),
         });
         if (unloaded) {

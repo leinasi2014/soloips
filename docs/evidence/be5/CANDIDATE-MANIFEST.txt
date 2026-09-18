@@ -1,0 +1,18 @@
+# BE-5 候选身份清单（冻结）
+# 生成方式：base SHA + 逐文件 SHA256 + git status 状态位；覆盖已跟踪/暂存/未跟踪/删除
+base: 466df6373fb7e0cf9dcea59efca2c82b50dc63e8
+branch: feat/BE-5-quota-tree
+worktree: .worktrees/BE-5
+--- files (status  path  sha256) ---
+M  packages/core/cordis.patch.yml  ec8c2c7c8d70db5d9250f8a87f48d6da8fb69e8a32ec86c27676435c63bc09a2
+M  packages/core/src/contracts.ts  1a26f36c049fe057cccec99129ffb6d6a16d9e07624e45e12e82612273e05c73
+M  packages/core/src/index.ts  c6503cd5777abda3676489f8d5c1f66f3ddb035e89674229d1a4305d60efdeba
+M  packages/core/src/store.ts  d65798705557eb0ea88e75857f0f5db43b1d14a8ad7583563313ea0c49eded7e
+M  packages/core/tests/assembly-declaration.spec.ts  1a6439f14af5364267bac454bb1f10a34fef45e739c0f55eb3ff2acebba7595d
+M  packages/core/tests/plugin.spec.ts  fe18ab41b7b226574c4ef5452d1a505151733cefc18af25e5b3f36e20464ddb2
+M  packages/core/tests/read-projection.spec.ts  72aa9767a7640702f8e9b60e212a15794c31809c1e0105cf1364690420a5b413
+M  packages/core/tests/scope-role.spec.ts  66bdad745e289da17a9ed003cfdbf9bc9dd83e43f50ce145049ca6d0d2b48255
+M  packages/core/tests/team-data.spec.ts  f6421aa55b19d9aa1dc58edce2a016ac37546bcf4276b916b94a1364e72d9d4e
+M  profiles/soloips/cordis.patch.yml  cde936bbc6006a542d4ff78a17c76cd57d1f12280b42df2014db1423564b5253
+??  packages/core/tests/quota-tree.spec.ts  5ad9d91d4d0d41e09c5982f2219cceda2d496d7eb1532c921237477d1e22ca93
+acff46aa1a7014f3c61213b56e03f46f5c78f8d5330a72f2d2c2f3bdf3e5f0a8  tracked.diff
