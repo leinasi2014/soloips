@@ -541,6 +541,26 @@ function scopeIntentOf(scope: SoloipsAppointmentScope): SoloipsJsonValue {
 }
 
 /**
+ * `#reconcileOne` 的**私有中止信号**（内部控制流，非调用方面向的错误码）：槽位内重判不成立，本次不写。
+ *
+ * 〔为什么用一个类而不是返回 `current` 不变〕介质层的 `update` 契约是「`fn` 返回
+ * 什么就写什么」——返回原值仍会走一次内容相同的真实写（后端 IO + `domain/changed`
+ * 事件）。而本命令的失权路径既有纪律是「拒绝时介质零变化」（`tests/team-data.spec.ts`
+ * 的写权复核用例断言介质快照逐字不变），槽位内中止必须同款：**抛出即中止**，
+ * 端口不调用后端 `putRecord`。
+ *
+ * 〔为什么不是 `SoloipsCoreError`〕它不是面向调用方的错误码，而是本类内部两个
+ * 方法之间的控制流信号；用错误码会诱使调用方「处理」一个本应不可见的内部状态。
+ * 该信号**不逃出** `#reconcileOne`（在那一层被识别并转为 `false`）。
+ */
+class ReconcileNotApplicable extends Error {
+  constructor() {
+    super("reconcile: 槽位内重判不成立（状态或组长引用已变），本次不写");
+    this.name = "ReconcileNotApplicable";
+  }
+}
+
+/**
  * 打开公司存储（唯一 opener 路径）。顺序契约见文件头。
  * 返回的 service 不暴露 domain/表句柄：一切持久写都经提交门。
  *
@@ -2632,6 +2652,8 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    *
    * 〔代价与补偿〕不经门意味着没有「意图先行 + 串行槽位」保护。补偿：
    *  - **写前复核写权**（`#reconcileOne` 的 `lease.assertHeld`），失权即拒；
+   *  - **槽位内重判**（F-01）：扫描结论**不再是**写入依据——判定与写入在同一
+   *    介质写链槽位内完成，见 `#reconcileOne`；
    *  - **幂等收敛**：多次 `update` 之间崩溃留下的部分标记是**收敛中间态**——
    *    已标记的保持 `inactive`，未标记的下次扫描继续处理；
    *  - **读面不依赖标记**：`#isUsableTeam` 始终按 P-4 实时核验，因此「标记没跑全」
@@ -2655,14 +2677,29 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       // P-8.6：archived 不参与扫描；inactive 已是标记结果（幂等，不重复写）。
       if (team.status !== "active") continue;
       scanned += 1;
-      if (this.#evaluateLeadReference(team).valid) continue;
+      // 扫描用与槽位内**同一个**谓词（`#isConvergeTarget`）：扫描只是「候选筛选」，
+      // 真正的写入依据是槽位内的那次重判。两处若各写一份判断，就有第二个漂移点。
+      if (!this.#isConvergeTarget(team)) continue;
       toDeactivate.push(id);
     }
     for (const teamId of toDeactivate) {
-      await this.#reconcileOne(teamId);
-      markedInactive.push(teamId);
+      const marked = await this.#reconcileOne(teamId);
+      // 只报告**实际落盘**的标记：槽位内重判不成立时本次不写，也就没有可报告的
+      // 事实（并发插入的正常提交已给出权威结论）。
+      if (marked) markedInactive.push(teamId);
     }
     return { scanned, markedInactive, pending };
+  }
+
+  /**
+   * 「该团队是否应当被收敛为 `inactive`」——**扫描与槽位内重判共用的唯一谓词**。
+   *
+   * P-4 四项的失效判定见 `#evaluateLeadReference`；本谓词只加「当前是 `active`」
+   * 这一条（`pending`/`inactive`/`archived` 都不是收敛对象，P-8.6）。
+   */
+  #isConvergeTarget(team: SoloipsTeamRecord): boolean {
+    if (team.status !== "active") return false;
+    return !this.#evaluateLeadReference(team).valid;
   }
 
   /**
@@ -2671,21 +2708,57 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    * 〔写权〕不经 `#gate` 的写路径**必须**在写前自行复核写权——否则它就成了
    * 绕过 fence 的写口（`reconcileTeams` 的「代价与补偿」段）。
    *
-   * 〔为什么用 `update` 而不是先读后 `put`〕`update` 在介质层是「读当前值 →
-   * 应用修订 → 写回」，`revise` 里对 `current` 展开，因此**只**改 `status`：
-   * 即使扫描与写入之间记录被改动（理论上被 lease 排除），也不会用陈旧快照
-   * 覆盖其他字段。
+   * ── 〔F-01 修复〕判定必须在**同一个介质写链槽位内**，与写入不可分割 ──────────
+   *
+   * 缺陷（外审静态反例 + 本仓实测复现，`tests/reconcile-atomicity.spec.ts`）：
+   * 修复前的形态是「扫描得出待处理集合 → 逐个 `await update(→inactive)`」，
+   * 而 `update` 的 `revise` 回调**不看 `current`**。于是在「扫描完成 → 写入生效」
+   * 之间的 await 窗口里插入一次**正常的、经提交门、持写权**的 `closeTeam`
+   * （提交为 `archived`）之后，本次写入仍会把 `archived` 覆盖成 `inactive`——
+   * **P-7 的归档终态被绕门写入破坏**。这不是「假不可用」类可恢复代价：
+   * 被改回 `inactive` 的团队可被再次 `activateTeam` 复活，终态约束实际失效。
+   *
+   * 修法：把两个判定（① `current.status === "active"`；② 当前组长引用**仍**失效）
+   * 移进 `revise`，判定不成立即**中止本次写**（抛出私有信号 → 端口不调用后端
+   * `putRecord`，**零介质写**）。为什么不用「返回 `current` 不变」：那仍会走一次
+   * 内容相同的真实写（后端 IO + `domain/changed` 事件），而失权路径的既有纪律是
+   * 「拒绝时介质零变化」（`tests/team-data.spec.ts` 的同名用例）。
+   *
+   * 〔原子性依据：已核到宿主实现，不是推断〕`@deepseek-ai/dsh-storage-domain` 的
+   * `DomainImpl` 为**整个 domain**（全部表共用）维护唯一写链 `chain`：每次
+   * `put`/`update`/`delete` 都经 `enqueue(job)` 排入该链；`KvTableImpl.update`
+   * 在槽位内**同步**执行 `fn(records.get(key))`，成功后才 `await unit.putRecord(...)`。
+   * 因此：
+   *  1. 判定与写入之间**没有 await**，本地不可能插入第二个提交（提交门的每次发布
+   *     也排在同一条链上，是**同一个**串行边界）；
+   *  2. 槽位内同步读到的 `team`/`appointment` 内存态，已包含链上全部先行写入
+   *     （每个槽位在 `putRecord` 完成后同步更新 `records` 才 resolve）；
+   *  3. 跨进程由 writer lease 排除——写前 `assertHeld` 仍是必要条件（它只保证
+   *     「写权在手」，不替代本重判）。
+   *
+   * 〔为什么 `update` 而不是先读后 `put`〕`revise` 里对 `current` 展开，因此**只**改
+   * `status`：即使记录被其他字段的正当修改更新过，也不会用陈旧快照覆盖那些字段。
+   *
+   * @returns 本次是否真的写入（`false` = 槽位内判定不成立，零介质写）。
    */
-  async #reconcileOne(teamId: SoloipsTeamId): Promise<void> {
+  async #reconcileOne(teamId: SoloipsTeamId): Promise<boolean> {
     try {
       await this.#lease.assertHeld();
     } catch (error) {
       throw wrapLeaseFailure("team-reconcile", error);
     }
-    await this.#domain.table("team").update(teamId, (current) => ({
-      ...current,
-      status: "inactive" as const,
-    }));
+    try {
+      await this.#domain.table("team").update(teamId, (current) => {
+        if (!this.#isConvergeTarget(current)) {
+          throw new ReconcileNotApplicable();
+        }
+        return { ...current, status: "inactive" as const };
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof ReconcileNotApplicable) return false;
+      throw error;
+    }
   }
 
   // ── 查询投影（只读；返回介质对象，调用方不得原地修改） ─────────────────────
