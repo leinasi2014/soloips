@@ -377,6 +377,55 @@ describe("B. 同根并发创建不超限（验收②）", () => {
     await service.close();
   });
 
+  it("B4（无计时器构造）：首个提交被扣在槽位内时启动 4 个并发，放行后恰 1 committed + 4 refused", async () => {
+    // 〔为什么再给一条：本条不含任何 sleep/计时器〕上面两条并发用例的「乙仍在等待」
+    // 断言依赖一个 10ms 的竞速窗口（观测「尚未结算」）。本条把并发构造改成**纯事件
+    // 驱动**：用 gatedStorage 把**第一个**提交扣在公司记录的 put 之前（此时它已持有
+    // 串行槽位、已过配额判定、意图已落盘），再启动 4 个请求，然后放行。
+    // 全程只 await Promise，不依赖任何时序假设——「4 个请求同时看到 0 家」的实现会
+    // 产出 5 条 committed，故本用例对「计数在串行槽位之外」有鉴别力。
+    const gated = gatedStorage("quota-hold-first");
+    const service = await openSoloipsCompanyStore({
+      storage: gated.port,
+      root: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+    });
+    const held = service.createCompany({
+      operationId: asOperationId("quota-hold-first"),
+      name: "被扣住的甲",
+    });
+    await gated.companyPutReached;
+
+    // 其余 4 个请求：同根、不同 operationId。它们全部排在甲之后。
+    const others = ["b", "c", "d", "e"].map((suffix) =>
+      service.createCompany({
+        operationId: asOperationId(`quota-hold-${suffix}`),
+        name: `并发 ${suffix}`,
+      }),
+    );
+    gated.releaseCompanyPut();
+    const [first, ...rest] = await Promise.all([held, ...others]);
+
+    expect(first.status).toBe("committed");
+    // 4 个后来者**全部**被拒，且每一个都读到 current=1（不是同一份陈旧快照）。
+    expect(rest).toHaveLength(4);
+    for (const outcome of rest) {
+      expect(outcome).toMatchObject({
+        status: "refused",
+        reason: "quota-exceeded",
+        resourceType: "companyLimit",
+        planCode: "free",
+        current: 1,
+        limit: 1,
+      });
+    }
+    // 介质是最终判据：恰 1 条公司记录（超发会在这里现形，与返回值无关）。
+    expect(companyRecordsOfType("enterprise")).toHaveLength(1);
+    // 且被拒的 4 次**零新增未决意图**：operation 表恰 1 条（甲自己的）。
+    expect(fakeMediumTable(ROOT, "operation").size).toBe(1);
+    await service.close();
+  });
+
   it("并发混入重放：同 operationId 的重放不参与竞争、不重复计数", async () => {
     const service = await openService();
     const [first, replay, third] = await Promise.all([
@@ -547,6 +596,8 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
     expect(caught).toMatchObject({ code: "SOLOIPS_CORE_VALIDATION" });
     // 消息给出可行动替代（改用 subsidiary）——诊断不是「非法输入」四个字。
     expect((caught as Error).message).toContain("subsidiary");
+    // 〔为什么与 E1 分开钉〕E1（无父 subsidiary）与 E2（带父 enterprise）是两条
+    // 独立判定；只断言其中一条会让「只实现了一半」的实现全绿。
     expect(snapshotMedium()).toEqual(before);
     await service.close();
   });
@@ -570,6 +621,7 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
 
   it("E4：父不存在 → PRECONDITION（T-1）", async () => {
     const service = await openService("enterprise");
+    const before = snapshotMedium();
     await expect(
       service.createCompany({
         operationId: nextSeedOperationId("company"),
@@ -578,12 +630,16 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
         parentCompanyId: "cmp_missing_parent" as SoloipsCompanyId,
       }),
     ).rejects.toMatchObject({ code: "SOLOIPS_CORE_PRECONDITION" });
+    // 〔拒绝零副作用（含 operation 表）〕T-1 是**读介质**判定：若它被放到意图落盘
+    // 之后，这里会多出一条 pending——把「什么都没发生」变成「有一条查不清的操作」。
+    expect(snapshotMedium()).toEqual(before);
     await service.close();
   });
 
   it("E5：父类型为 operation → VALIDATION（T-2；platform/enterprise/subsidiary 可作父）", async () => {
     const service = await openService("enterprise");
     injectCompanyRecord({ id: "cmp_operation_parent", type: "operation", status: "active" });
+    const before = snapshotMedium();
     await expect(
       service.createCompany({
         operationId: nextSeedOperationId("company"),
@@ -592,6 +648,7 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
         parentCompanyId: "cmp_operation_parent" as SoloipsCompanyId,
       }),
     ).rejects.toMatchObject({ code: "SOLOIPS_CORE_VALIDATION" });
+    expect(snapshotMedium()).toEqual(before);
 
     // 阴性对照：platform 与 subsidiary 可作父（T-2 只禁 operation）。
     injectCompanyRecord({ id: "cmp_platform_parent", type: "platform", status: "active" });
@@ -645,6 +702,7 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
         parentCompanyId: parent,
       });
     }
+    const before = snapshotMedium();
     await expect(
       service.createCompany({
         operationId: nextSeedOperationId("company"),
@@ -653,6 +711,8 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
         parentCompanyId: parent,
       }),
     ).rejects.toMatchObject({ code: "SOLOIPS_CORE_VALIDATION" });
+    // 〔拒绝零副作用〕深度超限是**读介质**判定（遍历祖先链）：同样不得留下 pending。
+    expect(snapshotMedium()).toEqual(before);
     await service.close();
   });
 
@@ -688,6 +748,11 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
     // 使深度规则在异常数据上静默失效（R-4）。
     expect(caught).toMatchObject({ code: "SOLOIPS_CORE_VALIDATION" });
     expect((caught as Error).message).toContain("环");
+    // 〔零副作用 + 对照〕环检测失败同样不留 pending；对照：注入的两条环记录仍在
+    // 介质上（本片不自动修复异常数据，只拒绝在其上继续生长）。
+    expect(fakeMediumTable(ROOT, "operation").size).toBe(0);
+    expect(fakeMediumTable(ROOT, "company").has("cmp_cycle_a")).toBe(true);
+    expect(fakeMediumTable(ROOT, "company").has("cmp_cycle_b")).toBe(true);
     await service.close();
   });
 
@@ -732,6 +797,7 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
       status: "active",
       accountId: TEST_OTHER_ACCOUNT_ID,
     });
+    const before = snapshotMedium();
     await expect(
       service.createCompany({
         operationId: nextSeedOperationId("company"),
@@ -740,11 +806,13 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
         parentCompanyId: "cmp_foreign_parent" as SoloipsCompanyId,
       }),
     ).rejects.toMatchObject({ code: "SOLOIPS_CORE_PRECONDITION" });
+    expect(snapshotMedium()).toEqual(before);
     await service.close();
   });
 
   it("E10：父形状非法 → VALIDATION（JS 调用方不受类型保护）", async () => {
     const service = await openService("enterprise");
+    const before = snapshotMedium();
     await expect(
       service.createCompany({
         operationId: nextSeedOperationId("company"),
@@ -753,6 +821,8 @@ describe("E. 公司树规则（验收⑤ / §2.6）", () => {
         parentCompanyId: "not-a-company-id" as SoloipsCompanyId,
       }),
     ).rejects.toMatchObject({ code: "SOLOIPS_CORE_VALIDATION" });
+    // 形状检查在门外，但同样零副作用（门外抛错发生在任何写之前）。
+    expect(snapshotMedium()).toEqual(before);
     await service.close();
   });
 });

@@ -104,6 +104,20 @@ async function seedEmployee(displayName: string): Promise<SoloipsEmployeeId> {
   return created.result.employeeId;
 }
 
+/** 在给定公司下建一个部门（F-06 的两条用例需要「干净的另一个部门」作对照）。 */
+async function seedDepartment(
+  companyId: SoloipsCompanyId,
+  name: string,
+): Promise<SoloipsDepartmentId> {
+  const created = await service.createDepartment({
+    operationId: nextSeedOperationId("department"),
+    companyId,
+    name,
+  });
+  if (created.status !== "committed") throw new Error(`建部门失败：${created.status}`);
+  return created.result.departmentId;
+}
+
 /** 建一条任职（显式 scope；调用方保证 scope 自洽）。 */
 async function seedAppointment(
   employeeId: SoloipsEmployeeId,
@@ -723,28 +737,154 @@ describe("C. §2.3 三分支：读面按解析后的作用域过滤（不猜、�
     );
   });
 
-  it("部门记录损坏 + 无命中该部门的任职 → 不抛错（损坏只在真有命中时暴露）", async () => {
-    // 〔M7 的另一半〕部门记录损坏但**没有任何任职命中该部门**时，惰性/前置两种
-    // 实现都读不到该部门——但语义必须一致：查询结果是空数组，不因一条与本次查询
-    // 无关的损坏记录而失败。钉住这一点防止「进入扫描前无条件读部门并校验」的实现
-    // （那会把无关的介质损坏升级成整次查询失败）。
+  it("F-06(i)：查询**损坏的部门本身**且无任职命中 → 介质故障如实冒泡（不折成空数组）〔fake 介质专属，见注释〕", async () => {
+    // 〔外审 F-06：标题与场景错位（本用例的前身）〕前身标题是「部门记录损坏 +
+    // 无命中该部门的任职 → 不抛错」，但它损坏的是部门 A、查询的是**另一个不存在的
+    // 部门** B——标题字面描述的情形（查询损坏的 A 本身）并未被覆盖。本用例专钉该
+    // 情形；「无关损坏不污染 B 的查询」由紧随其后的 F-06(ii) 钉住。
+    //
+    // ── 〔介质形态边界：本用例**只在 fake 介质**成立（独立 QA D-2 复现）〕────────
+    //
+    // 本用例观测到的 `invalid-record` 来自 `tests/adapter-fakes.ts` 的**读时 schema
+    // 校验**（`validated()`，:226）：fake 表每次 `get`/`entries` 都对介质值重跑
+    // `valueSchema.safeParse`，故「运行期把记录改坏」会立刻在**下一次读**上失败。
+    //
+    // **真实后端（json / sqlite）不可构造该场景**，两条独立原因（独立 QA 最小复现，
+    // 本写手已用 `probe-d2-real-medium.mjs` 在两后端上逐条复核，见下方第 2 条后的
+    // 覆盖说明）：
+    //  1. **内存缓存**：`@deepseek-ai/dsh-storage-domain` 的 domain 实现在 open 时
+    //     把 `unit.loadAll()` 的快照校验后放进内存 `tables`（`DomainImpl.records`
+    //     → `KvTableImpl`），此后读走内存、不回查磁盘。因此「运行期直接改盘把 A
+    //     改坏 → 同句柄查 A」在真实后端上**返回 0 条、不抛错**（缓存里 A 仍合法，
+    //     且无任职命中 A）——与本用例断言不同。
+    //  2. **open 期校验**：同一 `open()` 对每条存量记录跑 `valueSchema.parse`，失败
+    //     即整次 open 拒绝（core 的 spec 未声明 `invalidRecords`，故按默认的
+    //     「拒绝」处置）。因此「打开前 A 已坏」表现为 **open 抛
+    //     `SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE`**（`mapDomainOpenError` 包装宿主
+    //     错误），**不是**读时的 `invalid-record`。
+    //
+    // 故本用例钉的是**读面契约**——「介质故障不得被折成空数组或数据结论」（下引
+    // 契约依据），在 fake 介质上以最直接的方式构造并钉住它；它**不是**真实后端的
+    // 复现路径，也**不得**被读成「真实后端查损坏记录会抛 invalid-record」。
+    //
+    // 〔真实后端的对应保证由谁覆盖：**本仓当前没有**单元测试覆盖〕上面第 2 条
+    // （open 期整根拒绝）在真实后端上确实成立——已由独立探针在本机 json 与 sqlite
+    // 两个后端上实测（`probe-d2-real-medium.mjs`，两后端均观测到
+    // `SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE`）。但**本仓测试套件中没有任何用例断言
+    // 该行为**（全仓检索 `SERVICE_UNAVAILABLE` 的用例都针对「宿主服务缺失」，与
+    // 「存量记录损坏」无关）。故此处**不**声称「已有独立覆盖」——那是一条未覆盖的
+    // 缺口，登记在案，不在本切片补（补它需要真实后端 fixture，超出本片写面）。
+    //
+    // 〔实际行为：抛介质层错误 `invalid-record`，与有无命中无关〕
+    // `#scanAppointments`（src/store.ts:1036-1041）在**进入扫描之前**反解请求的
+    // 部门记录（D1 公司核对的基准）。该读经 schema 校验，损坏记录在此即失败，
+    // 故「无任职命中该部门」不能豁免这次读——失败发生在扫描之前，与命中无关。
+    //
+    // 〔契约依据〕data-contract §2.4.1（docs/design/data-contract.md:995）：
+    // 「查询失败不在此形状内：失败以**抛出的错误**呈现（…介质错误），**不编码为
+    // 分支**——把失败编码成返回值会让调用方把『读不到』误读成『没有』」。空数组的
+    // 语义是「查询成功且无命中」，故损坏记录**不得**被折成空数组。
+    // 〔与「部门记录缺失」的区别（见下一条用例）〕缺失是**数据条件**（该部门不存在
+    // → 空结果）；损坏是**介质故障**（记录读不出来）。两者以不同 code 可判别。
+    //
+    // 〔若需要改这一口径〕把「损坏且无命中」改成返回空数组属**产品行为变更**，
+    // 不是测试对齐——本用例只记录当前行为与其契约依据，不为此改实现。
     const base = await seedBase();
+    const other = await seedDepartment(base.companyId, "另一部门");
     const employee = await seedEmployee("无关任职员工");
-    // 该员工只在**别的**部门任职，本次查询的部门没有命中。
+    // 唯一一条任职挂在**另一个**部门上：对 A 的查询没有任何命中。
     await seedAppointment(employee, {
+      kind: "department",
+      companyId: base.companyId,
+      departmentId: other,
+    });
+    // 〔目标路径见证 ①〕损坏之前查 A → 空数组：既证明「无任职命中 A」是介质事实
+    // （不是 fixture 碰巧），也证明该查询路径可达且会正常返回空结果。
+    expect(service.listEmployees({ departmentId: base.departmentId })).toEqual([]);
+    // 〔目标路径见证 ②〕同形状查询对**缺失**部门（无记录可读）→ 同样空数组；
+    // 于是本用例前后唯一的变量就是「A 的记录损坏」。
+    expect(
+      service.listEmployees({ departmentId: "dep_read_f06_absent" as SoloipsDepartmentId }),
+    ).toEqual([]);
+    corruptDepartmentCompanyId(base.departmentId);
+    // 〔目标路径见证 ③〕介质上该记录确实已损坏（而非损坏操作未生效）。
+    const stored = fakeMediumTable(ROOT, "department").get(base.departmentId) as Record<
+      string,
+      unknown
+    >;
+    expect(stored["companyId"]).toBe(42);
+    // 〔目标路径见证 ④〕无关部门的那条任职仍可正常读出 → 唯一被破坏的是 A 的记录，
+    // 观测到的失败不可能是别的 fixture 问题。
+    expect(service.listEmployees({ departmentId: other }).map((i) => i.employeeId)).toEqual([
+      employee,
+    ]);
+    // 观测：查损坏的 A 本身（无命中）→ 介质故障冒泡。
+    const observed = observeRead(() => service.listEmployees({ departmentId: base.departmentId }));
+    expect(observed.threw).toBe(true);
+    // `invalid-record` 是介质层的失败码（读路径由 fake adapter 的 `validated()` 抛出，
+    // tests/adapter-fakes.ts:226）；承重性质是「介质故障如实冒泡、不被折成数据结论
+    // 或空结果」，不是这个字符串本身。
+    expect(observed.code).toBe("invalid-record");
+    expect(observed.code).not.toBe("SOLOIPS_CORE_RECORD_INVALID");
+  });
+
+  it("F-06(ii)：介质上有损坏的部门 A，查询**无关**部门 B → 不因无关损坏失败（B 的过滤照常执行）", async () => {
+    // 〔承接前身用例的真正覆盖〕前身（标题写「无命中该部门」）实际测的就是本情形：
+    // 介质上有损坏的 A，查询的是另一个部门。此处把标题写准，并把「目标分支确实
+    // 执行」变成可观察的——先证明 B 的查询能返回命中，再只改「A 损坏」这一个变量，
+    // 要求同一查询返回同一结果。
+    //
+    // 〔失败形态〕若实现把「介质上有坏记录」无条件升级为整次查询失败（例如对扫描
+    // 到的每条记录都反解其 `scope` 部门并校验），本用例会观测到 `invalid-record`
+    // 而非 B 的命中——那正是本条要拦下的形状（读面不得让无关介质损坏污染本次查询）。
+    const base = await seedBase(); // A：将被损坏
+    const healthy = await seedDepartment(base.companyId, "部门 B");
+    const inB = await seedEmployee("B 部门员工");
+    await seedAppointment(inB, {
+      kind: "department",
+      companyId: base.companyId,
+      departmentId: healthy,
+    });
+    // A 上有一条自洽任职：介质上确实存在「损坏的 A + 指向 A 的记录」，但它与
+    // 「按 B 过滤」无关（`#scanAppointments` 先按 `scope.departmentId` 收窄，命中
+    // 过滤键之后才做 D1 公司核对）。
+    const inA = await seedEmployee("A 部门员工");
+    await seedAppointment(inA, {
       kind: "department",
       companyId: base.companyId,
       departmentId: base.departmentId,
     });
+
+    // 〔阳性对照（损坏之前）〕查 B 命中 B 的员工：证明部门过滤分支确实执行、且会
+    // 返回命中——「恒返回空数组」的实现无法通过这条对照。
+    expect(service.listEmployees({ departmentId: healthy }).map((i) => i.employeeId)).toEqual([
+      inB,
+    ]);
+
     corruptDepartmentCompanyId(base.departmentId);
-    const observed = observeRead(() =>
-      service.listEmployees({ departmentId: "dep_read_m7_unrelated" as SoloipsDepartmentId }),
-    );
-    // 查询的部门不存在且无命中 → 空数组（对照 spec 中「部门不存在 → 空数组」的口径）。
-    expect(observed).toEqual({ threw: false });
-    // 但按**损坏的那个**部门查（确有命中）→ 介质错如实冒泡。
-    const hit = observeRead(() => service.listEmployees({ departmentId: base.departmentId }));
-    expect(hit).toEqual({ threw: true, code: "invalid-record" });
+
+    // 〔同一查询、只改「A 损坏」一个变量〕结果必须与损坏前逐字相同。
+    expect(service.listEmployees({ departmentId: healthy }).map((i) => i.employeeId)).toEqual([
+      inB,
+    ]);
+    // 显式钉住「不抛」（值相等已蕴含，但这一条在失败时给出 code 诊断）。
+    expect(observeRead(() => service.listEmployees({ departmentId: healthy }))).toEqual({
+      threw: false,
+    });
+
+    // 〔A 的损坏确实生效〕同一时刻查 A 本身 → 介质故障冒泡；否则上面的「不抛」
+    // 可能只是因为损坏操作没生效。
+    const damaged = observeRead(() => service.listEmployees({ departmentId: base.departmentId }));
+    expect(damaged).toEqual({ threw: true, code: "invalid-record" });
+
+    // 〔前身用例覆盖的退化情形：查询**不存在**的部门〕介质上有损坏的 A 时，对完全
+    // 不存在（无记录可读）的部门查询仍返回空数组——「无关」包括「请求的部门根本
+    // 没有记录」这一情形。
+    expect(
+      observeRead(() =>
+        service.listEmployees({ departmentId: "dep_read_f06_unrelated" as SoloipsDepartmentId }),
+      ),
+    ).toEqual({ threw: false });
   });
 
   it("部门记录缺失 + 无命中该部门的任职 → 空数组（「部门不存在」的空结果语义不变）", async () => {
