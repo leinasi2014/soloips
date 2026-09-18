@@ -15,6 +15,7 @@
     "lint": "oxlint --type-aware",
     "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "vitest run",
+    "test:artifacts": "vitest run --config packages/web/vitest.artifacts.config.ts",
     "test:watch": "vitest",
     "build": "tsc -b && tsdown",
     "pack-artifacts": "node scripts/development/pack-delivery-artifacts.mjs",
@@ -25,8 +26,8 @@
     "check:i18n": "node scripts/development/verify-client-ui-i18n.mjs"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-typert-generator": "0.1.6-alpha.1",
-    "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-typert-generator": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.2",
     "@types/node": "^22.19.0",
     "oxlint": "^1.0.0",
     "oxlint-tsgolint": "^7.0.2001",

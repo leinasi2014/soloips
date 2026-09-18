@@ -106,6 +106,45 @@ export type SoloipsCompanyType =
   | "subsidiary"; // 用户子公司（用户创建，属于用户企业公司）
 
 /**
+ * 用户公司类型（**占配额**的两类）——`platform`/`operation` 是 SoloIPS 官方
+ * 公司，**不占用户配额**（data-contract §2.1 三层配额表注）。
+ *
+ * 〔为什么用具名联合而不是就地写两次〕它是**配额口径的适用范围**，有两个落点：
+ * ① `createCompany` 的配额计数（只对这两类查表）；② 拒绝载荷的 `resourceType`
+ * （诊断必须能指出「是哪个额度被占满」）。用具名类型让两处不可能各自漂移。
+ */
+export type SoloipsUserCompanyType = "enterprise" | "subsidiary";
+
+/**
+ * 订阅计划码（data-contract §2.1 三层配额表）。
+ *
+ * 〔M0.1 形态〕由**部署配置**注入（`SoloipsCoreConfig.planCode`，缺省 `free`），
+ * **不建** `entitlement` 表（C-1 口径；完整 Entitlement 记录属 M0.2）。
+ */
+export type SoloipsPlanCode = "free" | "pro" | "enterprise";
+
+/**
+ * 三层配额表（**权威**：data-contract §2.1，SOLO-COMPANY-01）。
+ *
+ * 〔约束〕M0.1 把该表**内联为常量**（C-1 口径）——不建表、不做 resolver。
+ * M0.2 落地 `SoloipsEntitlementRecord` + `EntitlementResolver` 时，本常量退化为
+ * 「无权益记录时的缺省策略」，届时须在契约内显式登记该过渡语义。
+ *
+ * 〔为什么用 `-1` 而不是 `Infinity`〕§2.1 原文：`Infinity` 无法 JSON 持久化，
+ * 会静默变成 `null`。`-1` 是「无限制」的唯一表示。
+ */
+export const SOLOIPS_PLAN_QUOTAS: Readonly<
+  Record<SoloipsPlanCode, { readonly companyLimit: number; readonly subsidiaryLimit: number }>
+> = {
+  free: { companyLimit: 1, subsidiaryLimit: 0 },
+  pro: { companyLimit: 1, subsidiaryLimit: 3 },
+  enterprise: { companyLimit: -1, subsidiaryLimit: -1 },
+};
+
+/** 计划码的运行期形状校验词表（JS 调用方/配置注入不受类型保护）。 */
+export const SOLOIPS_PLAN_CODES: readonly SoloipsPlanCode[] = ["free", "pro", "enterprise"];
+
+/**
  * SOLO-ACC-04 要求三条工作路径共用同一准入判定：
  * (a) 经理显式派单；(b) 员工自领；(c) 自动调度器分配。
  */
@@ -1108,6 +1147,68 @@ export type SoloipsCommitOutcome<T extends SoloipsCommandResult> =
 export type SoloipsCommitRefusalShape = { readonly status: "refused" };
 
 /**
+ * 配额拒绝的**结构化判据**（BE-5；data-contract §4.3 K-6「失败语义」）。
+ *
+ * 〔为什么必须是结构化字段而不是只写进 message〕
+ *  - `backend-i18n-design.md` §3（Q-3 实证结论）：用户可见文案的参数**只来自
+ *    结构化字段**，永不来自解析 `message`。core 说「发生了什么」（码 + 判据），
+ *    web 说「怎么告诉用户（文案）」——本类型就是那句「判据」的落点；
+ *  - `current`/`limit` 是**可判定的业务事实**（界面要显示「当前 1/1」、要给
+ *    「升级计划」的可行动指引），不是诊断文本的装饰。
+ *
+ * 〔字段口径〕
+ *  - `resourceType`：被占满的额度名（`enterprise` → `companyLimit`；
+ *    `subsidiary` → `subsidiaryLimit`）。**不是**公司类型字面量的别名——它是
+ *    「哪个额度」，故只有两个取值；
+ *  - `current`：**提交那一刻**按 `accountId + type + status='active'` 扫出的计数
+ *    （K-3/K-5 口径；不含本次未落盘的创建）；
+ *  - `limit`：`SOLOIPS_PLAN_QUOTAS[planCode]` 的对应值；`-1` 表示无限制，
+ *    但**无限制不会产生拒绝**，故拒绝载荷里的 `limit` 恒为非负。
+ */
+export type SoloipsQuotaResourceType = "companyLimit" | "subsidiaryLimit";
+
+/**
+ * 配额拒绝的稳定原因判别值（**唯一**取值；与 `SoloipsWorkEntryRefusalReason`
+ * 同形：kebab-case 的稳定 id，界面侧按它映射文案，不解析任何文本）。
+ */
+export type SoloipsQuotaRefusalReason = "quota-exceeded";
+
+/**
+ * 配额拒绝载荷（`createCompany` 的公开返回面之一；BE-5）。
+ *
+ * 〔与 `SOLOIPS_CORE_QUOTA_EXCEEDED` 的关系〕`system-assistant-backend-design-v0.1.md`
+ * §2.4 曾以该名作**候选**稳定码（原文「如 `SOLOIPS_CORE_QUOTA_EXCEEDED`」）。本片
+ * 以**拒绝载荷的稳定判别值**承载它（`status` + `reason` + `resourceType`），
+ * **不**把它加进 `SoloipsCoreErrorCode`：该联合被 web 的
+ * `SOLOIPS_CORE_ERROR_CODE_KEYS`（`satisfies Record<SoloipsCoreErrorCode, …>`）与
+ * `i18n-assets.spec.ts` 的穷举对象**双向穷举**，增码必须同步改 `packages/web/**`
+ * （本片白名单外）。若后续裁定增码，须连同 web 映射表与 zh/en 字典一并改。
+ *
+ * 〔为什么用拒绝载荷而不是抛异常〕与 BE-4c 的 `SoloipsWorkEntryRefused` 同构：
+ * 配额超限是**可预期的正常结果**（调用方按值处理、可穷举、可行动），不是失败；
+ * 且它必须在意图落盘**之前**返回（零业务写、零新增未决意图）——见
+ * `SoloipsCommitPreconditionVerdict` 的权威说明。
+ */
+export type SoloipsQuotaRefused = {
+  readonly status: "refused";
+  readonly reason: SoloipsQuotaRefusalReason;
+  readonly resourceType: SoloipsQuotaResourceType;
+  readonly planCode: SoloipsPlanCode;
+  readonly current: number;
+  readonly limit: number;
+};
+
+/**
+ * `createCompany` 的完整返回面：提交三态 **或** 配额拒绝。
+ *
+ * 〔为什么单独具名〕服务接口若照抄 `SoloipsCommitOutcome<…> | SoloipsQuotaRefused`，
+ * 该联合会在接口、实现与消费方各写一遍；具名后「拒绝臂只有一个」在类型层只有一处
+ * 落点（与 `SoloipsWorkEntryOutcome` 同款）。
+ */
+export type SoloipsCreateCompanyOutcome =
+  SoloipsCommitOutcome<SoloipsCreateCompanyResult> | SoloipsQuotaRefused;
+
+/**
  * 提交门前置判定的**结论**（BE-4c 门扩展）。
  *
  * - `{ ok: true }`：允许提交（继续意图先行 → 业务写 → 提交标记）；
@@ -1169,9 +1270,20 @@ export interface SoloipsCoreBinding {
 export interface SoloipsCoreService {
   readonly binding: SoloipsCoreBinding;
 
-  createCompany(
-    input: SoloipsCreateCompanyInput,
-  ): Promise<SoloipsCommitOutcome<SoloipsCreateCompanyResult>>;
+  /**
+   * 建公司（顶层用户公司 / 用户子公司）。
+   *
+   * 〔返回面在 BE-5 扩展〕由 `SoloipsCommitOutcome<SoloipsCreateCompanyResult>`
+   * 扩为 {@link SoloipsCreateCompanyOutcome}（多出配额拒绝臂）。这是**公开返回面
+   * 的变更**，与 BE-4c 把 `requestWorkEntry` 的拒绝做成返回值同构：拒绝是可判定
+   * 的正常结果，调用方按 `status` 判别即可，不需要 catch。
+   *
+   * 〔平台/运营公司的处置〕普通入口**显式拒绝** `type='platform'|'operation'`
+   * （§3.2 A-3 / D-6），以 `SOLOIPS_CORE_VALIDATION` **抛错**——那**不是**业务
+   * 拒绝，而是「该入口根本不提供这个动作」（官方公司初始化不属 S0），与配额拒绝
+   * 必须走不同通道（§4.3 K-6：两类情形不得共用一个错误码或同一种处理）。
+   */
+  createCompany(input: SoloipsCreateCompanyInput): Promise<SoloipsCreateCompanyOutcome>;
   createDepartment(
     input: SoloipsCreateDepartmentInput,
   ): Promise<SoloipsCommitOutcome<SoloipsCreateDepartmentResult>>;

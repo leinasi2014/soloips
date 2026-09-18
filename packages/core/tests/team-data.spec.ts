@@ -63,6 +63,11 @@ beforeEach(async () => {
     storage: fakeStoragePort(),
     root: ROOT,
     accountId: TEST_ACCOUNT_ID,
+    // 〔BE-5 追加，既有断言逐条不变〕本 spec 的「部门归属必须同公司」「跨公司引用
+    // 即拒绝」「listTeams 按公司隔离」等用例需要**两家公司**，而缺省 `free` 计划
+    // 只允许一家 `enterprise`。配额不是本 spec 的验证面，故显式取无限制计划；
+    // 配额与树规则由 `quota-tree.spec.ts` 验证。
+    planCode: "enterprise",
   });
 });
 
