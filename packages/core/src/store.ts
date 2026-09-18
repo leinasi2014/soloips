@@ -89,6 +89,7 @@ import type {
   SoloipsCloseTeamInput,
   SoloipsCloseTeamResult,
   SoloipsCommitOutcome,
+  SoloipsCommitPreconditionVerdict,
   SoloipsCompanyId,
   SoloipsCompanyRecord,
   SoloipsCoreBinding,
@@ -139,8 +140,19 @@ import type {
   SoloipsWorkEntryInput,
   SoloipsWorkEntryOrigin,
   SoloipsWorkEntryOutcome,
+  SoloipsWorkEntryRefused,
+  SoloipsCompanyType,
+  SoloipsCreateCompanyOutcome,
+  SoloipsPlanCode,
+  SoloipsQuotaRefused,
+  SoloipsUserCompanyType,
 } from "./contracts.js";
-import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_PLACEHOLDER_ACCOUNT_ID } from "./contracts.js";
+import {
+  SOLOIPS_COMPANY_DOMAIN_NAME,
+  SOLOIPS_PLACEHOLDER_ACCOUNT_ID,
+  SOLOIPS_PLAN_CODES,
+  SOLOIPS_PLAN_QUOTAS,
+} from "./contracts.js";
 import { SoloipsCommitGate } from "./commit-gate.js";
 import type { SoloipsCompanyPublisher } from "./commit-gate.js";
 import { SOLOIPS_COMPANY_DOMAIN_SPEC } from "./domain.js";
@@ -177,7 +189,29 @@ export interface SoloipsStoreOpenOptions {
    * 缺省一个「安全默认账户」会让绑定校验退化成无校验。
    */
   readonly accountId: string;
+  /**
+   * 部署层注入的订阅计划码（M0.1 形态：配置注入，**不建表**——C-1 口径）。
+   *
+   * 〔约束〕缺省 `free`（**唯一**有缺省值的部署键）。与 `accountId` 的 fail-closed
+   * 不同：账户是根级绑定事实的**比对基准**，缺省它会让绑定校验退化成无校验；
+   * 而 `planCode` 缺省为 `free` 是**最严格**的计划（1 公司 / 0 子公司）——缺省它
+   * 不会放宽任何限制，故无需 fail-closed。取值不在词表内时仍拒绝（见
+   * `validatePlanCode`）：拼错的计划码若被静默当成 `free`，会让 `pro` 部署被
+   * 误拒；若被当成无限制，则会**放宽**限制——两个方向都不可接受。
+   */
+  readonly planCode?: SoloipsPlanCode;
   readonly backend?: string;
+}
+
+/** 计划码形状校验（部署注入值；JS 调用方不受类型保护）。 */
+function validatePlanCode(planCode: SoloipsPlanCode): void {
+  if (!SOLOIPS_PLAN_CODES.includes(planCode)) {
+    throw new SoloipsCoreError(
+      "SOLOIPS_CORE_CONFIG_INVALID",
+      `planCode 必须是 ${SOLOIPS_PLAN_CODES.join(" | ")} 之一，收到 "${String(planCode)}"；` +
+        "缺省值为 free（最严格计划）——拼错的计划码不得被静默当成某个计划",
+    );
+  }
 }
 
 /** 公司树最大深度（防止过度嵌套） */
@@ -507,6 +541,26 @@ function scopeIntentOf(scope: SoloipsAppointmentScope): SoloipsJsonValue {
 }
 
 /**
+ * `#reconcileOne` 的**私有中止信号**（内部控制流，非调用方面向的错误码）：槽位内重判不成立，本次不写。
+ *
+ * 〔为什么用一个类而不是返回 `current` 不变〕介质层的 `update` 契约是「`fn` 返回
+ * 什么就写什么」——返回原值仍会走一次内容相同的真实写（后端 IO + `domain/changed`
+ * 事件）。而本命令的失权路径既有纪律是「拒绝时介质零变化」（`tests/team-data.spec.ts`
+ * 的写权复核用例断言介质快照逐字不变），槽位内中止必须同款：**抛出即中止**，
+ * 端口不调用后端 `putRecord`。
+ *
+ * 〔为什么不是 `SoloipsCoreError`〕它不是面向调用方的错误码，而是本类内部两个
+ * 方法之间的控制流信号；用错误码会诱使调用方「处理」一个本应不可见的内部状态。
+ * 该信号**不逃出** `#reconcileOne`（在那一层被识别并转为 `false`）。
+ */
+class ReconcileNotApplicable extends Error {
+  constructor() {
+    super("reconcile: 槽位内重判不成立（状态或组长引用已变），本次不写");
+    this.name = "ReconcileNotApplicable";
+  }
+}
+
+/**
  * 打开公司存储（唯一 opener 路径）。顺序契约见文件头。
  * 返回的 service 不暴露 domain/表句柄：一切持久写都经提交门。
  *
@@ -520,6 +574,10 @@ export async function openSoloipsCompanyStore(
 ): Promise<SoloipsCoreService> {
   validateRoot(options.root);
   validateAccountId(options.accountId);
+  // 计划码缺省 free（最严格计划；见 SoloipsStoreOpenOptions.planCode 的说明）。
+  // 显式给出时仍走形状校验：拼错的计划码不得被静默当成某个计划。
+  const planCode: SoloipsPlanCode = options.planCode ?? "free";
+  validatePlanCode(planCode);
 
   // 1. 跨进程写权先行（ORG-06 / SOLO-FENCE-01 §2）。
   const lease = await options.storage.acquireWriterLease({ root: options.root });
@@ -569,7 +627,7 @@ export async function openSoloipsCompanyStore(
     throw error;
   }
 
-  return new SoloipsCompanyStore(domain, stack, lease, options.accountId);
+  return new SoloipsCompanyStore(domain, stack, lease, options.accountId, planCode);
 }
 
 class SoloipsCompanyStore implements SoloipsCoreService {
@@ -586,17 +644,27 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    * 归属比对——命令面不存在承载它的字段。
    */
   readonly #accountId: string;
+  /**
+   * 部署层注入的计划码（M0.1 形态；缺省 `free`）。
+   *
+   * 〔约束〕与 `#accountId` 同款：**只读且不暴露为命令入参**——业务命令、UI、模型
+   * 不得逐次传入或覆盖（那会让调用方为自己选配额）。配额表是内联常量
+   * （`SOLOIPS_PLAN_QUOTAS`），本字段只做「查哪一行」。
+   */
+  readonly #planCode: SoloipsPlanCode;
 
   constructor(
     domain: SoloipsDomain<typeof SOLOIPS_COMPANY_DOMAIN_SPEC>,
     stack: SoloipsStorageStack,
     lease: SoloipsWriterLease,
     accountId: string,
+    planCode: SoloipsPlanCode,
   ) {
     this.#domain = domain;
     this.#stack = stack;
     this.#lease = lease;
     this.#accountId = accountId;
+    this.#planCode = planCode;
     this.#gate = new SoloipsCommitGate(domain, lease);
   }
 
@@ -1130,20 +1198,38 @@ class SoloipsCompanyStore implements SoloipsCoreService {
   // ── 组织命令 ──────────────────────────────────────────────────────────────
 
   /**
-   * 计算公司树的深度（从根到目标公司的边数，根深度为 0）
-   * @throws 祖先链断裂时抛出错误
+   * 计算公司树的深度（从根到目标公司的边数，根深度为 0）。
+   *
+   * 〔R-4：显式环检测取代「深度守卫」〕原实现以 `depth < MAX_TREE_DEPTH` 作循环
+   * 守卫——在异常数据（祖先链成环）上它会**提前退出并返回错误深度**（静默失效），
+   * 而不是报错。本片改为**显式环检测**（`seen` 集合）：遍历步数上界从「深度上限」
+   * 改为「记录数」——id 有限且**重复即抛**，故循环必然终止，而终止证明不再依赖
+   * 一个会在环上失效的常数。
+   *
+   * @throws 祖先链断裂（父 id 存在但记录缺失）或链上出现环时抛 `VALIDATION`
+   *   （与既有「祖先链断裂」同码同风格：数据不自洽时**主动报错**，不返回近似值）
    */
   #computeDepth(companyId: SoloipsCompanyId): number {
     let depth = 0;
+    const seen = new Set<string>([companyId]);
     let current: SoloipsCompanyRecord | undefined = this.#domain.table("company").get(companyId);
-    while (current?.parentCompanyId !== undefined && depth < MAX_TREE_DEPTH) {
+    while (current?.parentCompanyId !== undefined) {
+      const parentId = current.parentCompanyId;
       depth++;
-      const parent = this.#domain.table("company").get(current.parentCompanyId);
+      if (seen.has(parentId)) {
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_VALIDATION",
+          `公司树存在环：从公司 ${companyId} 出发的祖先链在 ${parentId} 处重复出现；` +
+            "深度规则在成环数据上不可判定，拒绝在该链上创建公司（data-contract §2.6，R-4）",
+        );
+      }
+      seen.add(parentId);
+      const parent = this.#domain.table("company").get(parentId);
       if (parent === undefined) {
         // 祖先链断裂：父公司 ID 存在但记录缺失
         throw new SoloipsCoreError(
           "SOLOIPS_CORE_VALIDATION",
-          `祖先链断裂：父公司 ${current.parentCompanyId} 不存在`,
+          `祖先链断裂：父公司 ${parentId} 不存在`,
         );
       }
       current = parent;
@@ -1151,44 +1237,260 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     return depth;
   }
 
-  async createCompany(
-    input: SoloipsCreateCompanyInput,
-  ): Promise<SoloipsCommitOutcome<SoloipsCreateCompanyResult>> {
+  /**
+   * 按 `accountId + type + status='active'` 计数（data-contract §4.3 **K-5** 口径，
+   * 写死在实现里；改口径须改契约，不得在此静默调整）。
+   *
+   * 〔K-3 读当前权威数据〕本方法**每次调用**都扫当前 domain 表——不缓存、不接收
+   * 调用前算好的计数。基准是「判定那一刻的持久事实」。
+   *
+   * 〔不遍历树（§2.6 T-6）〕孤儿记录（父缺失）仍是该账户持有的子公司，按 `type`
+   * 计数**天然覆盖**；漏计会形成「造孤儿绕开限制」的绕过。孤儿的**读回**问题由
+   * 读面显式登记（不加入结果集），**不靠**计数宽容掩盖，也不在读取路径自动修复。
+   *
+   * 〔`archived` 不占配额〕§4.3 K-5 写死 `status='active'`；归档公司留在介质上
+   * （不物理删除）但不占额度。
+   */
+  #countActiveCompaniesOfType(type: SoloipsUserCompanyType): number {
+    let count = 0;
+    for (const [, record] of this.#domain.table("company").entries()) {
+      if (record.accountId !== this.#accountId) continue;
+      if (record.type !== type) continue;
+      if (record.status !== "active") continue;
+      count += 1;
+    }
+    return count;
+  }
+
+  /**
+   * 入口与类型组合校验（官方类型闸门 + `enterprise` 带父 + `subsidiary` 无父）。
+   *
+   * ── 判定落点规则（BE-5 B-1 修正后的**一般规律**）────────────────────────────
+   *
+   * **凡「新增的、会拒绝既有已提交输入的判定」，一律进 `precondition`**——
+   * 不论它读入参还是读介质。两个充分条件（满足任一即必须进门）：
+   *
+   *  1. **新增判定 → 必进门**：基线时代合法的输入在本片被拒，则介质上可能存在
+   *     基线合法提交的遗留操作；重放时入参不变、判定却会先于重放检测执行 →
+   *     `replayed` 退化为抛错，**幂等性破坏**。本函数的三条判定全属此类
+   *     （基线 466df63 无官方类型闸门、不检查 `enterprise` 带父、不检查
+   *     `subsidiary` 无父）。
+   *  2. **读介质判定 → 必进门**：判定依据是「引用记录的当前事实」，须以串行
+   *     槽位内的读为准（且该事实可能被命令面之外的路径改变——存量/外部写入/迁移）。
+   *     见 `#assertParentCompanyRules`。
+   *
+   * 反过来说，**只有**「纯入参 **且** 基线既有」的检查才可以留在门外——那类检查
+   * 对遗留操作的重放给出与首次执行相同的结论，不引入回归（本命令门外只剩
+   * `operationId`/`name`/`parentCompanyId` 的形状检查）。
+   *
+   * 〔与本仓既有惯例同源〕`activateTeam` 的注释写着「形状检查在门外、**状态判定
+   * 全部在 `precondition` 内**」；本规则是它的一般化——把「状态判定」扩展为
+   * 「新增判定 ∨ 读介质判定」，因为 B-1 的实测证明「只读入参」不足以保证安全。
+   * 权威登记处：`docs/design/data-contract.md`（C 同步）。
+   *
+   * 〔为什么返回收窄类型而不是只抛错〕调用方需要「占用户配额」的类型去做配额查表；
+   * 返回它把「已排除官方类型」这一事实**传给类型系统**，避免在调用处写裸断言。
+   *
+   * @throws `VALIDATION`——「本入口不提供该动作」（官方类型）或输入组合不允许
+   *   （`enterprise` 带父 / `subsidiary` 无父）。三者都是**输入不允许**，不是
+   *   「引用的既有事实状态不允许」（那是 `PRECONDITION`）。
+   */
+  #requireCreatableCompanyType(
+    companyType: SoloipsCompanyType,
+    parentId: SoloipsCompanyId | undefined,
+  ): SoloipsUserCompanyType {
+    // 官方公司（platform/operation）**不占用户配额**，但「不占配额」≠「允许普通
+    // 入口创建」：其初始化不属 S0（§3.1）。§3.2 A-3 / D-6 要求**显式拒绝**。
+    if (companyType === "platform" || companyType === "operation") {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        `普通入口不得创建 ${companyType} 类型的公司：platform/operation 是 SoloIPS 官方公司，` +
+          "其官方账户初始化不属 S0 范围（data-contract §3.1、§3.2 A-3）",
+      );
+    }
+    // `enterprise` 带父 → 拒绝（§2.6 写死）：enterprise 是用户**顶层**公司，带父
+    // 会让「顶层公司计数」（companyLimit）与树结构脱节——一条记录既占 companyLimit
+    // 又出现在某棵子树里，使 §4.3 的 type 计数与组织树读回对不上。
+    if (companyType === "enterprise" && parentId !== undefined) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        "enterprise（顶层用户公司）不得携带 parentCompanyId（data-contract §2.6）：" +
+          "带父的子级公司应使用 type='subsidiary'",
+      );
+    }
+    // `subsidiary` 无父 → 拒绝（§2.6 / R-3b）：无父的子公司在组织树里读不回
+    // （getCompanyTree 从给定根 DFS），是「孤儿子公司」；配额按 type 计数仍能算它，
+    // 但读回问题不应由创建入口制造。
+    if (companyType === "subsidiary" && parentId === undefined) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        "subsidiary 必须提供 parentCompanyId（data-contract §2.6）：" +
+          "无父的子公司在组织树里读不回（孤儿子公司）",
+      );
+    }
+    // 收窄：上面已排除两个官方类型，剩余即**占用户配额**的两类（类型层保证）。
+    return companyType;
+  }
+
+  /**
+   * 父公司规则（§2.6 T-1…T-5 + T-3 的深度/环）——**读介质**，故在 `precondition`
+   * 内执行（判定依据是「引用记录的当前事实」，须以串行槽位内的读为准）。
+   *
+   * @throws `PRECONDITION`（T-1 不存在 / T-4 状态 / T-5 异账户）与
+   *   `VALIDATION`（T-2 类型 / 深度超限 / 环 / 祖先链断裂）——**码与基线一致**，
+   *   本片只移动**时机**，不改错误码语义。
+   */
+  #assertParentCompanyRules(parentId: SoloipsCompanyId): void {
+    // T-1 父必须存在（不存在 → `PRECONDITION`：引用的既有事实不存在）。
+    const parent = this.#readCompany(parentId);
+    // T-2 父类型限制：仅禁 `operation` 作父（platform/enterprise/subsidiary 均可）。
+    if (parent.type === "operation") {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "运营子公司不能创建子级公司");
+    }
+    // T-4 父状态：`archived` 的父公司不得接收新子公司。
+    // 用 `PRECONDITION` 而非 `VALIDATION`：输入本身合法，是**被引用记录的状态**
+    // 不允许该操作——与该码的定义（「引用的既有事实不存在或状态不允许该操作」）
+    // 逐字对应。
+    if (parent.status !== "active") {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_PRECONDITION",
+        `父公司 ${parentId} 状态为 ${parent.status}，不得接收新子公司（data-contract §2.6 T-4）：` +
+          "归档是终态，其下不得再长出新的活跃节点",
+      );
+    }
+    // T-5 同账户：父公司 `accountId` 必须等于部署注入账户（§2.6 / §4.2 第 0 步）。
+    // 与打开时的整根校验（BE-1）同向、但**独立**：打开校验保证「根内只有本账户
+    // 的公司」，本条把「父属于本账户」钉在**引用点**上（引用点是判定发生处，
+    // 不依赖「根内记录都合规」这一全局前提）。
+    if (parent.accountId !== this.#accountId) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_PRECONDITION",
+        `父公司 ${parentId} 属于账户 "${parent.accountId}"，与部署账户 "${this.#accountId}" 不符；` +
+          "不得跨账户建子公司（data-contract §2.6 T-5）",
+      );
+    }
+    // T-3 深度上限（根深度为 0，到根的边数）；`#computeDepth` 同时做环检测（R-4）。
+    const parentDepth = this.#computeDepth(parentId);
+    if (parentDepth >= MAX_TREE_DEPTH - 1) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        `公司树深度不能超过 ${MAX_TREE_DEPTH} 层`,
+      );
+    }
+  }
+
+  /**
+   * 配额判定：占满即返回拒绝载荷，未占满（或计划无限制）返回 `undefined`。
+   *
+   * 〔`-1` 即无限制〕§2.1 三层配额表用 `-1` 表示无限制（**不用** `Infinity`——
+   * 它无法 JSON 持久化）。无限制**不产生**拒绝，故拒绝载荷里的 `limit` 恒非负。
+   *
+   * 〔为什么不建计数器、不用乐观锁〕C-1 裁定：M0.1 的计数载体就是既有 `company`
+   * 记录（扫表），乐观锁针对的是「并发 Host / 多账户共享数据面」——在「一个业务
+   * 存储根只绑定一个账户」+ 单 writer 下，**计数即权威**（§4.3 末「为什么 M0.1
+   * 不用乐观锁」）。完整 Entitlement + `quota` 表属 M0.2。
+   */
+  #quotaRefusalFor(type: SoloipsUserCompanyType): SoloipsQuotaRefused | undefined {
+    const quota = SOLOIPS_PLAN_QUOTAS[this.#planCode];
+    const limit = type === "enterprise" ? quota.companyLimit : quota.subsidiaryLimit;
+    if (limit === -1) return undefined;
+    const current = this.#countActiveCompaniesOfType(type);
+    if (current < limit) return undefined;
+    return {
+      status: "refused",
+      reason: "quota-exceeded",
+      // resourceType 是「哪个额度」，不是公司类型的别名（见契约注释）。
+      resourceType: type === "enterprise" ? "companyLimit" : "subsidiaryLimit",
+      planCode: this.#planCode,
+      current,
+      limit,
+    };
+  }
+
+  /**
+   * 建公司（顶层用户公司 / 用户子公司）。返回面 = 提交三态 **或** 配额拒绝
+   * （{@link SoloipsCreateCompanyOutcome}）。
+   *
+   * ── 判定分工（BE-5 修正：按「是否会被重放影响」而非「是否读介质」划分）──────
+   *
+   * 〔修正的来由（B-1，QA 实测 + C 裁定）〕本方法初版把树规则留在提交门**之外**，
+   * 并注释辩解「M0.1 没有命令可改变 company 的 type/status/accountId，故与重放
+   * 检测的先后不构成可观察差异」。**该辩解是错的**，两条独立理由：
+   *
+   *  1. **新增判定本身就会破坏重放**：`enterprise` 带父、`subsidiary` 无父、T-4、
+   *     T-5、官方类型闸门都是 BE-5 **新增**的判定。基线（466df63）**允许**前两类与
+   *     官方类型经普通入口创建——故介质上可以存在**基线时代合法提交**的这类记录。
+   *     升级后重放它们时，门外的判定先于重放检测执行 → 从 `replayed` 退化为抛错。
+   *     这与「状态会不会变」无关：判定依据是**入参**，而遗留操作恰恰违反新规则。
+   *  2. **判定依据可被本命令之外的路径改变**：`company.status` 虽无命令面写路径，
+   *     但**存量/外部写入/迁移脚本**都能改它（QA 用真实介质探针直达磁盘改 status
+   *     复现了 T-4 的同一回归）。「没有命令能改」≠「不会被改」。
+   *
+   * 〔修正后的划分〕`precondition` 在门的**重放检测之后**执行（`commit-gate.ts`
+   * 的顺序契约），故**凡新增判定、凡读介质判定**都必须在其中：
+   *
+   * | 判定 | 位置 | 理由 |
+   * |---|---|---|
+   * | `operationId` / `name` / `parentCompanyId` **形状** | 门外 | 纯入参，**且基线既有**——重放同一 op 时入参形状不变，不产生新回归 |
+   * | 官方类型闸门（`platform`/`operation`） | **门内** | BE-5 **新增**：基线允许，遗留记录重放会退化 |
+   * | `enterprise` 带父 / `subsidiary` 无父 | **门内** | 同上（BE-5 新增的输入组合判定） |
+   * | T-1 父存在 / T-2 父类型 / T-4 父状态 / T-5 父同账户 | **门内** | 读介质（引用记录的当前事实） |
+   * | T-3 深度 / 环检测 | **门内** | 读介质（遍历祖先链） |
+   * | 配额 | **门内**（本片既有） | 读介质；且判定依据会被成功的执行本身改变（K-4） |
+   *
+   * 〔与 `activateTeam` 惯例的一致〕该命令的注释写「形状检查在门外、**状态判定
+   * 全部在 `precondition` 内**」；本方法的划分与之一致，只是「形状检查」的门外
+   * 范围收窄为「基线既有的纯入参检查」——新增的形状判定因上述理由 1 必须进门。
+   *
+   * 〔拒绝形态**不变**〕`VALIDATION`（输入/组合不允许）与 `PRECONDITION`（引用的
+   * 既有事实不存在或状态不允许）继续**抛错**；配额继续返回**拒绝载荷**。抛错在
+   * `precondition` 内同样原样冒泡（门只在 `{ok:false}` 时早退），故移入后语义
+   * 不变，只有**时机**移到重放检测之后。§4.3 K-6 要求的「配额拒绝不得与部分写
+   * 失败共用通道」依旧成立：三条通道彼此独立。
+   *
+   * 〔判定与写之间仍无插入〕`precondition` 与 `mutate` 同在本门的**串行槽位**内，
+   * 两者之间没有其他本地提交可插入（跨进程由 writer lease 排除）——这是 §4.3
+   * K-1/K-2 的要求，也是本命令的树规则与配额判定共处同一钩子而不失效的原因。
+   */
+  async createCompany(input: SoloipsCreateCompanyInput): Promise<SoloipsCreateCompanyOutcome> {
     this.#assertOpen();
     requireOperationIdShape(input.operationId);
     requireNonEmpty(input.name, "公司名");
 
-    // 验证父公司存在（如有提供）
-    if (input.parentCompanyId !== undefined) {
-      if (!isCompanyId(input.parentCompanyId)) {
-        throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "parentCompanyId 形状不合法");
-      }
-      const parent = this.#readCompany(input.parentCompanyId);
-      // 检查父公司类型：operation 类型不能有子级（平台公司和用户公司可以有）
-      if (parent.type === "operation") {
-        throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "运营子公司不能创建子级公司");
-      }
-      // 检查深度限制（根深度为 0，到根的边数）
-      const parentDepth = this.#computeDepth(input.parentCompanyId);
-      if (parentDepth >= MAX_TREE_DEPTH - 1) {
-        throw new SoloipsCoreError(
-          "SOLOIPS_CORE_VALIDATION",
-          `公司树深度不能超过 ${MAX_TREE_DEPTH} 层`,
-        );
-      }
+    const companyType: SoloipsCompanyType = input.type ?? "enterprise";
+    const parentId = input.parentCompanyId;
+
+    // ── 门外只留：纯入参 **且** 基线既有的形状检查 ─────────────────────────
+    // `parentCompanyId` 形状在基线即在门外（且持久记录经 schema 保证形状合法，
+    // 遗留操作不可能违反它），故保留在门外不引入回归。
+    if (parentId !== undefined && !isCompanyId(parentId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "parentCompanyId 形状不合法");
     }
 
-    const companyType = input.type ?? "enterprise";
-    return this.#gate.commit(
+    return this.#gate.commit<SoloipsCreateCompanyResult, SoloipsQuotaRefused>(
       {
         operationId: asOperationId(input.operationId),
         kind: "company.create",
         intent: {
           name: input.name,
           type: companyType,
-          ...(input.parentCompanyId !== undefined
-            ? { parentCompanyId: input.parentCompanyId }
-            : {}),
+          ...(parentId !== undefined ? { parentCompanyId: parentId } : {}),
+        },
+        // 〔判定全部在串行槽位内、意图落盘之前、重放检测之后〕顺序即语义：
+        //  - 已提交的同 operationId 走不到这里（重放先返回原结果，K-4 / B-1 回归修复）；
+        //  - 未决（pending）同 operationId 也走不到这里（门返回 `unknown`）；
+        //  - 本次请求的意图此刻**尚未落盘**，故配额计数扫不到自己，且任何拒绝
+        //    都是零业务写、零新增未决意图（K-6）。
+        precondition: (): SoloipsCommitPreconditionVerdict<SoloipsQuotaRefused> => {
+          // ① 入口与类型组合（官方类型闸门 + enterprise 带父 / subsidiary 无父）。
+          //    返回收窄后的「占用户配额」类型，供 ③ 查表（避免裸断言）。
+          const userType = this.#requireCreatableCompanyType(companyType, parentId);
+          // ② 父公司规则（T-1…T-5 + 深度/环）：读介质，故必须在此（判定依据的
+          //    当前事实以本槽位内的读为准）。
+          if (parentId !== undefined) this.#assertParentCompanyRules(parentId);
+          // ③ 配额（K-3：现读当前持久事实；K-5：口径写死在 #countActiveCompaniesOfType）。
+          const refusal = this.#quotaRefusalFor(userType);
+          return refusal === undefined ? { ok: true } : { ok: false, refusal };
         },
       },
       async (publish) => {
@@ -1198,9 +1500,7 @@ class SoloipsCompanyStore implements SoloipsCoreService {
           // 账户来自部署注入（构造期绑定，非命令入参）：SoloipsCreateCompanyInput
           // 刻意**不含** accountId，业务命令不得传入或覆盖（data-contract §3.1 命令面）。
           accountId: this.#accountId,
-          ...(input.parentCompanyId !== undefined
-            ? { parentCompanyId: input.parentCompanyId }
-            : {}),
+          ...(parentId !== undefined ? { parentCompanyId: parentId } : {}),
           type: companyType,
           name: input.name,
           status: "active",
@@ -1411,6 +1711,35 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     // 两者互斥（角色不同即作用域 kind 不同，见 `ROLE_SCOPE_KIND`），故不可能
     // 同时命中；写成两条独立分支而不是一张表，是为了让各自的拒绝消息指向
     // 各自的契约条文。
+    //
+    // ── 〔BE-4c：契约扩展后的**兼容策略**（钉住 BE-2/BE-3 既有行为）〕──────────
+    //
+    // 门的 `precondition` 在 BE-4c 后**同时**接受「返回 `void` 并抛错」与
+    // 「返回 `{ ok: false, refusal }`」两种拒绝形态（见 `SoloipsCommitRequest`）。
+    // 本命令**继续使用抛错形态**，一字未改，理由：
+    //  1. 唯一性拒绝**不是**本命令公开返回面的一部分——`createAppointment` 的返回
+    //     类型是 `SoloipsCommitOutcome<SoloipsCreateAppointmentResult>`，拒绝以
+    //     `SOLOIPS_CORE_PRECONDITION` 异常呈现是**已验收**的契约（scope-role.spec.ts
+    //     的顺序与并发两条用例都按 `rejects.toMatchObject({code})` 断言）；
+    //  2. 改成拒绝载荷会**改变本命令的公开返回类型**（多出 `| R` 分支），那是需要
+    //     单独裁定的行为/契约变更，不属于 BE-4c 的「门扩展」范围（本片只做加法：
+    //     让拒绝载荷**可表达**，不迁移既有判定）；
+    //  3. 两种形态的**失败语义完全相同**——都在意图落盘之前、都在串行槽位内，
+    //     都是零业务写、零新增未决意图。区别只在「拒绝以值还是以异常抵达调用方」，
+    //     而这一点由各命令的既有公开契约决定，不由门决定。
+    //
+    // 〔为什么两种形态都不靠哨兵异常**翻译**〕「抛一个专用异常、由服务面 catch 后
+    // 转成返回值」的方案已被裁定否决——`contracts.ts` 的
+    // `SoloipsCommitPreconditionVerdict` 注释列了三条理由（失败语义与正常结果不
+    // 混用、类型层不可穷举、与 BE-5 配额拒绝同构），那是权威说明处。
+    //
+    // 〔预留：第三分支归属（**本片不实现**）〕data-contract §2.4.4 的 **DL-1**
+    // （同一部门至多一条有效 `department_lead`）与 **DL-2**（换任必须显式：先
+    // `revokeAppointment` 再 `createAppointment`）已裁定归属「BE-4c 或其后首个 core
+    // 切片」，落点正是**本三元表达式的第三个分支**（`role === 'department_lead'`
+    // 且 `scope.kind === 'department'` → `#assertNoActiveDepartmentLead(scope.departmentId)`）。
+    // 本片刻意**不**实现：它会把既有「后写者胜」的可见行为改为拒绝，属需要单独
+    // 验收的行为变更；且 §2.4.4 明确「本裁定不重开 BE-2」。
     const uniqueness =
       role === "general_assistant" && scope.kind === "company"
         ? () => this.#assertNoActiveGeneralAssistant(scope.companyId)
@@ -1799,6 +2128,66 @@ class SoloipsCompanyStore implements SoloipsCoreService {
 
   // ── 工作准入（SOLO-ACC-04：三条路径共用同一判定） ─────────────────────────
 
+  /**
+   * 工作准入前门（SOLO-ACC-04）：三条路径（经理派单/员工自领/自动调度）共用同一判定。
+   *
+   * ── 〔BE-4c：判定与提交落在**同一串行槽位**〕────────────────────────────────
+   *
+   * 本命令的**全部**判定——重放探测、未决阻塞、入职完备性——都在提交门的
+   * `precondition` 内执行，即持有本 store 串行槽位时。这是 R-5.1…R-5.5 的要求
+   * （`docs/prds/organization-full-backend-design-v0.1.md` §6「R-5 处置要求」，
+   * P2-003 升级为硬要求）：
+   *
+   *  - **R-5.1 probe 在队内**：重放探测由 `#commitLocked` 自己完成（它就是槽位内的
+   *    第一次读），不再有门外的 `probe()` 调用；
+   *  - **R-5.2 外部 probe 禁止**：本命令**不**做任何提交前预检。`checkOnboarding`
+   *    仍是可用的**展示用**查询（纯读、不参与提交决策），但其结果**不得**作为
+   *    提交依据传入——本命令的签名里没有任何承载它的字段；
+   *  - **R-5.3 判定输入在队内重取**：`evaluateOnboarding` 在 `precondition` 内调用，
+   *    且 `#readModel()` 返回的是**每次调用现读**的取值器（闭包内直接读 domain 表），
+   *    因此判定看到的是「本次写入将要基于的状态」；
+   *  - **R-5.4 未决检查同在队内**：`listPendingOperations` 的阻塞判定同样在
+   *    `precondition` 内；
+   *  - **R-5.5 失败方向不变**：任一判定不通过即返回可判定拒绝，零业务写、零新增
+   *    未决意图（`precondition` 在意图落盘之前）。**未放宽任何既有拒绝条件**。
+   *
+   * 〔为什么判定不能留在门外（修复前的形态）〕门外判定把「读-判-写」拆成两段：
+   * 两个并发准入可同时通过「入职已完备」的检查，各自建出一条准入事实；未决阻塞
+   * 检查也存在同样的窗口。M0.1 的单 operator 是**运行假设**，不是结构保证——契约
+   * 不得依赖使用方式（R-5 的「为什么升级为硬要求」段）。
+   *
+   * 〔拒绝为什么是**返回值**而不是异常〕本命令的拒绝是公开返回面的一部分
+   * （专属判别值 + 逐项缺项），故经 `SoloipsCommitPreconditionVerdict` 的
+   * `{ ok: false, refusal }` 返回——**哨兵异常方案已被裁定否决**，理由逐条见
+   * `contracts.ts` 的 `SoloipsCommitPreconditionVerdict` 注释（权威说明处）。
+   *
+   * 〔重放语义〕已提交的同 operationId 由门的重放分支直接返回原结果——**先于**
+   * 本命令的任何业务判定，故「后来状态变化」（如任职被撤销、文档被改写）不会把
+   * 一次已发生的准入重判为拒绝。这正是幂等性的定义：结果由首次执行决定。
+   *
+   * ── 〔BE-4c 的**行为变化**：三处，全部方向 fail-closed，逐条登记〕──────────
+   *
+   * 删除门外 probe 后，「同 operationId 命中既有记录」的分支改由门的重放检测承担。
+   * 两处的判据**不完全等价**，故有三处可观察的行为变化（均已由 `work-entry.spec.ts`
+   * 的用例钉住，且都只改变**拒绝的诊断码**，不放行任何此前被拒的输入）：
+   *
+   *  1. **同 ID + 别的 kind（未决）**：旧 → `unknown`（门外 probe 对 pending 一律
+   *     返回 unknown，不比对 kind）；新 → `SOLOIPS_CORE_CONFLICT`（门的重放检测
+   *     先比对 kind 字符串）。更严格：ID 复用被立即点破，而不是让调用方以为
+   *     「重试同 ID 可能有结果」。
+   *  2. **同 ID + committed 但缺 `result`**：旧 → `SOLOIPS_CORE_CONFLICT`（门外
+   *     probe 分支里手工判 `result === undefined`）；新 → `SOLOIPS_CORE_RECORD_INVALID`
+   *     （`#committedResult` 的既有判据）。新码更精确：记录标 committed 却缺载荷
+   *     是**介质不自洽**，不是 ID 复用。
+   *  3. **同 ID + 未知 kind（含 committed）**：旧 → `unknown`（probe 对未知 kind
+   *     一律 unknown）；新 → `SOLOIPS_CORE_CONFLICT`（kind 比对先于「能否重放」的
+   *     判断）。新行为与既有用例一致（`team-data.spec.ts`：未知 kind 的同 ID 换
+   *     kind 复用被拒，「未知不等于可复用」）。
+   *
+   * 〔为什么这些变化可接受〕三者都是**拒绝**（不写任何业务状态），变化只在错误码
+   * 或返回判别值；且新行为都指向更可行动的诊断。**没有**任何此前成功的输入在新实现
+   * 下失败——`work-entry.spec.ts` 的既有 5 条用例逐条通过（断言未删改）。
+   */
   async requestWorkEntry(input: SoloipsWorkEntryInput): Promise<SoloipsWorkEntryOutcome> {
     this.#assertOpen();
     requireOperationIdShape(input.operationId);
@@ -1810,61 +2199,93 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "origin 必须是三条准入路径之一");
     }
     const operationId = asOperationId(input.operationId);
+    const employeeId = input.employeeId;
+    const taskId = input.taskId;
+    const origin = input.origin;
 
-    const probe = this.#gate.probe(operationId);
-    if (probe === "unknown") {
-      return { status: "unknown" };
-    }
-    if (probe === "replayed") {
-      const record = this.#gate.getOperation(operationId);
-      if (
-        record === undefined ||
-        record.kind !== "work-entry.request" ||
-        record.result === undefined
-      ) {
-        throw new SoloipsCoreError("SOLOIPS_CORE_CONFLICT", "operationId 与既有操作冲突，无法重放");
-      }
-      // 受控单次断言：record.result 由本命令的 admitted 结果持久而来。
-      return {
-        status: "admitted",
-        replayed: true,
-        result: record.result as SoloipsWorkEntryAdmitted,
-      };
-    }
+    // 判定结论在槽位内产出、由 mutate 消费：precondition 与 mutate 之间**没有**
+    // 其他本地提交可插入（同一串行槽位），故这个交接不会与别的事实错位。
+    let admitted: SoloipsWorkEntryAdmitted | undefined;
 
-    // 该员工存在未决操作时阻塞新准入（ORG-05「未知仍阻止该员工其他新 operationId」）。
-    if (
-      this.#gate.listPendingOperations().some((record) => record.employeeId === input.employeeId)
-    ) {
-      return { status: "refused", reason: "employee-operation-unknown" };
-    }
-
-    const status: SoloipsOnboardingStatus = evaluateOnboarding(input.employeeId, this.#readModel());
-    if (!status.ready) {
-      // 拒绝不写任何状态：缺项可修正后重试（重试重新判定，重试有界=每次调用单次
-      // 判定、无内部循环重试；SOLO-ACC-04「任务保持 pending」——core 不产生准入事实）。
-      return { status: "refused", reason: "onboarding-not-ready", gaps: status.gaps };
-    }
-
-    const admitted: SoloipsWorkEntryAdmitted = {
-      status: "admitted",
-      employeeId: input.employeeId,
-      appointmentId: status.appointmentId,
-      generation: status.generation,
-      taskId: input.taskId,
-      origin: input.origin,
-    };
-    const outcome = await this.#gate.commit(
+    const outcome = await this.#gate.commit<SoloipsWorkEntryAdmitted, SoloipsWorkEntryRefused>(
       {
         operationId,
         kind: "work-entry.request",
-        employeeId: input.employeeId,
-        intent: { employeeId: input.employeeId, taskId: input.taskId, origin: input.origin },
+        employeeId,
+        intent: { employeeId, taskId, origin },
+        precondition: (): SoloipsCommitPreconditionVerdict<SoloipsWorkEntryRefused> => {
+          // ① 未决阻塞（ORG-05「未知仍阻止该员工其他新 operationId」；R-5.4）。
+          //
+          // 〔本次 vs 他人：本判据只阻塞**他人**的未决操作〕
+          //  - 同 operationId 的未决记录**走不到这里**：门的重放检测在 `precondition`
+          //    之前读同一张表，命中 pending 即按 `unknown` 返回（「结果未知，不得换
+          //    ID 重做」——那是结果语义，不是「该员工还有未结清的事」）；
+          //  - 本次请求的意图此刻**尚未落盘**：`precondition` 在意图写入之前执行，
+          //    故扫描本来就扫不到自己。
+          //
+          // 〔`record.id !== operationId` 是**冗余守卫**，但**不是**可删的装饰〕
+          // 上述两条已足以排除「本次意图被自己判成阻塞」，故本守卫在当前顺序下
+          // **不可达**——变异自检的实测结论：单独删掉它（M5）全绿，即它当前不载荷。
+          // 保留它有三个理由，且第三条是实测的：
+          //  1. 让「阻塞集 = 他人的未决」这条语义在源码里逐字可读（判据即文档）；
+          //  2. 本仓已有同类先例（`#scanAppointments` 的「不可能：Map 的值由上面
+          //     push 建出」注释、`activateTeam` 的显式判空）——用显式守卫替代
+          //     「靠顺序保证」的隐式前提，是本仓既有的防御风格；
+          //  3. **它在顺序被改动时变成载荷性的**：把意图写入提到判定之前（M4 变异）
+          //     后，带守卫时成功类用例仍全绿；**再去掉守卫**（M4+M5 复合变异）则
+          //     10 条用例失败——因为本次刚落的 pending 意图把自己判成了阻塞。
+          //     即：本守卫是「顺序契约被破坏」时的**第二道闸**，其代价为一次字符串
+          //     比较，收益是那种改动不会静默地把所有准入变成拒绝。
+          if (
+            this.#gate
+              .listPendingOperations()
+              .some((record) => record.id !== operationId && record.employeeId === employeeId)
+          ) {
+            return {
+              ok: false,
+              refusal: { status: "refused", reason: "employee-operation-unknown" },
+            };
+          }
+          // ② 入职完备性判定（R-5.3）：现读当前权威事实，不接受任何调用前算好的结论。
+          const status: SoloipsOnboardingStatus = evaluateOnboarding(employeeId, this.#readModel());
+          if (!status.ready) {
+            // 拒绝不写任何状态：缺项可修正后重试（重试重新判定，重试有界=每次调用
+            // 单次判定、无内部循环重试；SOLO-ACC-04「任务保持 pending」——core 不
+            // 产生准入事实）。
+            return {
+              ok: false,
+              refusal: { status: "refused", reason: "onboarding-not-ready", gaps: status.gaps },
+            };
+          }
+          admitted = {
+            status: "admitted",
+            employeeId,
+            appointmentId: status.appointmentId,
+            generation: status.generation,
+            taskId,
+            origin,
+          };
+          return { ok: true };
+        },
       },
-      () => Promise.resolve(admitted),
+      async () => {
+        // 〔为什么显式判空而不是断言〕`admitted` 的类型仍含 `undefined`（编译器不跨
+        // 回调传递收窄，与 `activateTeam` 同款）。断言（`as`）会让「precondition 忘
+        // 了产出结论」变成静默的类型欺骗；显式判空让那种情形在这里以明确错误失败。
+        if (admitted === undefined) {
+          throw new SoloipsCoreError(
+            "SOLOIPS_CORE_RECORD_INVALID",
+            "work-entry 提交路径缺准入结论：precondition 应已产出（内部一致性错误）",
+          );
+        }
+        return admitted;
+      },
     );
     if (outcome.status === "unknown") {
       return { status: "unknown" };
+    }
+    if (outcome.status === "refused") {
+      return outcome;
     }
     return { status: "admitted", replayed: outcome.status === "replayed", result: outcome.result };
   }
@@ -2231,6 +2652,8 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    *
    * 〔代价与补偿〕不经门意味着没有「意图先行 + 串行槽位」保护。补偿：
    *  - **写前复核写权**（`#reconcileOne` 的 `lease.assertHeld`），失权即拒；
+   *  - **槽位内重判**（F-01）：扫描结论**不再是**写入依据——判定与写入在同一
+   *    介质写链槽位内完成，见 `#reconcileOne`；
    *  - **幂等收敛**：多次 `update` 之间崩溃留下的部分标记是**收敛中间态**——
    *    已标记的保持 `inactive`，未标记的下次扫描继续处理；
    *  - **读面不依赖标记**：`#isUsableTeam` 始终按 P-4 实时核验，因此「标记没跑全」
@@ -2254,14 +2677,29 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       // P-8.6：archived 不参与扫描；inactive 已是标记结果（幂等，不重复写）。
       if (team.status !== "active") continue;
       scanned += 1;
-      if (this.#evaluateLeadReference(team).valid) continue;
+      // 扫描用与槽位内**同一个**谓词（`#isConvergeTarget`）：扫描只是「候选筛选」，
+      // 真正的写入依据是槽位内的那次重判。两处若各写一份判断，就有第二个漂移点。
+      if (!this.#isConvergeTarget(team)) continue;
       toDeactivate.push(id);
     }
     for (const teamId of toDeactivate) {
-      await this.#reconcileOne(teamId);
-      markedInactive.push(teamId);
+      const marked = await this.#reconcileOne(teamId);
+      // 只报告**实际落盘**的标记：槽位内重判不成立时本次不写，也就没有可报告的
+      // 事实（并发插入的正常提交已给出权威结论）。
+      if (marked) markedInactive.push(teamId);
     }
     return { scanned, markedInactive, pending };
+  }
+
+  /**
+   * 「该团队是否应当被收敛为 `inactive`」——**扫描与槽位内重判共用的唯一谓词**。
+   *
+   * P-4 四项的失效判定见 `#evaluateLeadReference`；本谓词只加「当前是 `active`」
+   * 这一条（`pending`/`inactive`/`archived` 都不是收敛对象，P-8.6）。
+   */
+  #isConvergeTarget(team: SoloipsTeamRecord): boolean {
+    if (team.status !== "active") return false;
+    return !this.#evaluateLeadReference(team).valid;
   }
 
   /**
@@ -2270,21 +2708,57 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    * 〔写权〕不经 `#gate` 的写路径**必须**在写前自行复核写权——否则它就成了
    * 绕过 fence 的写口（`reconcileTeams` 的「代价与补偿」段）。
    *
-   * 〔为什么用 `update` 而不是先读后 `put`〕`update` 在介质层是「读当前值 →
-   * 应用修订 → 写回」，`revise` 里对 `current` 展开，因此**只**改 `status`：
-   * 即使扫描与写入之间记录被改动（理论上被 lease 排除），也不会用陈旧快照
-   * 覆盖其他字段。
+   * ── 〔F-01 修复〕判定必须在**同一个介质写链槽位内**，与写入不可分割 ──────────
+   *
+   * 缺陷（外审静态反例 + 本仓实测复现，`tests/reconcile-atomicity.spec.ts`）：
+   * 修复前的形态是「扫描得出待处理集合 → 逐个 `await update(→inactive)`」，
+   * 而 `update` 的 `revise` 回调**不看 `current`**。于是在「扫描完成 → 写入生效」
+   * 之间的 await 窗口里插入一次**正常的、经提交门、持写权**的 `closeTeam`
+   * （提交为 `archived`）之后，本次写入仍会把 `archived` 覆盖成 `inactive`——
+   * **P-7 的归档终态被绕门写入破坏**。这不是「假不可用」类可恢复代价：
+   * 被改回 `inactive` 的团队可被再次 `activateTeam` 复活，终态约束实际失效。
+   *
+   * 修法：把两个判定（① `current.status === "active"`；② 当前组长引用**仍**失效）
+   * 移进 `revise`，判定不成立即**中止本次写**（抛出私有信号 → 端口不调用后端
+   * `putRecord`，**零介质写**）。为什么不用「返回 `current` 不变」：那仍会走一次
+   * 内容相同的真实写（后端 IO + `domain/changed` 事件），而失权路径的既有纪律是
+   * 「拒绝时介质零变化」（`tests/team-data.spec.ts` 的同名用例）。
+   *
+   * 〔原子性依据：已核到宿主实现，不是推断〕`@deepseek-ai/dsh-storage-domain` 的
+   * `DomainImpl` 为**整个 domain**（全部表共用）维护唯一写链 `chain`：每次
+   * `put`/`update`/`delete` 都经 `enqueue(job)` 排入该链；`KvTableImpl.update`
+   * 在槽位内**同步**执行 `fn(records.get(key))`，成功后才 `await unit.putRecord(...)`。
+   * 因此：
+   *  1. 判定与写入之间**没有 await**，本地不可能插入第二个提交（提交门的每次发布
+   *     也排在同一条链上，是**同一个**串行边界）；
+   *  2. 槽位内同步读到的 `team`/`appointment` 内存态，已包含链上全部先行写入
+   *     （每个槽位在 `putRecord` 完成后同步更新 `records` 才 resolve）；
+   *  3. 跨进程由 writer lease 排除——写前 `assertHeld` 仍是必要条件（它只保证
+   *     「写权在手」，不替代本重判）。
+   *
+   * 〔为什么 `update` 而不是先读后 `put`〕`revise` 里对 `current` 展开，因此**只**改
+   * `status`：即使记录被其他字段的正当修改更新过，也不会用陈旧快照覆盖那些字段。
+   *
+   * @returns 本次是否真的写入（`false` = 槽位内判定不成立，零介质写）。
    */
-  async #reconcileOne(teamId: SoloipsTeamId): Promise<void> {
+  async #reconcileOne(teamId: SoloipsTeamId): Promise<boolean> {
     try {
       await this.#lease.assertHeld();
     } catch (error) {
       throw wrapLeaseFailure("team-reconcile", error);
     }
-    await this.#domain.table("team").update(teamId, (current) => ({
-      ...current,
-      status: "inactive" as const,
-    }));
+    try {
+      await this.#domain.table("team").update(teamId, (current) => {
+        if (!this.#isConvergeTarget(current)) {
+          throw new ReconcileNotApplicable();
+        }
+        return { ...current, status: "inactive" as const };
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof ReconcileNotApplicable) return false;
+      throw error;
+    }
   }
 
   // ── 查询投影（只读；返回介质对象，调用方不得原地修改） ─────────────────────

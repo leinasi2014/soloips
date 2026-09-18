@@ -22,7 +22,8 @@
     "delivery-lock": "node scripts/development/generate-delivery-lock.mjs",
     "check:delivery-load": "node scripts/development/check-delivery-load.mjs",
     "verify": "node scripts/development/verify-s0.mjs",
-    "check:build-repro": "node scripts/development/check-build-reproducibility.mjs"
+    "check:build-repro": "node scripts/development/check-build-reproducibility.mjs",
+    "check:i18n": "node scripts/development/verify-client-ui-i18n.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-typert-generator": "0.1.6-alpha.2",

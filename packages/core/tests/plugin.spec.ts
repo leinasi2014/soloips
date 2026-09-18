@@ -228,4 +228,89 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
     expect(ctx.provided.size).toBe(0);
     expect(ctx.warnings.join("\n")).toContain("SOLOIPS_CORE_ACCOUNT_MISMATCH");
   });
+
+  /**
+   * 〔BE-5 追加〕`planCode` 的**插件层**接线：配置键 → 服务行为。
+   *
+   * 〔为什么必须从插件层测一次〕`quota-tree.spec.ts` 直接调 `openSoloipsCompanyStore`，
+   * 因此它证明的是「store 接受 planCode」，**不**证明「config 的 planCode 真的传到了
+   * store」。这两件事之间的接缝（`parseCoreConfig` 的键名、`entry` 的透传）若断开，
+   * 表现是「部署配置里写了 pro，运行期仍按 free 判定」——一个静默的配置失效。
+   * 本用例把该接缝钉住。
+   */
+  it("config.planCode 透传到服务：pro 计划下可建 1 公司 + 1 子公司（缺省 free 会拒绝）", async () => {
+    const ctx = new FakeHostContext();
+    ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
+    soloipsCoreEntry(ctx, {
+      enabled: true,
+      storageRoot: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+      planCode: "pro",
+    });
+    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    const service = ctx.provided.get(SOLOIPS_CORE_SERVICE_NAME) as {
+      createCompany(input: {
+        operationId: string;
+        name: string;
+        type?: string;
+        parentCompanyId?: string;
+      }): Promise<{
+        status: string;
+        result?: { companyId?: string };
+        resourceType?: string;
+        limit?: number;
+      }>;
+    };
+    const company = await service.createCompany({ operationId: "plugin-pro-1", name: "顶层" });
+    expect(company.status).toBe("committed");
+    const parentCompanyId = company.result?.companyId;
+    if (parentCompanyId === undefined) throw new Error("前置建公司未返回 companyId");
+    const subsidiary = await service.createCompany({
+      operationId: "plugin-pro-2",
+      name: "子公司",
+      type: "subsidiary",
+      parentCompanyId,
+    });
+    // 若 planCode 未透传（按缺省 free），这里会是 refused（Free 的 subsidiaryLimit=0）。
+    expect(subsidiary.status).toBe("committed");
+    await ctx.unload();
+  });
+
+  it("config.planCode 非法值：不发布服务（fail-closed，不静默按 free 运行）", async () => {
+    const ctx = new FakeHostContext();
+    ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
+    soloipsCoreEntry(ctx, {
+      enabled: true,
+      storageRoot: ROOT,
+      accountId: TEST_ACCOUNT_ID,
+      planCode: "gold",
+    });
+    await vi.waitFor(() => expect(ctx.warnings.length).toBe(1));
+    expect(ctx.provided.size).toBe(0);
+    expect(ctx.warnings.join("\n")).toContain("SOLOIPS_CORE_CONFIG_INVALID");
+  });
+
+  it("缺省无 planCode：按 free 发布（最严格计划），第二个 enterprise 被拒", async () => {
+    const ctx = new FakeHostContext();
+    ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
+    soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
+    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    const service = ctx.provided.get(SOLOIPS_CORE_SERVICE_NAME) as {
+      createCompany(input: {
+        operationId: string;
+        name: string;
+      }): Promise<{ status: string; planCode?: string; current?: number; limit?: number }>;
+    };
+    expect((await service.createCompany({ operationId: "plugin-free-1", name: "甲" })).status).toBe(
+      "committed",
+    );
+    const second = await service.createCompany({ operationId: "plugin-free-2", name: "乙" });
+    expect(second).toMatchObject({
+      status: "refused",
+      planCode: "free",
+      current: 1,
+      limit: 1,
+    });
+    await ctx.unload();
+  });
 });
