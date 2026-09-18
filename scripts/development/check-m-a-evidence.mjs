@@ -1,0 +1,200 @@
+#!/usr/bin/env node
+/**
+ * P0-2：真实消费者证据的 **fail-closed 证据门**（M-A 装配层身份一致性，裁定六）。
+ *
+ * ── 为什么是「证据门」而不是「跑 E2E 的 CI 步骤」──────────────────────────
+ * 真实消费者链路（真实浏览器 → gateway → Host → core → 介质）需要 **DSH fork
+ * 运行时**。本仓 `node_modules/@deepseek-ai/` 只有 `dsh-typert-generator` 与
+ * `dsh-typert-protocol`，根 `package.json` 无 fork 依赖，也没有指向内网源的
+ * `.npmrc`——fork 运行时**只存在于开发机的实例目录**。故在 GitHub-hosted runner
+ * 上跑 E2E 是**不可能的**；写成 CI 步骤只会得到「跳过」或「假绿」。
+ *
+ * 本门禁因此检查的是**证据是否与候选绑定**，而不是重跑链路：
+ *
+ *   改动触及 M-A 写面（Host/Remote/装配/构建入口）
+ *     ⇒ `docs/evidence/be6a/` 下必须存在**绑定当前候选**的证据
+ *     ⇒ 找不到 或 绑定的是别的候选 ⇒ **失败**（不是跳过）
+ *
+ * 这满足「证据缺失即显性失败」：**没有**真实消费者证据时，本步骤**红**。
+ *
+ * ── 判据（机械、非人工判断）───────────────────────────────────────────────
+ * 1. **是否触及 M-A 写面**：用 `git diff --name-only <base>...HEAD` 判定。命中
+ *    以下任一即视为触及：
+ *      - `packages/web/src/**`（Host/Remote 实现）
+ *      - `packages/web/cordis.patch.yml`（装配行）
+ *      - `packages/web/package.json`、`packages/web/tsconfig.json`、
+ *        `tsdown.config.ts`（构建入口/产物形状）
+ *      - `packages/bundle/**`、`packages/adapter-dsh/src/**`（装配与端口）
+ *    未触及 ⇒ 本门**通过**（无 M-A 风险，不需要该证据）。
+ * 2. **证据绑定当前候选**：`docs/evidence/be6a/CANDIDATE-MANIFEST.json` 必须存在，
+ *    且其 `candidateSha` 与当前 HEAD SHA 相等、`artifactSha256` 与
+ *    `packages/web/lib/client.js` 的实际摘要相等。
+ * 3. **证据内容自证**：manifest 必须列出 E2E 报告文件，且该报告内
+ *    `artifactIdentity.embedded === true`（页面加载的 bundle 确实含本候选字节）、
+ *    且报告内 `failure` 字段**不存在**（存在即该轮未通过）。
+ *
+ * ── 为什么不用「脚本存在」当证据 ──────────────────────────────────────────
+ * 本项目已因 `test:artifacts` 学过一次（F-03）：**脚本存在 ≠ 已执行 ≠ 已通过**。
+ * 故本门只认**与候选摘要绑定的报告文件**。
+ *
+ * ── 与裁定六的关系 ────────────────────────────────────────────────────────
+ * 裁定六要求「证据必须与候选摘要绑定且可被外部 reviewer 获取」。本门把该要求
+ * **机械化**：绑定关系由摘要比对强制，而不是靠人核对。
+ *
+ * 用法：
+ *   node scripts/development/check-m-a-evidence.mjs [--base <ref>] [--repo <path>]
+ *
+ * 退出状态：0 = 通过（未触及 M-A 写面，或证据与候选绑定且自证通过）；1 = 失败。
+ */
+
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const defaultRepo = resolve(here, "..", "..");
+
+function parseArgs(argv) {
+  const options = { base: "origin/main", repo: defaultRepo };
+  for (let index = 0; index < argv.length; index++) {
+    if (argv[index] === "--") continue;
+    else if (argv[index] === "--base") options.base = argv[++index];
+    else if (argv[index] === "--repo") options.repo = argv[++index];
+    else fail(`Unknown argument: ${argv[index]}`);
+  }
+  return options;
+}
+
+function fail(message) {
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+}
+
+function git(repo, args) {
+  return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+}
+
+/** M-A 写面：改动这些路径即视为触及装配/身份链路。 */
+const M_A_WRITE_SURFACE = [
+  /^packages\/web\/src\//,
+  /^packages\/web\/cordis\.patch\.yml$/,
+  /^packages\/web\/package\.json$/,
+  /^packages\/web\/tsconfig\.json$/,
+  /^tsdown\.config\.ts$/,
+  /^packages\/bundle\//,
+  /^packages\/adapter-dsh\/src\//,
+];
+
+function sha256Of(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+const options = parseArgs(process.argv.slice(2));
+const repo = resolve(options.repo);
+if (!existsSync(join(repo, ".git"))) fail(`不是 git 仓库：${repo}`);
+
+// ── 1. 是否触及 M-A 写面 ─────────────────────────────────────────────────────
+let changed;
+try {
+  changed = git(repo, ["diff", "--name-only", `${options.base}...HEAD`])
+    .split("\n")
+    .filter((line) => line.length > 0);
+} catch (error) {
+  fail(
+    `无法计算与 ${options.base} 的差异（需要该 ref 可用；CI 上先 fetch 完整历史）：${
+      error instanceof Error ? error.message : String(error)
+    }`,
+  );
+}
+
+const touched = changed.filter((path) => M_A_WRITE_SURFACE.some((pattern) => pattern.test(path)));
+if (touched.length === 0) {
+  process.stdout.write(
+    `M-A 证据门：未触及 M-A 写面（改动 ${String(changed.length)} 个文件，均不在装配/身份链路）——通过。\n`,
+  );
+  process.exit(0);
+}
+
+// ── 2. 证据必须存在且绑定当前候选 ────────────────────────────────────────────
+const head = git(repo, ["rev-parse", "HEAD"]);
+const manifestPath = join(repo, "docs", "evidence", "be6a", "CANDIDATE-MANIFEST.json");
+if (!existsSync(manifestPath)) {
+  fail(
+    `M-A 证据门失败：本 PR 触及 M-A 写面（${touched.slice(0, 5).join(", ")}${
+      touched.length > 5 ? ` 等 ${String(touched.length)} 个` : ""
+    }），但 docs/evidence/be6a/CANDIDATE-MANIFEST.json 不存在。\n` +
+      "  真实消费者链路需要 DSH fork 运行时（GitHub runner 不可得），因此本门检查\n" +
+      "  「证据是否与候选绑定」，而不是重跑链路。请在本机跑完 E2E 后按\n" +
+      "  docs/evidence/be6a/README.md 的格式落盘 manifest。",
+  );
+}
+
+let manifest;
+try {
+  manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+} catch (error) {
+  fail(
+    `CANDIDATE-MANIFEST.json 不是合法 JSON：${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+
+if (manifest.candidateSha !== head) {
+  fail(
+    `M-A 证据门失败：证据绑定的是 ${String(manifest.candidateSha)}，当前 HEAD 是 ${head}。\n` +
+      "  任一 SHA / 构建输入变化 → 真实链路证据自动 stale（裁定六的「候选身份绑定」纪律）。\n" +
+      "  请在本机重跑 E2E 并更新 manifest，不要沿用旧证据。",
+  );
+}
+
+const clientArtifact = join(repo, "packages", "web", "lib", "client.js");
+if (!existsSync(clientArtifact)) {
+  fail(`M-A 证据门失败：找不到产物 ${clientArtifact}（先跑 pnpm run build）。`);
+}
+const actualArtifactSha = sha256Of(clientArtifact);
+if (manifest.artifactSha256 !== actualArtifactSha) {
+  fail(
+    `M-A 证据门失败：manifest 的 artifactSha256=${String(manifest.artifactSha256)}，\n` +
+      `  实际 ${clientArtifact} 的 sha256=${actualArtifactSha}。\n` +
+      "  产物摘要不一致说明证据不是本候选产生的（构建输入变化 / 旧产物 / 别的副本）。",
+  );
+}
+
+// ── 3. 证据内容自证 ─────────────────────────────────────────────────────────
+const reports = Array.isArray(manifest.reports) ? manifest.reports : [];
+if (reports.length === 0) {
+  fail("M-A 证据门失败：manifest.reports 为空——必须列出至少一份 E2E 报告文件。");
+}
+
+for (const reportName of reports) {
+  const reportPath = join(repo, "docs", "evidence", "be6a", reportName);
+  if (!existsSync(reportPath)) {
+    fail(`M-A 证据门失败：manifest 列出的报告不存在：docs/evidence/be6a/${String(reportName)}`);
+  }
+  let report;
+  try {
+    report = JSON.parse(readFileSync(reportPath, "utf8"));
+  } catch (error) {
+    fail(
+      `${String(reportName)} 不是合法 JSON：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (report.artifactIdentity?.embedded !== true) {
+    fail(
+      `M-A 证据门失败：${String(reportName)} 的 artifactIdentity.embedded 不是 true——\n` +
+        "  无法确认页面实际加载的 bundle 含本候选字节（可能是旧产物/另一份副本）。",
+    );
+  }
+  if (report.failure !== undefined) {
+    fail(
+      `M-A 证据门失败：${String(reportName)} 记录了 failure：${String(report.failure)}\n` +
+        "  「跑了但没通过」不得当作证据。修好后再落盘。",
+    );
+  }
+}
+
+process.stdout.write(
+  `M-A 证据门通过：触及 M-A 写面 ${String(touched.length)} 个文件；证据绑定候选 ${head.slice(0, 12)}，` +
+    `产物摘要一致，报告 ${String(reports.length)} 份且 embedded=true、无 failure。\n`,
+);

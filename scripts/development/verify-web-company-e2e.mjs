@@ -19,13 +19,15 @@
  *     读到的 id 与创建返回的 id 一致；
  *  3. 刷新页面后读回仍成立（同一持久事实）；
  *  4. 进程重启后读回仍成立（持久化）；
- *  5. 反例：`accountId` 作为入参字段被网关拒绝（`gateway/arguments-invalid`）；
+ *  5. 反例：入参 `accountId` **不能被采纳**（调用零业务写；失败来自配额，**非**网关拒绝）；
  *  6. 反例：同 operationId 重放返回 `replayed` 且不新建公司。
  *
  * ── 本脚本**不**证明什么 ───────────────────────────────────────────────────
  *  - 不证明模型工具面的任何性质（本包不注册工具，见 `packages/web/src/index.ts`）；
- *  - 不证明配额拒绝（需部署 `free` 计划且已占满；本片在单测层覆盖该臂的透传，
- *    端到端的配额拒绝属 FE-1b 的验收窗口）；
+ *  - 不证明「网关拒绝 `args.input` **内层**未声明字段」——网关只查 `args` 顶层键
+ *    （见第 5 步注释），本脚本证明的是该字段**未被采纳**（零业务写）；
+ *  - 不**构造性**验证配额拒绝：第 5 步的拒绝臂是在 `free` 计划已占满的实例上
+ *    **顺带**观察到并逐字段断言（对照调用），不覆盖其它计划码 / 资源类型；
  *  - 不证明 UI 呈现（本片无界面改动）。
  *
  * 用法：
@@ -465,32 +467,162 @@ async function main() {
       "重放必须返回**原结果**（同一 companyId），而不是新建",
     );
 
-    // ── 5. 反例：accountId 作为入参被拒 ───────────────────────────────────
-    const tamperedCall = await callRemote(
+    // ── 5. 反例：入参 `accountId` 不能被采纳 ──────────────────────────────
+    //
+    // 〔本步证明什么〕**`accountId` 不能被 UI / 模型参数覆盖**——data-contract
+    // §2.5.1 裁定四第一行「不由任何 UI 或模型参数传入/覆盖」的行为判据。判据是
+    // 「该调用**零业务写**、且该 operationId 名下**没有**新公司」，**不是**「它被
+    // 拒绝」。
+    //
+    // 〔本步**不**证明什么（初版断言的错误期望，BE-6a-e2e-fix 按实测修正）〕
+    // 本步**不**证明「网关会拒绝带 `accountId` 的调用」。真实 HTTP 路径对未声明
+    // 字段的处置是**分层**的（与 `packages/web/src/index.ts:389-395` 的三层说明
+    // 一致）：
+    //  1. 网关 `assertExactArguments` 只校验 **`args` 顶层键**——期望集合 =
+    //     descriptor 的 `parameters[].wire`（本方法即 `{input}`），见 fork
+    //     `packages/api/gateway/src/index.ts:1107-1133`（`expected` 构造于 :1115，
+    //     `extra` 判定于 :1117-1118）。`accountId` 位于 `args.input` **内层**，
+    //     不在其校验范围 → **网关放行**；
+    //  2. 内层由严格 codec 的 zod `parse` **剥离**（非拒绝）：同文件 :1142-1143 对
+    //     `mode === 'strict'` 执行 `codec.create().parse(value)`；生成 schema 为
+    //     `z.object({operationId,name,type,parentCompanyId})`
+    //     （`packages/web/lib/typert.remote-client.js:5-10`），zod 对象默认剥离
+    //     unknown keys。**本仓实测**：`z.object({operationId,name,type}).parse({…,
+    //     accountId:'x'})` 的结果键为 `["operationId","name","type"]`，
+    //     `'accountId' in parsed === false`；
+    //  3. 方法体**逐字段白名单重建**载荷（`packages/web/src/index.ts:412-417`）——
+    //     进程内直调时唯一成立的一层。
+    // 故「带 `accountId` 的调用」在通过 1、2 层后**等价于**一次合法调用：它撞上的是
+    // 部署计划的配额上限（第 1 步的 create 已占满），而不是任何身份拒绝。
+    //
+    // 〔部署前置〕本步的反例语义要求**配额已满**（`free` / `pro` 的 companyLimit=1，
+    // `packages/core/src/contracts.ts:139-141`，且第 1 步已占满）。配额未满（如
+    // `enterprise` 的 limit=-1）时该调用会**真的提交**——此时断言 5a 失败并给出
+    // 「前置不满足」的说明，不静默降级为通过。
+    const tamperedArgs = {
+      input: {
+        operationId: `${runId}-tampered`,
+        name: `${companyName} 篡改`,
+        type: "enterprise",
+        accountId: "acct-attacker",
+      },
+    };
+    const tamperedCall = await callRemote(cdp, "soloips/createCompany", tamperedArgs, "tampered");
+    const tamperedResult = parseEnvelope(tamperedCall);
+    record("accountId-not-honored", { call: tamperedCall, result: tamperedResult });
+    // 〔断言 5a：不得提交〕无论走哪个臂（正常结果 / 错误信封），都不允许
+    // `committed` / `replayed`。这是「accountId 未被采纳」的**否定式**判据：若该字段
+    // 被采纳并用于建公司，这里必然看到 committed（或该 operationId 的重放结果）。
+    assert(
+      tamperedResult.ok === false ||
+        (tamperedResult.value.status !== "committed" && tamperedResult.value.status !== "replayed"),
+      "带 accountId 的调用不得提交（本步前置为「配额已满」；若失败请先核对实例计划码，" +
+        `本步无法在配额未满的实例上构造反例）：${tamperedCall.responseText.slice(0, 300)}`,
+    );
+    // 〔断言 5b：失败码与 accountId 无关〕若该调用以错误信封失败，其码**不得**与账户
+    // 相关。账户相关的失败在本仓只有两处呈现：打开时绑定校验
+    // `SOLOIPS_CORE_ACCOUNT_MISMATCH`（`packages/core/src/contracts.ts:1550`）与
+    // T-5 引用点同账户判定（抛 `SOLOIPS_CORE_PRECONDITION`，
+    // `packages/core/src/store.ts:1361-1370`）。后者在本调用上**不可达**——该调用
+    // 不带 `parentCompanyId`，T-1…T-5 整组不执行。故断言「无 ACCOUNT 码」足以表达
+    // 「该字段没有到达任何身份判定」；若未来某层改为提前拒绝，这里会看到
+    // `gateway/arguments-invalid` / `gateway/input-invalid`，同样不含 ACCOUNT。
+    if (tamperedResult.ok === false) {
+      const failureCode = String(tamperedResult.error.code);
+      assert(
+        !failureCode.includes("ACCOUNT"),
+        "篡改调用的失败码不得与账户相关（否则意味着 accountId 到达了身份判定）：" + failureCode,
+      );
+    }
+    // 〔断言 5c：零业务写——按 operationId 的独立判据〕同 operationId 重放。提交门
+    // 对「已提交的同 operationId」返回 `replayed` 并带回**原结果**
+    // （`packages/core/src/commit-gate.ts:294-305`）；而配额拒绝在意图落盘**之前**
+    // 返回（同文件 :314-329），不留下任何 operation 记录。故重放若返回
+    // `replayed` / `committed`，即证明首次调用**真的**写过状态（篡改生效）；返回其它
+    // 态则证明该 operationId 名下**没有**新公司。这是本步检出「篡改调用建了公司」的
+    // **判别性**判据（比 5e 的树计数强，见该条的覆盖面说明）。
+    // 〔为什么不能只靠 5a〕5a 只看**首次响应**；若「拒绝」路径实际上写过状态（例如
+    // 拒绝早退却已落盘意图），首次响应仍是 refused 而 5a 看不出来。本条经**独立读
+    // 路径**（重放的返回态）复核「零业务写」这一声明本身，而不是复核响应文本。
+    const tamperReplayCall = await callRemote(
       cdp,
       "soloips/createCompany",
-      {
-        input: {
-          operationId: `${runId}-tampered`,
-          name: `${companyName} 篡改`,
-          type: "enterprise",
-          accountId: "acct-attacker",
+      tamperedArgs,
+      "tampered-replay",
+    );
+    const tamperReplayResult = parseEnvelope(tamperReplayCall);
+    record("tampered-replay", { call: tamperReplayCall, result: tamperReplayResult });
+    if (tamperReplayResult.ok === true) {
+      assert(
+        tamperReplayResult.value.status !== "replayed" &&
+          tamperReplayResult.value.status !== "committed",
+        "篡改调用的 operationId 不得有已提交结果（重放返回 " +
+          `${String(tamperReplayResult.value.status)} 说明首次调用写过状态）：` +
+          tamperReplayCall.responseText.slice(0, 300),
+      );
+      assert(
+        !Object.hasOwn(tamperReplayResult.value, "result"),
+        "重放结果不得携带 result（即不得存在该 operationId 名下的新 companyId）",
+      );
+    }
+    // 〔断言 5d：对照调用——剥离后等价于合法调用〕同参数、**不带** `accountId`、全新
+    // operationId 的合法调用，在同一状态下必须得到与篡改调用**同形**的结果。若
+    // `accountId` 被采纳并改变了行为（例如以别的账户建公司），两者会在此分叉。
+    // 〔副作用声明〕本调用**不带**篡改字段，故它在语义上就是一次合法调用——它的
+    // 拒绝臂（当前实例必然命中，见下）**零业务写**；若未来实例配额未满，它会真的
+    // 建公司（这与 5a 的前置说明同源：本步依赖「配额已满」的部署）。
+    // 〔为什么只在篡改调用拿到正常结果时比对〕若未来某层改为提前拒绝内层未声明字段
+    // （更强的保护），篡改调用会以错误信封失败——那由 5b 覆盖，不是本条的失败。
+    if (tamperedResult.ok === true) {
+      const controlCall = await callRemote(
+        cdp,
+        "soloips/createCompany",
+        {
+          input: {
+            operationId: `${runId}-control`,
+            name: `${companyName} 对照`,
+            type: "enterprise",
+          },
         },
-      },
-      "tampered",
-    );
-    const tamperedResult = parseEnvelope(tamperedCall);
-    record("accountId-rejected", { call: tamperedCall, result: tamperedResult });
-    assert(
-      tamperedResult.ok === false,
-      "带 accountId 的调用必须被拒（网关 assertExactArguments 拒绝未声明字段）",
-    );
-    assert(
-      tamperedResult.error.code === "gateway/arguments-invalid",
-      `拒绝码应为 gateway/arguments-invalid，实得 ${String(tamperedResult.error.code)}`,
-    );
-    // 同时确认它**没有**创建公司：读回该 operationId 名下的公司不存在（用树计数
-    // 反证——篡改调用若真的建了公司，树里会多出一条）。
+        "control",
+      );
+      const controlResult = parseEnvelope(controlCall);
+      record("accountId-stripped-control", { call: controlCall, result: controlResult });
+      assert(
+        controlResult.ok === true,
+        `对照调用应拿到正常结果：${controlCall.responseText.slice(0, 300)}`,
+      );
+      assert(
+        controlResult.value.status === tamperedResult.value.status,
+        "对照调用与篡改调用的 status 应一致（accountId 不得改变行为）：" +
+          `${String(controlResult.value.status)} vs ${String(tamperedResult.value.status)}`,
+      );
+      if (controlResult.value.status === "refused" && tamperedResult.value.status === "refused") {
+        // 〔为什么此处可合法地期望配额拒绝〕本实例为 `free` 计划（companyLimit=1），
+        // 第 1 步的 create 已占满它 → `#quotaRefusalFor`
+        // （`packages/core/src/store.ts:1393-1408`）必然拒绝；拒绝载荷**没有**
+        // `result` 字段（键不存在 = 没有 companyId = 没有创建）。
+        assert(
+          controlResult.value.reason === "quota-exceeded" &&
+            controlResult.value.reason === tamperedResult.value.reason &&
+            controlResult.value.resourceType === tamperedResult.value.resourceType &&
+            controlResult.value.planCode === tamperedResult.value.planCode &&
+            controlResult.value.current === tamperedResult.value.current &&
+            controlResult.value.limit === tamperedResult.value.limit,
+          "对照调用与篡改调用的配额拒绝载荷应逐字段一致（剥离后等价于合法调用）：" +
+            `${JSON.stringify(controlResult.value)} vs ${JSON.stringify(tamperedResult.value)}`,
+        );
+        assert(
+          !Object.hasOwn(tamperedResult.value, "result"),
+          "配额拒绝载荷不得含 result（未创建公司）",
+        );
+      }
+    }
+    // 〔断言 5e：读路径仍可用 + 本子树未被写入〕**覆盖面有限，如实标注**：树根是第 1
+    // 步创建的公司，而篡改调用若建公司，建的是**另一个顶层公司**（无
+    // `parentCompanyId`），不会出现在本子树里——故本条**不足以**检出顶层新建，只覆盖
+    // 「篡改调用不得在本子树内新增节点」，并顺带证明篡改调用之后读路径仍可用。检出顶层
+    // 新建由 5c（同 operationId 重放）承担。
     const afterTamper = await callRemote(
       cdp,
       "soloips/getCompanyTree",
@@ -502,8 +634,15 @@ async function main() {
     assert(afterTamperResult.ok === true, "篡改后读树应成功");
     assert(
       afterTamperResult.value.companies.length === treeResult.value.companies.length,
-      "被拒的调用不得产生任何业务写（公司树条目数必须不变）",
+      "篡改调用不得在本子树内新增节点（顶层新建的检出见 5c 重放断言）",
     );
+    // 〔证据摘要〕供尾部 stdout 与失败排查使用（不参与断言）。
+    const outcomeLabel = (result) =>
+      result.ok === true
+        ? `value.status=${String(result.value.status)}`
+        : `error.code=${String(result.error.code)}`;
+    const tamperedOutcome = outcomeLabel(tamperedResult);
+    const tamperReplayOutcome = outcomeLabel(tamperReplayResult);
 
     report.pass1Network = remoteNetwork(cdp.state.events);
     report.pass1Console = [...cdp.state.consoleMessages];
@@ -557,14 +696,15 @@ async function main() {
     process.stdout.write(`创建：status=${createValue.status} companyId=${companyId}\n`);
     process.stdout.write(`读回：status=${readResult.value.status} name=${String(company.name)}\n`);
     process.stdout.write(`重放：status=${replayResult.value.status}\n`);
-    process.stdout.write(`篡改被拒：code=${String(tamperedResult.error.code)}\n`);
+    process.stdout.write(`篡改调用：${tamperedOutcome}（未提交）\n`);
+    process.stdout.write(`篡改重放：${tamperReplayOutcome}（无新 companyId）\n`);
     process.stdout.write(`刷新后读回：status=${reloadReadResult.value.status}\n`);
     process.stdout.write(`网络记录：pass1=${String(report.pass1Network.length)} 条\n`);
     process.stdout.write(`证据目录：${outDir}\n`);
     process.stdout.write(
       "\n证据边界：证明「真实浏览器 → Host Remote → core 提交 → 读回（含刷新）」成立，\n" +
-        "且浏览器面不含 accountId、被拒调用零业务写；不证明模型工具面、配额拒绝端到端、\n" +
-        "或任何界面呈现。\n",
+        "且浏览器面不含 accountId、入参 accountId 未被采纳（零业务写）；不证明模型工具面、\n" +
+        "网关拒绝内层未声明字段、配额拒绝端到端，或任何界面呈现。\n",
     );
     cdp.close();
     process.exit(0);

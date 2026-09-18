@@ -1,0 +1,25 @@
+{
+  "note": "重启后读回：同一 companyId 经真实浏览器调用 soloips/getCompany",
+  "fact": {
+    "runId": "be6a-1789772947961",
+    "companyId": "cmp_e463ab7e-fced-403e-869b-eef469044ef4",
+    "companyName": "BE-6a 验证公司 be6a-1789772947961"
+  },
+  "call": {
+    "url": "http://127.0.0.1:55321/api/soloips/getCompany",
+    "rpcId": "be6a-restart-i7qy970vvkb",
+    "status": 200,
+    "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-restart-i7qy970vvkb\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"company\":{\"id\":\"cmp_e463ab7e-fced-403e-869b-eef469044ef4\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789772947961\",\"status\":\"active\",\"createdAt\":\"2026-09-18T23:09:09.127Z\"}}}}"
+  },
+  "readBack": {
+    "status": "ok",
+    "company": {
+      "id": "cmp_e463ab7e-fced-403e-869b-eef469044ef4",
+      "type": "enterprise",
+      "name": "BE-6a 验证公司 be6a-1789772947961",
+      "status": "active",
+      "createdAt": "2026-09-18T23:09:09.127Z"
+    }
+  },
+  "matched": true
+}

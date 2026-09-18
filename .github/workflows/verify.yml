@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # M-A 证据门用 `git diff <base>...HEAD` 判定是否触及 M-A 写面，
+          # 需要 base ref 的提交对象——浅克隆（默认 fetch-depth: 1）取不到。
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -82,6 +86,25 @@ jobs:
 
       - name: Delivery load check
         run: pnpm run check:delivery-load
+
+      # M-A 真实消费者证据门（P0-2，裁定六）：**fail-closed**。
+      #
+      # 为什么不是「在 CI 上跑 E2E」：真实链路需要 DSH fork 运行时，它只存在于
+      # 开发机的实例目录（本仓 node_modules 只有 typert-generator/protocol，
+      # 根 package.json 无 fork 依赖，无内网源 .npmrc）。在 hosted runner 上跑
+      # E2E 不可能——写成 CI 步骤只会得到跳过或假绿。
+      #
+      # 本步骤检查的是「**证据是否与候选绑定**」：改动触及 M-A 写面
+      # （packages/web/src、web 装配行、构建入口、bundle、adapter 端口）时，
+      # docs/evidence/be6a/CANDIDATE-MANIFEST.json 必须存在、candidateSha 与
+      # HEAD 相等、artifactSha256 与 packages/web/lib/client.js 实际摘要相等，
+      # 且报告内 artifactIdentity.embedded === true、无 failure 字段。
+      # 找不到 → **红**（不是跳过）——「证据缺失即显性失败」。
+      #
+      # 必须放在 Build 之后：本步骤要读 packages/web/lib/client.js 算摘要。
+      # 需要 base ref 的提交对象：本 job 的 checkout 已配 fetch-depth: 0。
+      - name: M-A evidence gate
+        run: pnpm run check:m-a-evidence -- --base "origin/${{ github.base_ref || 'main' }}"
 
   # Windows 辅助检查（不阻塞合并）
   windows:
