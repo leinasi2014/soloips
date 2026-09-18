@@ -15,6 +15,7 @@
     "lint": "oxlint --type-aware",
     "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "vitest run",
+    "test:artifacts": "vitest run --config packages/web/vitest.artifacts.config.ts",
     "test:watch": "vitest",
     "build": "tsc -b && tsdown",
     "pack-artifacts": "node scripts/development/pack-delivery-artifacts.mjs",
