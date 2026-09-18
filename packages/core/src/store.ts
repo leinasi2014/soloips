@@ -21,6 +21,51 @@
  * 都不应重放——按根拒绝比逐条给 operation 打代际标记更强且更简单，且不需要
  * 改动 operation schema（避免一次破坏性 schema 变更，见 R-3 的迁移边界）。
  * 「换绑后重放换绑后 operationId」按常规语义返回原结果：绑定未变即不受影响。
+ *
+ * ── BE-3：team 数据层与三步成团协议（P-1…P-9）────────────────────────────
+ *
+ * `team` 表由本切片首次创建；`scope.kind='team'` 的任职自此可建（此前以
+ * `PRECONDITION` 如实拒绝，见 `createAppointment` 内的改点说明）。
+ *
+ * **三步成团不是原子提交**（P-9）：`team.create`(pending, 无组长) →
+ * `appointment.create`(team_lead) → `team.activate`(P-4 校验后转可用)。三步三个
+ * `operationId` 各自独立可恢复；**不得**合并成一次提交（P-9 原文）。
+ *
+ * 〔组长归属：`appointment.create` **不**回填 `team.leadAppointmentId`〕
+ * 与部长链（`department.leaderAppointmentId` 由 `createAppointment` 回填）
+ * **刻意不同**。理由：
+ *  1. P-9 把「哪条任职是组长」的落点定在 `team.activate`（第③步显式指认，
+ *     `SoloipsActivateTeamInput.leadAppointmentId`）。若第②步自动回填，则
+ *     「团队可用」与「组长已指认」变成同一件事，第③步的 P-4 校验就没有独立
+ *     的写入对象——而 P-9.3 要求 `activate` 是**唯一**通道。
+ *  2. 回填会让「第二组长」（P-5 拒绝的路径）在团队记录上留下痕迹的顺序变得
+ *     依赖实现细节；显式指认则「谁被指认为组长」只有一处可写。
+ *  3. 部长链没有对应的「激活」步骤（部门无 pending 态），故两者不同形是
+ *     契约差异的真实反映，不是为了不一致而不一致。
+ * 因此：**`team.leadAppointmentId` 的写入点只有两处**——`createTeam`（不写，
+ * 保持缺省）与 `activateTeam`（P-4 校验通过后写入）。P-8.4 的「换任」路径即
+ * 「新建 `team_lead` 任职 + 再次 `activate` 并显式改指」。
+ *
+ * 〔P-8 悬挂处置〕`reconcileTeams` 是**显式**恢复辅助（只标记、不自动修复，
+ * P-8.3）；读面（`getTeam`/`listTeams`）**同时**执行同判据的纯读核验，因此
+ * 「未跑 reconcile 也不会把失效团队读作可用」（P-8.2 由读面自身满足）。
+ * 〔为什么不在 open 时自动跑〕见 `SoloipsCoreService.reconcileTeams` 的注释。
+ *
+ * 〔P-7 禁物理删除〕`team` 表**没有** delete 路径：`closeTeam` 只写 `archived`。
+ *
+ * 〔P-6 组长撤职 → 团队不可用：本切片的联动方案〕**在 `revokeAppointment`
+ * 内联动**（同一次提交、同一串行槽位），而不是只靠 `reconcileTeams` 兜底：
+ *  - 撤职时**已在写**（同一命令、同一 operationId 的提交槽位），把团队置为
+ *    `inactive` 不引入新的失败模式，也不会出现「撤职成功但团队仍显示可用」的
+ *    中间窗口；
+ *  - P-6 的语义是「**立即**不可用」（§3.2 的 L2 行亦写「撤职后立即失效」），
+ *    靠扫描兜底会把失效推迟到下一次显式 reconcile——那时团队已被读作可用过；
+ *  - `reconcileTeams` 仍**保留**（覆盖两类联动覆盖不到的情形）：① 撤职发生在
+ *    本切片之前/之外的路径（如直接改介质）；② 引用悬挂（P-8 的崩溃残留，
+ *    与撤职无关）。两者判据同一（`#evaluateLeadReference` 的 P-4 四项），
+ *    故不产生第二套语义。
+ *  联动是**只标记**（`active` → `inactive`），**不**自动指定继任者（P-6 明确
+ * 禁止自动继任：那会引入未裁定的继任策略）。
  */
 
 import type {
@@ -32,10 +77,14 @@ import type {
 } from "soloips-adapter-dsh/contracts";
 
 import type {
+  SoloipsActivateTeamInput,
+  SoloipsActivateTeamResult,
   SoloipsAppointmentId,
   SoloipsAppointmentRecord,
   SoloipsAppointmentRole,
   SoloipsAppointmentScope,
+  SoloipsCloseTeamInput,
+  SoloipsCloseTeamResult,
   SoloipsCommitOutcome,
   SoloipsCompanyId,
   SoloipsCompanyRecord,
@@ -49,6 +98,8 @@ import type {
   SoloipsCreateDepartmentResult,
   SoloipsCreateEmployeeInput,
   SoloipsCreateEmployeeResult,
+  SoloipsCreateTeamInput,
+  SoloipsCreateTeamResult,
   SoloipsDepartmentId,
   SoloipsDepartmentRecord,
   SoloipsDocumentType,
@@ -59,6 +110,7 @@ import type {
   SoloipsInitializeMemoryInput,
   SoloipsInitializeMemoryResult,
   SoloipsJsonValue,
+  SoloipsLeadReferenceVerdict,
   SoloipsOnboardingStatus,
   SoloipsOperationId,
   SoloipsOperationRecord,
@@ -70,7 +122,13 @@ import type {
   SoloipsRootBindingRecord,
   SoloipsSaveDocumentInput,
   SoloipsSaveDocumentResult,
+  SoloipsTeamFunctionSource,
   SoloipsTeamId,
+  SoloipsTeamReconcileResult,
+  SoloipsTeamRecord,
+  SoloipsTeamView,
+  SoloipsUpdateTeamFunctionInput,
+  SoloipsUpdateTeamFunctionResult,
   SoloipsVerifyCapabilityInput,
   SoloipsVerifyCapabilityResult,
   SoloipsWorkEntryAdmitted,
@@ -80,6 +138,7 @@ import type {
 } from "./contracts.js";
 import { SOLOIPS_COMPANY_DOMAIN_NAME, SOLOIPS_PLACEHOLDER_ACCOUNT_ID } from "./contracts.js";
 import { SoloipsCommitGate } from "./commit-gate.js";
+import type { SoloipsCompanyPublisher } from "./commit-gate.js";
 import { SOLOIPS_COMPANY_DOMAIN_SPEC } from "./domain.js";
 import { soloipsDigestOf } from "./digest.js";
 import { SoloipsCoreError, wrapLeaseFailure } from "./errors.js";
@@ -97,6 +156,7 @@ import {
   newDepartmentId,
   newEmployeeId,
   newDocumentVersionId,
+  newTeamId,
 } from "./ids.js";
 import { evaluateOnboarding, type SoloipsOnboardingReadModel } from "./onboarding.js";
 
@@ -403,6 +463,23 @@ function requireRoleShape(value: unknown): SoloipsAppointmentRole {
   );
 }
 
+/** 团队职能来源形状校验（JS 调用方的 functionSource 不受类型保护）。 */
+const TEAM_FUNCTION_SOURCES: readonly SoloipsTeamFunctionSource[] = [
+  "leader-defined",
+  "system-suggested",
+];
+
+function requireFunctionSourceShape(value: unknown): SoloipsTeamFunctionSource {
+  if (typeof value === "string" && (TEAM_FUNCTION_SOURCES as readonly string[]).includes(value)) {
+    // 受控单次断言：includes 已证明成员资格，数组的字面量类型即联合本身。
+    return value as SoloipsTeamFunctionSource;
+  }
+  throw new SoloipsCoreError(
+    "SOLOIPS_CORE_VALIDATION",
+    `functionSource 必须是 ${TEAM_FUNCTION_SOURCES.join(" | ")} 之一`,
+  );
+}
+
 /**
  * 作用域 → 纯 JSON 值（operation 意图的持久载荷）。
  *
@@ -582,6 +659,212 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       throw new SoloipsCoreError("SOLOIPS_CORE_PRECONDITION", `任职 ${id} 不存在`);
     }
     return record;
+  }
+
+  #readTeam(id: string): SoloipsTeamRecord {
+    const record = this.#domain.table("team").get(id as SoloipsTeamId);
+    if (record === undefined) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_PRECONDITION", `团队 ${id} 不存在`);
+    }
+    return record;
+  }
+
+  // ── 团队读辅助（P-4 核验、可用判据、投影） ────────────────────────────────
+
+  /**
+   * 组长引用核验（**P-4 四项**）——读面的唯一判据来源。
+   *
+   * | # | 条件 | 不满足时的 `reason` |
+   * |---|---|---|
+   * | ① | 任职存在 | `appointment-missing` |
+   * | ② | `status === 'active'` | `revoked` |
+   * | ③ | 作用域可解析（§2.3 三分支） | `scope-unresolvable` |
+   * | ④ | `scope.kind === 'team'` 且 `scope.teamId === team.id` | `not-team-scope` |
+   * | ⑤ | `scope.companyId === team.companyId` | `company-mismatch` |
+   * | ⑥ | `role === 'team_lead'` | `role-mismatch` |
+   *
+   * 〔为什么是六个分支而不是四个〕P-4 的四项中，第③项「同团队」与第②项
+   * 「同公司」在**判别联合**上必须分两步判定（先确认 `kind==='team'` 才能读
+   * `teamId`），且 §2.3 的三分支解析本身可能抛错（`scope-unresolvable`）。
+   * 拆成六个可判定原因是为了 P-8.5/P-9.2 的「读面不得静默降级」：调用方需要
+   * 知道**为什么**不可用，而不是只得到一个布尔。
+   *
+   * 〔`scope-unresolvable` 的处置〕§2.3 分支 3（无 `scope` 且解析不出公司）在
+   * `#resolveAppointmentScope` 里抛 `SOLOIPS_CORE_RECORD_INVALID`。本核验
+   * **捕获**它并归为「引用无效」：核验的语义是「这条引用是否可用」，不可判定
+   * 的记录**不是**可用组长——若让它冒泡，则一个损坏的任职会让整个团队读面
+   * 抛错，使「团队列表」因与它无关的记录而不可读。**注意**方向：这里**不**猜
+   * 「它可能是有效的」，而是归入无效（fail-closed，与 `#assertNoActiveGeneralAssistant`
+   * 的 fail-closed 方向一致——那里是「不可判定即拒绝新建」，这里是「不可判定
+   * 即不算有效组长」）。
+   */
+  #evaluateLeadReference(team: SoloipsTeamRecord): SoloipsLeadReferenceVerdict {
+    const appointmentId = team.leadAppointmentId;
+    if (appointmentId === undefined) {
+      return {
+        valid: false,
+        reason: "absent",
+        message: `团队 ${team.id} 无组长引用（pending 期可缺省；转为可用时必须存在，P-4）`,
+      };
+    }
+    const appointment = this.#domain.table("appointment").get(appointmentId);
+    if (appointment === undefined) {
+      return {
+        valid: false,
+        reason: "appointment-missing",
+        appointmentId,
+        message: `团队 ${team.id} 的组长引用 ${appointmentId} 读不到对应任职记录（悬挂引用，P-8）`,
+      };
+    }
+    if (appointment.status !== "active") {
+      return {
+        valid: false,
+        reason: "revoked",
+        appointmentId,
+        message: `团队 ${team.id} 的组长任职 ${appointmentId} 已撤销（P-6：团队不可用，换任须显式操作）`,
+      };
+    }
+    let scope: SoloipsAppointmentScope;
+    try {
+      scope = this.#resolveAppointmentScope(appointment);
+    } catch (error) {
+      // §2.3 分支 3：不可判定 → 不算有效组长（fail-closed，不猜）。
+      const detail = error instanceof SoloipsCoreError ? error.message : String(error);
+      return {
+        valid: false,
+        reason: "scope-unresolvable",
+        appointmentId,
+        message:
+          `团队 ${team.id} 的组长任职 ${appointmentId} 作用域不可判定（${detail}）；` +
+          "按不可用处置，不做任何猜测",
+      };
+    }
+    if (scope.kind !== "team") {
+      return {
+        valid: false,
+        reason: "not-team-scope",
+        appointmentId,
+        message: `团队 ${team.id} 的组长任职 ${appointmentId} 作用域是 ${scope.kind} 级，不是该团队（P-4 第③项）`,
+      };
+    }
+    if (scope.teamId !== team.id) {
+      return {
+        valid: false,
+        reason: "not-team-scope",
+        appointmentId,
+        message: `团队 ${team.id} 的组长任职 ${appointmentId} 指向团队 ${scope.teamId}，不是本团队（P-4 第③项）`,
+      };
+    }
+    if (scope.companyId !== team.companyId) {
+      return {
+        valid: false,
+        reason: "company-mismatch",
+        appointmentId,
+        message:
+          `团队 ${team.id} 的组长任职 ${appointmentId} 属于公司 ${scope.companyId}，` +
+          `与本团队公司 ${team.companyId} 不符（P-4 第②项）`,
+      };
+    }
+    if (appointment.role !== "team_lead") {
+      return {
+        valid: false,
+        reason: "role-mismatch",
+        appointmentId,
+        message:
+          `团队 ${team.id} 的组长任职 ${appointmentId} 的角色是 ${appointment.role ?? "未登记"}，` +
+          "不是 team_lead（P-4 第④项）",
+      };
+    }
+    return { valid: true, appointmentId, employeeId: appointment.employeeId };
+  }
+
+  /**
+   * 可用判据（P-3 / P-8.2 / P-9.1 **同一判据**）：`status === 'active'` 且
+   * 组长引用满足 P-4。
+   *
+   * 〔为什么两个条件都要〕`status === 'active'` 是**持久事实**（`activate` 写入、
+   * 撤职联动写 `inactive`），P-4 核验是**当前读**——两者可能分叉：组长在
+   * `activate` 之后被撤职、而本进程尚未跑 reconcile 时，`status` 仍是 `active`
+   * 而引用已失效。此时**必须**读作不可用（P-8.2：读面不得把失效团队当可用返回）。
+   * 反向（`status='inactive'` 但引用有效）同样不可用：换任后须显式 `activate`
+   * （P-9.3：不得用直接改 status 的方式恢复）。
+   */
+  #isUsableTeam(team: SoloipsTeamRecord, verdict: SoloipsLeadReferenceVerdict): boolean {
+    if (team.status !== "active") return false;
+    return verdict.valid;
+  }
+
+  /**
+   * 团队记录 → 读面投影（带 `usable` 与 `leadReference` 显式状态）。
+   *
+   * P-8.5/P-9.2「读面不得静默降级」的落点：不可用团队**不**被过滤掉或返回空
+   * 成员列表冒充正常团队，而是带着 `usable: false` 与具体原因呈现。
+   *
+   * 〔单次核验〕`leadReference` 与 `usable` 由**同一次** `#evaluateLeadReference`
+   * 结果导出（把结论作为参数传入 `#isUsableTeam`），避免「两次核验结果不一致」
+   * 的读面自相矛盾。
+   */
+  #teamView(team: SoloipsTeamRecord): SoloipsTeamView {
+    const leadReference = this.#evaluateLeadReference(team);
+    return {
+      id: team.id,
+      companyId: team.companyId,
+      ...(team.departmentId === undefined ? {} : { departmentId: team.departmentId }),
+      name: team.name,
+      function: team.function,
+      functionSource: team.functionSource,
+      ...(team.confirmedBy === undefined ? {} : { confirmedBy: team.confirmedBy }),
+      ...(team.leadAppointmentId === undefined
+        ? {}
+        : { leadAppointmentId: team.leadAppointmentId }),
+      status: team.status,
+      createdAt: team.createdAt,
+      usable: this.#isUsableTeam(team, leadReference),
+      leadReference,
+    };
+  }
+
+  /**
+   * 职能来源与确认者的**配对**校验（data-contract §2.1）：
+   * `system-suggested` 时 `confirmedBy` **必填**——缺它的记录是「未确认草稿」，
+   * 不得被读作团队职能。`leader-defined` 时可省略（定义者即组长）。
+   *
+   * 〔为什么在 store 层而非 schema 层〕与 `appointment.scope` 的分工一致：
+   * schema 层管字段形状，跨字段的业务规则在 store（`domain.ts` 的注释已声明
+   * 该分工）。`confirmedBy` 指向的任职**存在性**另需读表核对（见调用点）。
+   */
+  #requireFunctionSourcePairing(
+    functionSource: SoloipsTeamFunctionSource,
+    confirmedBy: SoloipsAppointmentId | undefined,
+  ): void {
+    if (functionSource === "system-suggested" && confirmedBy === undefined) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        "functionSource='system-suggested' 时必须提供 confirmedBy：系统建议本身不是职能定义，" +
+          "须由一名有效任职确认后才成为团队职能（data-contract §2.1）；" +
+          "缺 confirmedBy 的记录是未确认草稿，不得被读作团队职能",
+      );
+    }
+  }
+
+  /**
+   * 团队的公司/部门归属校验（§2.1 第①步「公司/部门存在且同账户」）。
+   *
+   * 「同账户」由根级绑定保证（一个业务存储根只绑定一个账户，§3.1），故此处
+   * 只需核对**部门属于该公司**——跨公司引用即矛盾输入（与 `createAppointment`
+   * 的部门级校验同一口径）。
+   */
+  #requireTeamPlacement(companyId: SoloipsCompanyId, departmentId?: SoloipsDepartmentId): void {
+    this.#readCompany(companyId);
+    if (departmentId === undefined) return;
+    const department = this.#readDepartment(departmentId);
+    if (department.companyId !== companyId) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        `departmentId ${departmentId} 属于公司 ${department.companyId}，` +
+          `与 companyId ${companyId} 不一致（跨公司引用）`,
+      );
+    }
   }
 
   /**
@@ -901,12 +1184,34 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       }
     }
     if (scope.kind === "team") {
-      // team 表属 BE-3：本切片无法核对团队记录存在性，如实拒绝而不是假装校验通过
-      // （BE-3 落地后此处改为读 team 表核对归属）。
-      throw new SoloipsCoreError(
-        "SOLOIPS_CORE_PRECONDITION",
-        "team 级任职依赖 team 表（BE-3 未落地），本切片不接受 scope.kind='team'",
-      );
+      // 〔BE-3 改点〕此前（BE-2）此处以 `SOLOIPS_CORE_PRECONDITION` 如实拒绝
+      // 「team 表属 BE-3 未落地」。`team` 表已由本切片创建，故改为**真校验**：
+      // `teamId` 存在且 `companyId` 一致，否则 `PRECONDITION`。
+      //
+      // 〔两种失败必须区分〕「团队不存在」与「跨公司引用」是不同的事实，调用方
+      // 的可行动作也不同（前者：先建团队/查 ID 拼写；后者：换 companyId 或换
+      // 团队）。折成一条消息会让「团队存在但属于别的公司」看起来像「团队没建
+      // 成功」，从而诱发重复建团队。故两条消息各自明确。
+      const team = this.#domain.table("team").get(scope.teamId);
+      if (team === undefined) {
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_PRECONDITION",
+          `scope.teamId ${scope.teamId} 不存在：团队级任职必须指向已存在的团队记录` +
+            "（P-9 第①步 team.create 先建团队，第②步才建组长任职）；" +
+            "请先建团队或核对 teamId",
+        );
+      }
+      if (team.companyId !== scope.companyId) {
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_PRECONDITION",
+          `scope.teamId ${scope.teamId} 属于公司 ${team.companyId}，` +
+            `与 scope.companyId ${scope.companyId} 不一致（跨公司引用）；` +
+            "团队级任职不得跨公司指向别的公司的团队",
+        );
+      }
+      // 〔P-5 第二组长拒绝〕同一 Team 已有有效组长时，再建 `team_lead` 任职须
+      // 返回可判定拒绝（不产生第二条）。判定放在提交门的串行槽位内、意图落盘
+      // 之前（与总助理唯一性同一机制，见 `#assertNoSecondTeamLead`）。
     }
 
     // ── 岗位校验（角色与作用域必须匹配） ──────────────────────────────────
@@ -920,11 +1225,21 @@ class SoloipsCompanyStore implements SoloipsCoreService {
       }
     }
 
-    // ── 唯一性判定（§2.4.2）：在提交门的串行槽位内、意图落盘之前 ──────────
+    // ── 唯一性判定（§2.4.2 总助理 / P-5 团队组长）：在提交门的串行槽位内、
+    //    意图落盘之前 ────────────────────────────────────────────────────────
+    //
+    // 两条唯一性规则共用同一 `precondition` 钩子（提交门只接受一个）：
+    //  - `general_assistant`：同一公司至多一条有效公司级总助理（§2.4.2）；
+    //  - `team_lead`：同一团队至多一名有效组长（P-5，**BE-3 新增**）。
+    // 两者互斥（角色不同即作用域 kind 不同，见 `ROLE_SCOPE_KIND`），故不可能
+    // 同时命中；写成两条独立分支而不是一张表，是为了让各自的拒绝消息指向
+    // 各自的契约条文。
     const uniqueness =
-      role === "general_assistant"
-        ? { kind: "company" as const, companyId: scope.companyId }
-        : undefined;
+      role === "general_assistant" && scope.kind === "company"
+        ? () => this.#assertNoActiveGeneralAssistant(scope.companyId)
+        : role === "team_lead" && scope.kind === "team"
+          ? () => this.#assertNoSecondTeamLead(scope.teamId)
+          : undefined;
 
     return this.#gate.commit(
       {
@@ -942,9 +1257,7 @@ class SoloipsCompanyStore implements SoloipsCoreService {
             ? {}
             : { actorAppointmentId: input.actorAppointmentId }),
         },
-        ...(uniqueness === undefined
-          ? {}
-          : { precondition: () => this.#assertNoActiveGeneralAssistant(uniqueness.companyId) }),
+        ...(uniqueness === undefined ? {} : { precondition: uniqueness }),
       },
       async (publish) => {
         const id = newAppointmentId();
@@ -1014,6 +1327,96 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     }
   }
 
+  /**
+   * P-5 第二组长拒绝：同一 Team 已有**有效**组长时，再建 `team_lead` 任职
+   * 返回可判定拒绝，**不得产生第二条**。
+   *
+   * ── 〔判定来源：扫**任职表**，不是读 `team.leadAppointmentId`〕──────────────
+   *
+   * 这是本方法的关键裁定，被真实介质探针抓到过（首版读 team 记录，漏判）：
+   *
+   * `team.leadAppointmentId` **只在 `team.activate` 写入**（见文件头「组长归属」
+   * 段）。因此在 P-9 的第②步之后、第③步之前（团队仍是 `pending`），**已有**一条
+   * 有效 `team_lead` 任职，而 team 记录上**没有**任何引用。若按 team 记录判定，
+   * 这个窗口里的第二条 `team_lead` 会被放行——直接违背 P-5 的「不得产生第二条」
+   * 与 P-9 第②步的「对齐 P-5（第二组长拒绝）」。
+   *
+   * 故判定**扫任职表**：存在 `status='active'` 且**作用域解析后**为
+   * `{kind:'team', teamId: <本团队>}` 且 `role='team_lead'` 的任职即视为已有组长。
+   * 这与 P-4 的语义一致（P-4 的四项正是「一条任职是不是某团队的组长」的判据），
+   * 且不依赖 team 记录上的引用是否已写。
+   *
+   * 〔为什么这仍然允许「换任」〕撤职后旧任职 `status='revoked'`，扫描不再命中
+   * ——正是 P-8.4「换任：建立新的 `team_lead` 任职并显式改指」所需的行为。
+   * 若按 team 记录判定，撤职后引用仍在记录上，换任会被错误拒绝（见 `#evaluateLeadReference`
+   * 的判据差异）。
+   *
+   * 〔作用域解析失败的记录〕§2.3 分支 3（无 `scope` 且解析不出公司）的任职
+   * **无法归属到任何团队**，故不参与本判定（跳过）。这与总助理唯一性的
+   * fail-closed 处理**方向不同**，理由：那里「不可判定」的记录**可能是**该公司的
+   * 总助理（公司由 `departmentId` 之外的上下文给出），而这里判定的是「属于**本**
+   * 团队」，一条解析不出归属的记录不可能被证明属于本团队——把它算作「本团队的
+   * 组长」是**臆断**，而它若真属于本团队，其 `scope` 缺失本身已使 P-4 第③项
+   * 不成立（它不是**有效**组长）。故跳过是唯一有依据的选择。
+   *
+   * 〔为什么在提交门的串行槽位内〕与总助理唯一性同一理由：判定必须与写入处于
+   * 同一串行槽位，否则两个并发提交可同时通过「无有效组长」的检查。跨进程由
+   * writer lease 排除。抛错即整体拒绝（零业务写、零未决意图）。
+   */
+  #assertNoSecondTeamLead(teamId: SoloipsTeamId): void {
+    for (const [, record] of this.#domain.table("appointment").entries()) {
+      if (record.status !== "active" || record.role !== "team_lead") continue;
+      let scope: SoloipsAppointmentScope;
+      try {
+        scope = this.#resolveAppointmentScope(record);
+      } catch {
+        // 分支 3：无法归属到任何团队（见上「作用域解析失败的记录」）。
+        continue;
+      }
+      if (scope.kind !== "team" || scope.teamId !== teamId) continue;
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_PRECONDITION",
+        `团队 ${teamId} 已有有效的组长任职 ${record.id}` +
+          "（data-contract §2.1.1 P-5：同一 Team 已有有效组长时不得再建 team_lead 任职）；" +
+          "重复任命被拒绝，本次不产生任何业务写。如需换人，先撤销既有组长任职（P-6），再建新任职",
+      );
+    }
+  }
+
+  /**
+   * 撤职 → 团队不可用（P-6）的**联动**：把以该任职为组长的 `active` 团队转为
+   * `inactive`。
+   *
+   * 〔只标记、不继任〕P-6 明确禁止自动继任（「不是自动提升某成员继任」）：
+   * 自动继任需要一套「谁继任」的规则（资历？能力匹配？部长指定？），那等于在
+   * 契约里埋一个未裁定的策略。故本方法**只**写 `inactive`。
+   *
+   * 〔只影响 `active` 团队〕`pending` 团队不转（它本就不是可用态，且其
+   * `leadAppointmentId` 可能尚未指认——见 P-9.4 的成因分工）；`archived` 是终态
+   * （P-8.6 归档不参与扫描）。`inactive` 保持 `inactive`（幂等）。
+   *
+   * 〔为什么撤职要联动而不是只靠 reconcile〕见文件头的「P-6 联动方案」段。
+   */
+  #deactivateTeamsLedBy(
+    appointmentId: SoloipsAppointmentId,
+    publish: SoloipsCompanyPublisher,
+  ): Promise<void> {
+    const affected: SoloipsTeamId[] = [];
+    for (const [id, team] of this.#domain.table("team").entries()) {
+      if (team.status !== "active") continue;
+      if (team.leadAppointmentId !== appointmentId) continue;
+      affected.push(id);
+    }
+    return (async () => {
+      for (const teamId of affected) {
+        await publish.update("team", teamId, (current) => ({
+          ...current,
+          status: "inactive" as const,
+        }));
+      }
+    })();
+  }
+
   async revokeAppointment(
     input: SoloipsRevokeAppointmentInput,
   ): Promise<SoloipsCommitOutcome<SoloipsRevokeAppointmentResult>> {
@@ -1034,6 +1437,15 @@ class SoloipsCompanyStore implements SoloipsCoreService {
           ...current,
           status: "revoked" as const,
         }));
+        // P-6 联动：以该任职为组长的 active 团队转为 inactive（只标记、不继任）。
+        //
+        // 〔顺序〕先撤职、再置团队不可用：若两步之间崩溃，留下的是「任职已撤销、
+        // 团队仍 active」——此时**读面**的 P-4 核验会立即把它判为不可用
+        // （`#isUsableTeam` 同时看 status 与引用有效性），故不会出现「失效团队被
+        // 读作可用」的窗口。反向顺序（先置团队、后撤职）则会留下「团队 inactive、
+        // 任职仍 active」——那会让换任前的团队凭空不可用，且与 P-6 的因果
+        // （撤职 → 不可用）相反。
+        await this.#deactivateTeamsLedBy(input.appointmentId, publish);
         return { appointmentId: input.appointmentId, status: updated.status };
       },
     );
@@ -1280,6 +1692,424 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     return { status: "admitted", replayed: outcome.status === "replayed", result: outcome.result };
   }
 
+  // ── 团队命令（BE-3；三步成团协议 P-9） ────────────────────────────────────
+
+  /**
+   * P-9 第①步：建 `pending` 团队，**无组长**。
+   *
+   * 〔为什么不在这里建组长任职〕P-9 把「建团队 + 建组长任职」冻结为**三步、
+   * 三个 kind、三个 `operationId`**：提交门不提供跨表事务，合并成一次提交会让
+   * 「已建团队、未建组长」的中间态无法表达，反而使恢复无据。故本命令只写
+   * team 记录，`status='pending'`、`leadAppointmentId` 缺省。
+   *
+   * 〔校验（P-9 第①步的校验列）〕公司存在；部门（若给）存在且同公司；`function`
+   * 非空白；`functionSource`/`confirmedBy` 配对成立。
+   */
+  async createTeam(
+    input: SoloipsCreateTeamInput,
+  ): Promise<SoloipsCommitOutcome<SoloipsCreateTeamResult>> {
+    this.#assertOpen();
+    requireOperationIdShape(input.operationId);
+    requireNonEmpty(input.name, "团队名");
+    requireNonEmpty(input.function, "团队职能");
+    if (!isCompanyId(input.companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
+    if (input.departmentId !== undefined && !isDepartmentId(input.departmentId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "departmentId 形状不合法");
+    }
+    if (input.confirmedBy !== undefined && !isAppointmentId(input.confirmedBy)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "confirmedBy 形状不合法");
+    }
+    const functionSource =
+      input.functionSource === undefined
+        ? ("leader-defined" as const)
+        : requireFunctionSourceShape(input.functionSource);
+    this.#requireFunctionSourcePairing(functionSource, input.confirmedBy);
+    this.#requireTeamPlacement(input.companyId, input.departmentId);
+    // `confirmedBy` 指向的任职必须存在（「由一名有效任职确认」——存在性可核；
+    // 是否「有效」属 P-4 式判定的范畴，本命令只核对引用可解析）。
+    if (input.confirmedBy !== undefined) {
+      this.#readAppointment(input.confirmedBy);
+    }
+
+    return this.#gate.commit(
+      {
+        operationId: asOperationId(input.operationId),
+        kind: "team.create",
+        intent: {
+          companyId: input.companyId,
+          ...(input.departmentId === undefined ? {} : { departmentId: input.departmentId }),
+          name: input.name,
+          function: input.function,
+          functionSource,
+          ...(input.confirmedBy === undefined ? {} : { confirmedBy: input.confirmedBy }),
+        },
+      },
+      async (publish) => {
+        const id = newTeamId();
+        await publish.put("team", id, {
+          id,
+          companyId: input.companyId,
+          ...(input.departmentId === undefined ? {} : { departmentId: input.departmentId }),
+          name: input.name,
+          function: input.function,
+          functionSource,
+          ...(input.confirmedBy === undefined ? {} : { confirmedBy: input.confirmedBy }),
+          // **不写 `leadAppointmentId`**：pending 的定义特征是无组长（P-9 第①步）。
+          status: "pending" as const,
+          createdAt: new Date().toISOString(),
+        });
+        return { teamId: id, status: "pending" as const };
+      },
+    );
+  }
+
+  /**
+   * 改团队职能定义。**不改变 `status`**（P-9.3：不得用 `team.update-function`
+   * 等方式越过 `team.activate` 完成成团）。
+   *
+   * 〔归档团队可否改职能〕**拒绝**：归档是终态（P-7「只读保留供追溯」）。改
+   * 归档团队的职能会让「历史事实」被改写，与归档的语义（不可变的历史）矛盾。
+   */
+  async updateTeamFunction(
+    input: SoloipsUpdateTeamFunctionInput,
+  ): Promise<SoloipsCommitOutcome<SoloipsUpdateTeamFunctionResult>> {
+    this.#assertOpen();
+    requireOperationIdShape(input.operationId);
+    requireNonEmpty(input.function, "团队职能");
+    if (!isTeamId(input.teamId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "teamId 形状不合法");
+    }
+    const current = this.#readTeam(input.teamId);
+    // 〔归档团队可否改职能〕**拒绝**：归档是终态（P-7「只读保留供追溯」）。改
+    // 归档团队的职能会让「历史事实」被改写，与归档的语义（不可变的历史）矛盾。
+    //
+    // 〔为什么这个判定在 precondition 里而不是这里〕它是**状态相关**判定：
+    // 判定依据（`status`）会被成功的执行本身改变。放在提交门之前会让
+    // 「同 operationId 重放」永远走不到门的重放分支（第一次执行已把状态改了，
+    // 第二次调用在这里就抛错）——即幂等重放不可达。`precondition` 在门的
+    // **重放检测之后**、意图落盘**之前**执行，因此既保住重放语义，又保住
+    // 「拒绝时零业务写、零未决意图」。
+    //
+    // 输入形状校验（下面那些 `require*`）留在门**之前**：它们只依赖入参、
+    // 不依赖可变状态，首次通过则重放必然同样通过，故不阻塞重放。
+    if (input.confirmedBy !== undefined && !isAppointmentId(input.confirmedBy)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "confirmedBy 形状不合法");
+    }
+    // 缺省保留记录上的既有来源（不做静默降级为 leader-defined——那会把
+    // 「系统建议已确认」悄悄改写成「部长定义」，抹掉审计事实）。
+    const functionSource =
+      input.functionSource === undefined
+        ? current.functionSource
+        : requireFunctionSourceShape(input.functionSource);
+    // 配对校验用**生效后**的组合：只给 confirmedBy 而不给 functionSource 时，
+    // 沿用既有来源——若既有来源是 system-suggested 且未给 confirmedBy，则沿用
+    // 记录上的 confirmedBy（已确认过的不因改职能文本而失效）。
+    const confirmedBy = input.confirmedBy ?? current.confirmedBy;
+    this.#requireFunctionSourcePairing(functionSource, confirmedBy);
+    if (input.confirmedBy !== undefined) {
+      this.#readAppointment(input.confirmedBy);
+    }
+
+    return this.#gate.commit(
+      {
+        operationId: asOperationId(input.operationId),
+        kind: "team.update-function",
+        intent: {
+          teamId: input.teamId,
+          function: input.function,
+          functionSource,
+          ...(confirmedBy === undefined ? {} : { confirmedBy }),
+        },
+        // 状态相关判定：归档是终态，职能不得改写（理由见上方注释）。
+        // 在门的重放检测之后执行，故不影响幂等重放。
+        precondition: () => {
+          const now = this.#readTeam(input.teamId);
+          if (now.status === "archived") {
+            throw new SoloipsCoreError(
+              "SOLOIPS_CORE_PRECONDITION",
+              `团队 ${input.teamId} 已归档（终态，P-7「只读保留供追溯」）；` +
+                "归档团队的职能不得改写——历史事实不因归档而变更",
+            );
+          }
+        },
+      },
+      async (publish) => {
+        const updated = await publish.update("team", input.teamId, (record) => ({
+          ...record,
+          function: input.function,
+          functionSource,
+          ...(confirmedBy === undefined ? {} : { confirmedBy }),
+          // status **原样保留**（P-9.3：本命令不是成团通道）。
+        }));
+        return {
+          teamId: updated.id,
+          function: updated.function,
+          functionSource: updated.functionSource,
+          status: updated.status,
+        };
+      },
+    );
+  }
+
+  /**
+   * P-9 第③步：校验 `leadAppointmentId` 满足 **P-4 四项**后 `pending` → `active`。
+   *
+   * 〔P-9.3〕本命令是**唯一**的 `pending` → `active` 通道。
+   *
+   * 〔可接受的起始状态〕只接受 `pending` 与 `inactive`：
+   *  - `pending`：成团（P-9 的「续做」路径——扫描 pending，若组长已就绪则执行③）；
+   *  - `inactive`：换任恢复（P-8.4 的「换任」路径：建立新 `team_lead` 任职并
+   *    显式改指，再激活）。P-9.4 明确两种成因的恢复路径不同，但**恢复动作**都是
+   *    「组长就绪后激活」——同一命令承载，不是把两个语义合并。
+   *  - `active`：**拒绝**（幂等性由 operationId 承担；重复激活同一团队应复用
+   *    原 operationId 得到 `replayed`，而不是换 ID 再激活一次——那会让「激活
+   *    发生了两次」在台账里看似成立）。
+   *  - `archived`：**拒绝**（终态，P-7）。
+   *
+   * 〔P-4 校验与状态判定都在提交门的串行槽位内〕与唯一性判定同一理由：读-判-写
+   * 之间不得插入其他本地提交。故用 `precondition` 钩子（意图落盘前拒绝 = 零业务写、
+   * 零未决意图）。**注意**：`precondition` 在门的**重放检测之后**执行，因此
+   * 「同 operationId 重放」不会被状态判定挡住（见 `updateTeamFunction` 的同款
+   * 说明）——这一点对 `activate` 尤其重要：它是唯一把 `pending` 变成 `active`
+   * 的命令，若状态判定放在门之前，重放会因为「已是 active」而失败，幂等性破坏。
+   */
+  async activateTeam(
+    input: SoloipsActivateTeamInput,
+  ): Promise<SoloipsCommitOutcome<SoloipsActivateTeamResult>> {
+    this.#assertOpen();
+    requireOperationIdShape(input.operationId);
+    if (!isTeamId(input.teamId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "teamId 形状不合法");
+    }
+    if (input.leadAppointmentId !== undefined && !isAppointmentId(input.leadAppointmentId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "leadAppointmentId 形状不合法");
+    }
+    // 只读前置：取当前记录（团队不存在即 PRECONDITION）。这是**输入可解析性**
+    // 检查，不是状态判定——状态判定全部在 precondition 内（见下）。
+    this.#readTeam(input.teamId);
+    // 显式指认的任职必须存在（换任路径：先 appointment.create，再 activate 改指）。
+    if (input.leadAppointmentId !== undefined) {
+      this.#readAppointment(input.leadAppointmentId);
+    }
+
+    const teamId = input.teamId;
+
+    return this.#gate.commit(
+      {
+        operationId: asOperationId(input.operationId),
+        kind: "team.activate",
+        intent: {
+          teamId,
+          ...(input.leadAppointmentId === undefined
+            ? {}
+            : { leadAppointmentId: input.leadAppointmentId }),
+        },
+        precondition: () => {
+          // 每次都在槽位内重读当前状态：precondition 的执行时机在意图落盘之前，
+          // 此处读到的就是本次写入将要基于的状态（同一串行槽位，无插入）。
+          const now = this.#readTeam(teamId);
+          if (now.status === "archived") {
+            throw new SoloipsCoreError(
+              "SOLOIPS_CORE_PRECONDITION",
+              `团队 ${teamId} 已归档（终态，P-7）；归档团队不得再激活`,
+            );
+          }
+          if (now.status === "active") {
+            throw new SoloipsCoreError(
+              "SOLOIPS_CORE_PRECONDITION",
+              `团队 ${teamId} 已是可用状态；重复激活请复用同一 operationId（幂等重放），` +
+                "而不是换 ID 再激活一次（P-9.3：activate 是唯一的成团通道，但不表示可以重复成团）",
+            );
+          }
+          const targetLeadId = input.leadAppointmentId ?? now.leadAppointmentId;
+          if (targetLeadId === undefined) {
+            throw new SoloipsCoreError(
+              "SOLOIPS_CORE_PRECONDITION",
+              `团队 ${teamId} 无组长引用（记录上缺省且未显式指认），不满足 P-4 第①项；` +
+                "团队留在当前状态。请先经 appointment.create 建 team_lead 任职，" +
+                "再以 leadAppointmentId 显式指认（P-9 第②③步）",
+            );
+          }
+          // 用「指认后的记录」做 P-4 核验：直接把 targetLeadId 当作
+          // leadAppointmentId 评估，避免「先写引用再校验」造成的「校验未过却
+          // 已改指」半途状态（若校验失败，本次提交整体拒绝、记录不变）。
+          const verdict = this.#evaluateLeadReference({
+            ...now,
+            leadAppointmentId: targetLeadId,
+          });
+          if (!verdict.valid) {
+            throw new SoloipsCoreError(
+              "SOLOIPS_CORE_PRECONDITION",
+              `团队 ${teamId} 的组长引用不满足 P-4（${verdict.reason}）：${verdict.message}；` +
+                "团队留在当前状态，本次不产生任何业务写（P-9 第③步：不满足则拒绝）",
+            );
+          }
+        },
+      },
+      async (publish) => {
+        // 校验已在 precondition 内通过；此处只做写入（同一串行槽位，无插入）。
+        const targetLeadId = input.leadAppointmentId ?? this.#readTeam(teamId).leadAppointmentId;
+        // 〔为什么显式判空而不是断言〕`targetLeadId` 的类型仍含 `undefined`
+        // （precondition 是回调，编译器不跨回调传递收窄）。断言（`as`）会让
+        // 「precondition 忘了判空」变成静默的类型欺骗；显式判空让那种情形在这里
+        // 以明确错误失败。
+        if (targetLeadId === undefined) {
+          throw new SoloipsCoreError(
+            "SOLOIPS_CORE_RECORD_INVALID",
+            `团队 ${teamId} 激活路径缺组长引用：precondition 应已拒绝该输入（内部一致性错误）`,
+          );
+        }
+        const leadAppointmentId = targetLeadId;
+        const updated = await publish.update("team", teamId, (record) => ({
+          ...record,
+          leadAppointmentId,
+          status: "active" as const,
+        }));
+        return {
+          teamId: updated.id,
+          status: updated.status,
+          leadAppointmentId,
+        };
+      },
+    );
+  }
+
+  /**
+   * 归档团队（`→ archived` 终态）。**不是删除**（P-7）。
+   *
+   * 〔用途〕P-9 恢复入口的「收敛」路径：确认第②步未提交且不再需要的 `pending`
+   * 团队，经此显式归档，不得让其长期悬挂。
+   *
+   * 〔保留组长引用〕P-8/P-7：归档时**保留最后有效值**（历史事实），不因归档清空
+   * `leadAppointmentId`——清空会让「当时谁是组长」在归档后不可考。
+   *
+   * 〔幂等〕已归档的团队再次 `close` 返回 `PRECONDITION`（复用 operationId 则
+   * 得到 `replayed`）。`archived` 是终态，没有出边（P-7 的状态迁移路径
+   * 「pending → 可用 ↔ 不可用 → 归档」）。判定放在 `precondition`（门的重放
+   * 检测之后），故重放不受状态判定阻塞——见 `updateTeamFunction` 的同款说明。
+   */
+  async closeTeam(
+    input: SoloipsCloseTeamInput,
+  ): Promise<SoloipsCommitOutcome<SoloipsCloseTeamResult>> {
+    this.#assertOpen();
+    requireOperationIdShape(input.operationId);
+    if (!isTeamId(input.teamId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "teamId 形状不合法");
+    }
+    // 只读前置：团队不存在即 PRECONDITION（输入可解析性，非状态判定）。
+    this.#readTeam(input.teamId);
+    return this.#gate.commit(
+      {
+        operationId: asOperationId(input.operationId),
+        kind: "team.close",
+        intent: { teamId: input.teamId },
+        precondition: () => {
+          const now = this.#readTeam(input.teamId);
+          if (now.status === "archived") {
+            throw new SoloipsCoreError(
+              "SOLOIPS_CORE_PRECONDITION",
+              `团队 ${input.teamId} 已归档（终态，P-7）；重复归档请复用同一 operationId（幂等重放）`,
+            );
+          }
+        },
+      },
+      async (publish) => {
+        // 〔P-7〕**只**写 status，不调用 publish.delete（team 表无删除路径）。
+        const updated = await publish.update("team", input.teamId, (record) => ({
+          ...record,
+          status: "archived" as const,
+        }));
+        return { teamId: updated.id, status: updated.status };
+      },
+    );
+  }
+
+  /**
+   * 悬挂组长引用的恢复辅助（P-8.1）：扫描全部 `status='active'` 团队，核验 P-4，
+   * 失效者标记为 `inactive`。**只标记、不自动修复**（P-8.3）。
+   *
+   * 〔P-8.6〕`archived` 团队不参与扫描（归档是终态，不再要求有效组长）。
+   * `pending` 团队也不「标记」——它本就不是可用态，其处置是「续做/收敛」
+   * （P-9），故只**报告**在 `pending` 清单里。
+   *
+   * 〔P-8.5 可观察性〕返回 `markedInactive` 使「本次扫描改了什么」可见；调用方
+   * 不必回查介质。
+   *
+   * ── 〔登记〕本命令**不经提交门**（core 内第二处此类写，第一处是账户绑定）──
+   *
+   * 为什么不经门（`#gate.commit` 的「意图先行 + operationId 幂等」）：
+   *  1. **没有可预写的意图**：本命令的「意图」就是当前介质状态本身。写意图等于
+   *     把整张 team 表复制进台账，而台账的用途是「同一 operationId 重放原结果」
+   *     ——本命令**没有** operationId 入参（契约里它不是 `Soloips*Input`），因为
+   *     它的重复执行结果恒等（幂等收敛），不需要重放语义；
+   *  2. **写面频率**：P-8.1 允许「每次读面」都扫描。若每次扫描都产生一条台账
+   *     记录，台账会以读面频率增长，损害它作为「未决操作锚点」的可用性
+   *     （`listPendingOperations` 的核对价值来自它只含**业务操作**）；
+   *  3. **有先例且同类**：账户绑定写入（`verifyAccountBinding` 的
+   *     `domain.global.set`）同样不经门、同样只复核写权——两者都是「根级/系统级
+   *     事实的收敛写入」，不是有 operationId 的业务操作。故这不是新开的口子，
+   *     而是同一类的第二处。
+   *
+   * 〔代价与补偿〕不经门意味着没有「意图先行 + 串行槽位」保护。补偿：
+   *  - **写前复核写权**（`#reconcileOne` 的 `lease.assertHeld`），失权即拒；
+   *  - **幂等收敛**：多次 `update` 之间崩溃留下的部分标记是**收敛中间态**——
+   *    已标记的保持 `inactive`，未标记的下次扫描继续处理；
+   *  - **读面不依赖标记**：`#isUsableTeam` 始终按 P-4 实时核验，因此「标记没跑全」
+   *    不会让失效团队被读作可用（P-8.2 由读面自身满足）。
+   *
+   * 〔收紧路径〕若后续裁定要求「core 内全部业务写都经提交门」，则为它登记
+   * `team.reconcile` kind 并把本命令改为经门提交（入参加 `operationId`）——
+   * 那是一次机械改造，本命令的语义与读面纪律不变。登记为切片遗留项。
+   */
+  async reconcileTeams(): Promise<SoloipsTeamReconcileResult> {
+    this.#assertOpen();
+    const markedInactive: SoloipsTeamId[] = [];
+    const pending: SoloipsTeamId[] = [];
+    const toDeactivate: SoloipsTeamId[] = [];
+    let scanned = 0;
+    for (const [id, team] of this.#domain.table("team").entries()) {
+      if (team.status === "pending") {
+        pending.push(id);
+        continue;
+      }
+      // P-8.6：archived 不参与扫描；inactive 已是标记结果（幂等，不重复写）。
+      if (team.status !== "active") continue;
+      scanned += 1;
+      if (this.#evaluateLeadReference(team).valid) continue;
+      toDeactivate.push(id);
+    }
+    for (const teamId of toDeactivate) {
+      await this.#reconcileOne(teamId);
+      markedInactive.push(teamId);
+    }
+    return { scanned, markedInactive, pending };
+  }
+
+  /**
+   * 单条收敛：把 `active` 但组长失效的团队置为 `inactive`。
+   *
+   * 〔写权〕不经 `#gate` 的写路径**必须**在写前自行复核写权——否则它就成了
+   * 绕过 fence 的写口（`reconcileTeams` 的「代价与补偿」段）。
+   *
+   * 〔为什么用 `update` 而不是先读后 `put`〕`update` 在介质层是「读当前值 →
+   * 应用修订 → 写回」，`revise` 里对 `current` 展开，因此**只**改 `status`：
+   * 即使扫描与写入之间记录被改动（理论上被 lease 排除），也不会用陈旧快照
+   * 覆盖其他字段。
+   */
+  async #reconcileOne(teamId: SoloipsTeamId): Promise<void> {
+    try {
+      await this.#lease.assertHeld();
+    } catch (error) {
+      throw wrapLeaseFailure("team-reconcile", error);
+    }
+    await this.#domain.table("team").update(teamId, (current) => ({
+      ...current,
+      status: "inactive" as const,
+    }));
+  }
+
   // ── 查询投影（只读；返回介质对象，调用方不得原地修改） ─────────────────────
 
   checkOnboarding(employeeId: SoloipsEmployeeId): SoloipsOnboardingStatus {
@@ -1396,6 +2226,55 @@ class SoloipsCompanyStore implements SoloipsCoreService {
   getDocumentVersion(id: SoloipsDocumentVersionId): SoloipsDocumentVersionRecord | undefined {
     this.#assertOpen();
     return this.#domain.table("document_version").get(id);
+  }
+
+  /**
+   * 读取团队（读面，**不产生 kind**；BE-3 验收⑤）。
+   *
+   * 〔P-8.2/P-9.1〕返回**任何状态**的团队，但 `usable` 与 `leadReference` 显式
+   * 标注可用性与失效原因（P-8.5/P-9.2「读面不得静默降级」：不可用团队**不**被
+   * 返回空成员列表或空任务列表冒充正常团队）。
+   *
+   * 〔与 `listTeams` 的分工〕本方法不设「只看可用」的开关：按 id 取一个团队是
+   * **诊断/详情**场景，调用方需要看到状态；而列表是**选择可用团队**的场景，
+   * 默认过滤才有意义。两者的默认值差异反映用途差异，不是不一致。
+   */
+  getTeam(id: SoloipsTeamId): SoloipsTeamView | undefined {
+    this.#assertOpen();
+    if (!isTeamId(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "teamId 形状不合法");
+    }
+    const record = this.#domain.table("team").get(id);
+    return record === undefined ? undefined : this.#teamView(record);
+  }
+
+  /**
+   * 列团队（读面，**不产生 kind**）。
+   *
+   * 〔默认只给可用〕P-3/P-8.2/P-9.1 的判据同一：`status='active'` 且组长引用满足
+   * P-4。默认排除 `pending`（成团中间态）、`inactive`（不可用）、`archived`
+   * （归档）——「可用团队列表」不得含它们。
+   *
+   * 〔`includeUnusable` 的用途〕管理/诊断视图需要看到「为什么这个团队不可用」，
+   * 此时返回全部并逐项带 `usable`/`leadReference`（P-8.5 的显式状态要求）。
+   */
+  listTeams(
+    companyId: SoloipsCompanyId,
+    options?: { readonly includeUnusable?: boolean },
+  ): readonly SoloipsTeamView[] {
+    this.#assertOpen();
+    if (!isCompanyId(companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
+    const includeUnusable = options?.includeUnusable === true;
+    const found: SoloipsTeamView[] = [];
+    for (const [, record] of this.#domain.table("team").entries()) {
+      if (record.companyId !== companyId) continue;
+      const view = this.#teamView(record);
+      if (!includeUnusable && !view.usable) continue;
+      found.push(view);
+    }
+    return found;
   }
 
   getOperation(id: SoloipsOperationId): SoloipsOperationRecord | undefined {

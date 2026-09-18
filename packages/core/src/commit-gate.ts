@@ -15,6 +15,16 @@
  *     未决操作返回 unknown，调用方不得换 ID 重做（ORG-05）。
  *  4. 本 store 实例内的 commit 串行（进程内请求序）；跨进程互斥**只**由
  *     writer lease 承担——本串行不构成、也不替代跨进程保护（MECH-05）。
+ *
+ * 〔BE-3 增补〕不变量 3 的**边界**（`schemaVersion` / 未知 kind）：
+ *  - 新写入的 operation 记录**一律带** `schemaVersion`（当前词表版本），使
+ *    「用哪个版本的 kind 词表解释这条记录」成为记录自身的属性（BE-002）；
+ *  - 「同 operationId 重放原结果」**只对已知 kind 成立**。读到本版本不认识的
+ *    kind 时返回 `unknown`（而非 `replayed`）：无法证明那条记录的 `result`
+ *    形状与调用方期望的 `T` 相符，把它当可重放结果返回等于把未来版本的载荷
+ *    按当前类型交给调用方。`unknown` 的方向与 ORG-05 一致（不得换 ID 重做）；
+ *  - 未知 kind **不判损坏、不丢弃**：台账是崩溃恢复的核对锚点，「读不懂」
+ *    不等于「可忽略」（data-contract §2.1）。
  */
 
 import type {
@@ -31,8 +41,10 @@ import type {
   SoloipsOperationId,
   SoloipsOperationIntent,
   SoloipsOperationKind,
+  SoloipsOperationKindValue,
   SoloipsOperationRecord,
 } from "./contracts.js";
+import { SOLOIPS_OPERATION_SCHEMA_VERSION } from "./contracts.js";
 import { SoloipsCoreError, wrapLeaseFailure } from "./errors.js";
 import { SOLOIPS_COMPANY_DOMAIN_SPEC, type SoloipsCompanyTableName } from "./domain.js";
 
@@ -81,6 +93,66 @@ export interface SoloipsCommitRequest {
 
 export type SoloipsCommitProbe = "absent" | "replayed" | "unknown";
 
+/**
+ * 本版本词表已知的 kind 清单（**封闭**，与 `SoloipsOperationKind` 一一对应）。
+ *
+ * 〔为什么需要运行期清单〕持久校验器（`src/domain.ts` 的 `openLiteralUnionSchema`）
+ * 刻意**放行未知 kind**（否则未来版本的记录会让整次 open 失败、恢复锚点丢失）。
+ * 放行的代价是：读面拿到的是 `SoloipsOperationKindValue`（开放联合），而
+ * 「能不能把这条记录当成可重放结果返回」需要区分「已知」与「未知」——未知项的
+ * `result` 形状无法证明与调用方的 `T` 相符，故只能按 `unknown` 处置。
+ *
+ * 〔与 kind 联合的同步义务〕本清单是 `SoloipsOperationKind` 的**运行期投影**，
+ * 属「三处同步点」之外的第四处（编译器**不**强制本清单覆盖全部成员——`Record`
+ * 会强制，`Set` 不会）。
+ *
+ * 〔清单 ⊆ 联合：类型层钉法〕声明为**数组字面量 + `as const satisfies
+ * readonly SoloipsOperationKind[]`**，再由它构造 `Set`。为什么不直接写
+ * `new Set<SoloipsOperationKind>([...])`：两者的元素检查等价（拼错一个 kind，
+ * 如 `"team.creat"`，两种写法都编译失败——已实测 `error TS2820`），但
+ * `satisfies` 把「清单的每一项都必须是联合成员」写成一个**具名声明**，
+ * 使这层约束在源码里可读、可被逐项审查，而不是藏在构造器的泛型实参里。
+ *
+ * 〔清单 ⊇ 联合：由测试承担〕漏加一项会让新增 kind 的记录被当成未知项，表现为
+ * 「自己刚写的操作重放时返回 unknown」——那是可观察的失败，不是静默降级；
+ * 测试用 `Record<SoloipsOperationKind, true>` 穷举联合，对
+ * `knownOperationKinds()` 的投影做**双向相等**断言。
+ *
+ * 〔为什么必须双向〕`satisfies` 只拦「清单 ⊆ 联合」；「多出联合之外的假项」
+ * 在类型层合法（加一次 `as` 即可绕过赋值检查），只能由运行期双向断言拦下
+ * （QA 变异 M12 正是这条：`Set` 里塞入 `team.fake-op` 而三门全绿）。
+ */
+const KNOWN_OPERATION_KIND_LIST = [
+  "company.create",
+  "department.create",
+  "employee.create",
+  "appointment.create",
+  "appointment.revoke",
+  "employee.initialize-memory",
+  "employee.verify-capability",
+  "employee.record-assembly",
+  "document.save",
+  "work-entry.request",
+  "team.create",
+  "team.update-function",
+  "team.activate",
+  "team.close",
+] as const satisfies readonly SoloipsOperationKind[];
+
+const KNOWN_OPERATION_KINDS = new Set<SoloipsOperationKind>(KNOWN_OPERATION_KIND_LIST);
+
+/** 读面 kind 是否属于本版本词表（类型守卫：收窄到封闭联合）。 */
+export function isKnownOperationKind(
+  kind: SoloipsOperationKindValue,
+): kind is SoloipsOperationKind {
+  return KNOWN_OPERATION_KINDS.has(kind as SoloipsOperationKind);
+}
+
+/** 本版本词表的只读投影（供测试断言与读面消费）。 */
+export function knownOperationKinds(): readonly SoloipsOperationKind[] {
+  return [...KNOWN_OPERATION_KINDS];
+}
+
 export class SoloipsCommitGate {
   readonly #domain: SoloipsDomain<typeof SOLOIPS_COMPANY_DOMAIN_SPEC>;
   readonly #lease: SoloipsWriterLease;
@@ -99,11 +171,18 @@ export class SoloipsCommitGate {
     return this.#domain.table("operation");
   }
 
-  /** 只读探测：同 operationId 的既有结果状态（读操作，不经 fence）。 */
+  /**
+   * 只读探测：同 operationId 的既有结果状态（读操作，不经 fence）。
+   *
+   * 〔未知 kind 的处置〕返回 `unknown`（而不是 `replayed`）：本版本**无法证明**
+   * 那条记录的 `result` 形状与调用方期望的 `T` 相符，故不得当成可重放结果返回
+   * （那会把未来版本的载荷当成当前类型的值交给调用方）。`unknown` 的语义正是
+   * 「该 operationId 有未决事实、不得换 ID 重做」——方向与 ORG-05 一致。
+   */
   probe(operationId: SoloipsOperationId): SoloipsCommitProbe {
     const existing = this.#operationTable().get(operationId);
     if (existing === undefined) return "absent";
-    if (existing.status === "committed") return "replayed";
+    if (existing.status === "committed" && isKnownOperationKind(existing.kind)) return "replayed";
     return "unknown";
   }
 
@@ -140,15 +219,19 @@ export class SoloipsCommitGate {
   ): Promise<SoloipsCommitOutcome<T>> {
     const existing = this.#operationTable().get(request.operationId);
     if (existing !== undefined) {
+      // 〔未知 kind〕比较是**字符串比较**（`kind` 是开放联合），故「同 ID 被不同
+      // 种类复用」对未知项同样能检出——未知不等于可复用。
       if (existing.kind !== request.kind) {
         throw new SoloipsCoreError(
           "SOLOIPS_CORE_CONFLICT",
           `operationId 已被种类 ${existing.kind} 的操作使用，不能用于 ${request.kind}`,
         );
       }
-      if (existing.status === "committed") {
+      if (existing.status === "committed" && isKnownOperationKind(existing.kind)) {
         return { status: "replayed", result: this.#committedResult(existing) as T };
       }
+      // 未决，或已提交但 kind 是本版本不认识的（无法证明载荷形状与 T 相符）：
+      // 一律 `unknown`——不换 ID 重做、也不把不认识的载荷当 T 返回。
       return { status: "unknown" };
     }
 
@@ -159,12 +242,17 @@ export class SoloipsCommitGate {
     request.precondition?.();
 
     // 意图先行（ORG-05：保存必要恢复意图在提交之前）。
+    //
+    // `schemaVersion` **新写入必须带当前版本**（data-contract §2.1 BE-002：
+    // 「新记录不豁免」）：它使「用哪个版本的 kind 词表解释这条记录」成为记录
+    // 自身的属性，从而把「kind 联合扩展」从破坏性变更降为兼容性变更。
     await publish.put("operation", request.operationId, {
       id: request.operationId,
       kind: request.kind,
       status: "pending",
       ...(request.employeeId === undefined ? {} : { employeeId: request.employeeId }),
       intent: request.intent,
+      schemaVersion: SOLOIPS_OPERATION_SCHEMA_VERSION,
     });
 
     const result = await mutate(publish);
