@@ -44,8 +44,14 @@ interface CoreStub {
   listTeams: SoloipsCoreService["listTeams"];
 }
 
-/** 建一个**已发布** core 服务的上下文；`published: false` 模拟未就绪。 */
+/**
+ * 建一个**已发布** core 服务的上下文；`published: false` 模拟未就绪。
+ *
+ * `ctx` 也一并返回：§8 的接收者身份用例需要走**真实的 cordis 服务解析路径**
+ * （`ctx.get('soloipsWeb')` 返回 traceable Proxy），那是网关 invoke 的等价形态。
+ */
 function hostWithCore(options: { readonly published: boolean }): {
+  readonly ctx: Context;
   readonly host: SoloipsWebHost;
   readonly core: CoreStub;
 } {
@@ -79,7 +85,7 @@ function hostWithCore(options: { readonly published: boolean }): {
     // `soloipsWeb`）；core 服务键的声明在 core 包内，测试里按名提供。
     ctx.provide("soloipsCore", core as unknown as SoloipsCoreService);
   }
-  return { host: new SoloipsWebHost(ctx), core };
+  return { ctx, host: new SoloipsWebHost(ctx), core };
 }
 
 /** 造一个形状合法的公司 id（core 的品牌是编译期 phantom，运行时就是字符串）。 */
@@ -552,5 +558,97 @@ describe("BE-6a 只读纪律", () => {
       includeUnusable: true,
     });
     expect(options).toEqual({ departmentId: "dep_1", includeUnusable: true });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §8 接收者身份：经 Proxy 调用不得崩（BE-6a E2E 红的真实根因）
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BE-6a 接收者身份（网关经 Proxy 调用）", () => {
+  it("五个 @Remote 方法经 cordis 解析出的接收者调用不抛，且真的解析到 core", async () => {
+    // ── 本用例防的缺陷（BE-6a E2E 红）────────────────────────────────────────
+    //
+    // `ctx.get('soloipsWeb')` 返回的**不是**构造时的实例对象，而是 cordis 的
+    // traceable Proxy（`@deepseek-ai/cordis` 的 `createTraceable`）。网关的
+    // `prepareInvocation` 正是取它作 receiver（`gateway/src/index.ts:602`），
+    // 再 `Reflect.get(receiver, method)`（`:615`）与
+    // `Reflect.apply(method, receiver, args)`（`:309`）调用；Proxy 的 get trap
+    // 把函数包成 `createShadowMethod`，调用时把 `this` 改绑到 `shadow`
+    // （`createShadow`）。本用例直接复用这条路径，不另造替身。
+    //
+    // 于是**方法体内经 `this` 访问私有成员**必然抛：V8 的私有成员访问不做 Proxy
+    // 透传，shadow 不是「声明该私有成员的那个对象」。实测（旧实现，Node 24）：
+    // 经此路径调用 `createCompany` 抛 `TypeError: Cannot access private method`
+    // （E2E 的运行时报 `Receiver must be an instance of class SoloipsWebHost`），
+    // 网关的 `rpcFailure` 再把它折叠成 `gateway/internal` 且**不暴露 cause**——
+    // 故这条根因只能在本层钉住。五个业务方法全部经旧 `#core()`，故全部炸；
+    // `getStatus` 不用私有成员，故它在 E2E 里是通的（这正是判别证据）。
+    const { ctx, core } = hostWithCore({ published: true });
+    const service = ctx.get("soloipsWeb");
+    if (service === undefined) throw new Error("前置失败：ctx.get('soloipsWeb') 必须已发布");
+
+    // 五条路径各调一次：它们都经 core 解析，是旧实现下全炸的五处。
+    await expect(service.createCompany(createInput("op-proxy"))).resolves.toEqual({
+      status: "committed",
+      result: { companyId: "cmp_created" },
+    });
+    expect(service.getCompany({ companyId: companyId("cmp_1") })).toEqual({ status: "not-found" });
+    expect(service.getCompanyTree({ companyId: companyId("cmp_1") })).toEqual({
+      status: "ok",
+      companies: [],
+    });
+    expect(service.listDepartments({ companyId: companyId("cmp_1") })).toEqual({
+      status: "ok",
+      departments: [],
+    });
+    expect(service.listTeams({ companyId: companyId("cmp_1") })).toEqual({
+      status: "ok",
+      teams: [],
+    });
+
+    // 〔为什么断言业务结果而不是只断言「不抛」〕「不抛」太弱：一个把 core 解析成
+    // `undefined` 的实现（构造期缓存、或在错误的上下文里解析）同样不抛，却会静默
+    // 返回 `unavailable`——那是 §2.5.1 裁定三明禁的「伪装」形态。上面每条都断言了
+    // 真实结果，故 core 必须真的被解析到。
+    expect(core.calls, "core 必须真的被调用（Proxy 接收者不得让解析退化）").toContain(
+      "createCompany",
+    );
+  });
+
+  it("裸 Proxy 包装的实例上调用不抛（同一 V8 规则的退化形态）", async () => {
+    // 〔为什么与上一条并存〕上一条覆盖 cordis 的**改绑**这一步（生产路径）；
+    // 本条覆盖同一 V8 规则的**退化**形态：任何 `new Proxy(instance, …)` 都会让
+    // 私有成员访问失败，与 handler 是否改写 `this` 无关。两条一起把「私有成员 +
+    // Proxy 接收者」这条组合钉死——只留一条时，另一条的失效模式无人拦。
+    const { host } = hostWithCore({ published: true });
+    const wrapped = new Proxy(host, {});
+    await expect(wrapped.createCompany(createInput("op-bare-proxy"))).resolves.toEqual({
+      status: "committed",
+      result: { companyId: "cmp_created" },
+    });
+    expect(wrapped.getCompany({ companyId: companyId("cmp_1") })).toEqual({ status: "not-found" });
+  });
+
+  it("core 在**构造之后**才发布时仍能解析到（不得构造期缓存）", async () => {
+    // 〔本用例钉住的约束〕core 服务的发布是**异步**的（`packages/core/src/index.ts`
+    // 在 `ctx.inject(['soloipsAdapter'], …)` 回调内打开存储后才 `provide`）。
+    // 若有人把解析结果在构造期取一次缓存下来，本用例会得到 `unavailable` 而失败。
+    // 这条与上面两条互补：它们防「用私有成员」，本条防「提前取一次」——两者是修
+    // 这个缺陷时最容易走上的两条错路。
+    const { ctx, host, core } = hostWithCore({ published: false });
+    ctx.provide("soloipsCore", core as unknown as SoloipsCoreService);
+
+    const service = ctx.get("soloipsWeb");
+    if (service === undefined) throw new Error("前置失败：ctx.get('soloipsWeb') 必须已发布");
+    await expect(service.createCompany(createInput("op-late-core"))).resolves.toEqual({
+      status: "committed",
+      result: { companyId: "cmp_created" },
+    });
+    // 直接调用路径同样必须拿到它（两条路径共用一个解析函数）。
+    await expect(host.createCompany(createInput("op-late-core-direct"))).resolves.toEqual({
+      status: "committed",
+      result: { companyId: "cmp_created" },
+    });
   });
 });

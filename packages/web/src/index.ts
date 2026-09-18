@@ -53,6 +53,11 @@
  *     不得可选；取消用末位 `signal: AbortSignal`；
  *  3. 参数与返回值的**具名类型**必须能从本包公开的非根子路径导出
  *     （本包用 `./contracts`），且必须是纯 JSON 类型。
+ *
+ * 一条**运行期**约束（分析器看不见，违反不会构建失败，只会在网关调用时炸）：
+ *  **Remote 方法体内不得经 `this` 访问任何私有（`#`）成员**——网关经 cordis 的
+ *  traceable Proxy 改绑 `this` 后调用，V8 的私有成员品牌检查不做 Proxy 透传。
+ *  细节与判别证据见 {@link coreOf} 与 `tests/host-wiring.spec.ts` §8。
  */
 
 import type { Context } from "@deepseek-ai/cordis";
@@ -184,6 +189,43 @@ function isSoloipsWebCoreSurface(value: unknown): value is SoloipsWebCoreSurface
   return SOLOIPS_WEB_CORE_METHODS.every((method) => typeof candidate[method] === "function");
 }
 
+/**
+ * 解析给定上下文中的 `soloipsCore` 服务（**模块级纯函数，不经 `this`**）。
+ *
+ * 〔为什么必须是模块级函数，而不是私有方法/私有字段〕网关经 cordis 的 traceable
+ * Proxy 取接收者并调用：`prepareInvocation` 用
+ * `receiverContext.get(descriptor.service)` 取回服务（`gateway/src/index.ts:602`），
+ * `Reflect.get(receiver, method)`（`:615`）取方法，再
+ * `Reflect.apply(method, receiver, args)`（`:309`）执行。该 Proxy 的 get trap 会把
+ * 方法包成 `createShadowMethod`，调用时把 `this` 改绑到 `shadow`
+ * （`@deepseek-ai/cordis` 的 `createShadow`/`createShadowMethod`，`lib/index.js:117-142`）。
+ * **V8 的私有成员品牌检查不做 Proxy 透传**：`this.#x` 在 shadow 上必然抛
+ * `TypeError: Receiver must be an instance of class SoloipsWebHost`（Node 24 实测），
+ * 网关的 `rpcFailure`（`:1001`）再把它折叠成 `gateway/internal` 且**不暴露 cause**。
+ * 故方法体内**不得**经 `this` 访问任何私有成员；解析逻辑放在模块级函数里，
+ * 上下文由调用方显式传入。
+ *
+ * 〔为什么方法体内传 `this.ctx` 是安全的〕`ctx` 是 cordis 服务基类的**非私有**
+ * 字段（`Service.ctx`，TS 侧 `protected`——运行期只是普通实例字段，无品牌检查）。
+ * shadow 的 get trap 对普通实例字段**透传**（`createShadow` 把 `ctx` 覆写为调用者
+ * 上下文，`lib/index.js:112-116`），且即便不覆写，`Reflect.get(target, "ctx", receiver)`
+ * 对数据属性也忽略 receiver、返回原值。两条路都通（均已实测）。`getStatus` 不碰
+ * 私有成员，所以它在旧实现下就是通的——那正是本缺陷的判别证据。
+ *
+ * 〔为什么每次调用都解析，而不是构造期取一次〕core 服务的发布是**异步**的
+ * （`packages/core/src/index.ts` 在 `ctx.inject(['soloipsAdapter'], …)` 回调内
+ * 打开存储后 `provide`）。构造期取一次会在「本行先于 core 完成」时永久拿到
+ * `undefined`。每次解析的代价是一次属性查找。
+ *
+ * @param ctx - 调用方上下文；方法体内传 `this.ctx`（Proxy 下是 shadow 上下文，
+ *   其 isolate 标签继承自同一根，故解析结果与直调一致）。
+ * @returns 已就绪的 core 服务面；未发布或形状不符时 `undefined`。
+ */
+function coreOf(ctx: Context): SoloipsWebCoreSurface | undefined {
+  const candidate = ctx.get(SOLOIPS_CORE_SERVICE_NAME);
+  return isSoloipsWebCoreSurface(candidate) ? candidate : undefined;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 失败翻译：core 的稳定码 → Remote 失败码
 // ─────────────────────────────────────────────────────────────────────────────
@@ -294,6 +336,15 @@ declare module "@deepseek-ai/cordis" {
  * **静默**的（0.1.6 下未满足的 inject 只让行 pending，不报错——见
  * `cordis.patch.yml` 的既有说明）。改为每次调用时 `ctx.get()` 解析，未就绪时返回
  * `unavailable` 态（§2.5.1 裁定三：「不伪装空数据」）。
+ *
+ * 〔约束：方法体内**不得**经 `this` 访问任何私有（`#`）成员〕网关经 cordis 的
+ * traceable Proxy 取接收者并 `Reflect.apply` 调用，Proxy 会把 `this` 改绑到 shadow，
+ * 而 V8 的私有成员品牌检查不做 Proxy 透传 → 必然抛
+ * `TypeError: Receiver must be an instance of class SoloipsWebHost`，再被网关折叠成
+ * `gateway/internal`。解析逻辑因此放在模块级 {@link coreOf} 里，上下文由
+ * `this.ctx`（**非私有**字段，Proxy 下透传）显式传入。回归判据见
+ * `tests/host-wiring.spec.ts` §8（经 `ctx.get('soloipsWeb')` 与裸 `new Proxy(...)`
+ * 两条路径真调用）。
  */
 export class SoloipsWebHost extends TypertRemoteService {
   /**
@@ -310,21 +361,6 @@ export class SoloipsWebHost extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, "soloipsWeb", { namespace: "soloips" });
-  }
-
-  /**
-   * 解析当前上下文中的 `soloipsCore` 服务。
-   *
-   * 〔为什么每次调用都解析，而不是构造期取一次〕core 服务的发布是**异步**的
-   * （`packages/core/src/index.ts` 在 `ctx.inject(['soloipsAdapter'], …)` 回调内
-   * 打开存储后 `provide`）。构造期取一次会在「本行先于 core 完成」时永久拿到
-   * `undefined`。每次解析的代价是一次属性查找。
-   *
-   * @returns 已就绪的 core 服务面；未发布或形状不符时 `undefined`。
-   */
-  #core(): SoloipsWebCoreSurface | undefined {
-    const candidate = this.ctx.get(SOLOIPS_CORE_SERVICE_NAME);
-    return isSoloipsWebCoreSurface(candidate) ? candidate : undefined;
   }
 
   // ── 组织写动作（裁定二：用户确认的可信 Remote；**不注册为模型工具**） ──────
@@ -362,7 +398,7 @@ export class SoloipsWebHost extends TypertRemoteService {
   async createCompany(
     input: SoloipsWebCreateCompanyInput,
   ): Promise<SoloipsWebCreateCompanyOutcome> {
-    const core = this.#core();
+    const core = coreOf(this.ctx);
     if (core === undefined) return coreUnavailable();
     try {
       return await core.createCompany({
@@ -394,7 +430,7 @@ export class SoloipsWebHost extends TypertRemoteService {
    */
   @Remote("getCompany")
   getCompany(input: SoloipsWebCompanyIdInput): SoloipsWebCompanyRead {
-    const core = this.#core();
+    const core = coreOf(this.ctx);
     if (core === undefined) return coreUnavailable();
     try {
       const company = core.getCompany(input.companyId);
@@ -418,7 +454,7 @@ export class SoloipsWebHost extends TypertRemoteService {
    */
   @Remote("getCompanyTree")
   getCompanyTree(input: SoloipsWebCompanyTreeInput): SoloipsWebCompanyTreeRead {
-    const core = this.#core();
+    const core = coreOf(this.ctx);
     if (core === undefined) return coreUnavailable();
     try {
       return {
@@ -439,7 +475,7 @@ export class SoloipsWebHost extends TypertRemoteService {
    */
   @Remote("listDepartments")
   listDepartments(input: SoloipsWebDepartmentListInput): SoloipsWebDepartmentListRead {
-    const core = this.#core();
+    const core = coreOf(this.ctx);
     if (core === undefined) return coreUnavailable();
     try {
       return { status: "ok", departments: core.listDepartments(input.companyId) };
@@ -465,7 +501,7 @@ export class SoloipsWebHost extends TypertRemoteService {
    */
   @Remote("listTeams")
   listTeams(input: SoloipsWebTeamListInput): SoloipsWebTeamListRead {
-    const core = this.#core();
+    const core = coreOf(this.ctx);
     if (core === undefined) return coreUnavailable();
     try {
       return {

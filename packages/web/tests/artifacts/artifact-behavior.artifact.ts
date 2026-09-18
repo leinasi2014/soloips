@@ -10,6 +10,7 @@ import {
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import vm from "node:vm";
+import { Context } from "@deepseek-ai/cordis";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -352,6 +353,94 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
         "listTeams",
       ].sort(),
     );
+  });
+
+  it("keeps the gateway call path free of private-member access (Proxy receiver)", async () => {
+    // ── 本用例防的缺陷（BE-6a E2E 红）────────────────────────────────────────
+    //
+    // 网关经 cordis 的 traceable Proxy 取接收者并调用
+    // （`prepareInvocation` → `Reflect.get(receiver, method)` → `Reflect.apply`）。
+    // 该 Proxy 的 get trap 把方法包成 `createShadowMethod`，调用时把 `this` 改绑到
+    // shadow；**V8 的私有成员品牌检查不做 Proxy 透传**，故方法体内 `this.#x` 抛
+    // `TypeError: Receiver must be an instance of class SoloipsWebHost`（本用例在旧
+    // 实现上实测到的原文），网关再折叠成 `gateway/internal` 且不暴露 cause。
+    //
+    // 〔为什么必须在**产物**层再测一次，而不是只留默认套件那条〕默认套件跑的是
+    // vitest 的 esbuild 转换产物：私有成员的降级 helper 报的是
+    // `Cannot access private method`（措辞不同、实现不同），而**交付的**
+    // `lib/index.js` 走原生 V8 私有字段，报的才是 E2E 里那条原文。两条判据覆盖
+    // 两个运行面；只留源码面时，「源码过了但产物形态不同」无人拦。
+    //
+    // 〔为什么真的构造实例〕判据是**调用路径**，不是类形状：只有真调一次才能
+    // 触达 V8 的品牌检查。构造需要真实 cordis Context（本套件允许——它是
+    // `lib/index.js` 的 dependencies 之一），core 用最小替身（本用例不验 core 语义，
+    // 那是 `packages/core/tests` 与 E2E 的范围）。
+    const entry = (await import(pathToFileURL(requireArtifact("lib/index.js")).href)) as {
+      SoloipsWebHost: new (ctx: Context) => object;
+    };
+    const ctx = new Context();
+    const calls: string[] = [];
+    ctx.provide("soloipsCore", {
+      createCompany: async () => {
+        calls.push("createCompany");
+        return { status: "committed", result: { companyId: "cmp_artifact" } };
+      },
+      getCompany: () => {
+        calls.push("getCompany");
+        return undefined;
+      },
+      getCompanyTree: () => {
+        calls.push("getCompanyTree");
+        return [];
+      },
+      listDepartments: () => {
+        calls.push("listDepartments");
+        return [];
+      },
+      listTeams: () => {
+        calls.push("listTeams");
+        return [];
+      },
+    });
+    new entry.SoloipsWebHost(ctx);
+
+    // 网关等价路径：`ctx.get` 取回的**不是**构造时的实例，而是 traceable Proxy。
+    //
+    // 〔为什么用 `Reflect.get` 动态取方法，而不是 `receiver.createCompany(...)`〕
+    // 两者都会经过 Proxy 的 get trap（本用例对两种形态都实测过，结论一致）；
+    // 取动态形态是为了逐字复刻网关的三步（`Reflect.get` → `Reflect.apply`），
+    // 使「接收者是 Proxy」这一条在用例里是**显式**的，而不是隐含在属性访问里。
+    // 两处 `as unknown as` 是本套件既有风格（声明合并把 `ctx.get('soloipsWeb')`
+    // 的类型钉成 Host 类，而这里要按动态方法名取成员）。
+    const service = ctx.get("soloipsWeb");
+    if (service === undefined) throw new Error("前置失败：ctx.get('soloipsWeb') 必须已发布");
+    const receiver = service as unknown as Record<string, unknown>;
+    const invoke = (method: string, input: unknown): unknown =>
+      Reflect.apply(receiver[method] as (...args: never[]) => unknown, receiver, [input]);
+
+    // 五个业务方法全部经 core 解析（旧实现下它们全炸，`getStatus` 独通——那正是
+    // 判别证据）。断言业务结果而非仅「不抛」：解析退化成 `undefined` 的实现同样
+    // 不抛，却会静默返回 `unavailable`（§2.5.1 裁定三明禁的「伪装」）。
+    await expect(
+      invoke("createCompany", { operationId: "op-artifact", name: "甲", type: "enterprise" }),
+    ).resolves.toEqual({ status: "committed", result: { companyId: "cmp_artifact" } });
+    expect(invoke("getCompany", { companyId: "cmp_1" })).toEqual({ status: "not-found" });
+    expect(invoke("getCompanyTree", { companyId: "cmp_1" })).toEqual({
+      status: "ok",
+      companies: [],
+    });
+    expect(invoke("listDepartments", { companyId: "cmp_1" })).toEqual({
+      status: "ok",
+      departments: [],
+    });
+    expect(invoke("listTeams", { companyId: "cmp_1" })).toEqual({ status: "ok", teams: [] });
+    expect(calls, "core 必须真的被调用（Proxy 接收者不得让解析退化）").toEqual([
+      "createCompany",
+      "getCompany",
+      "getCompanyTree",
+      "listDepartments",
+      "listTeams",
+    ]);
   });
 
   it("carries the getStatus invocation in the Host face model", async () => {
