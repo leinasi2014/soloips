@@ -54,6 +54,13 @@ beforeEach(async () => {
     storage: fakeStoragePort(),
     root: ROOT,
     accountId: TEST_ACCOUNT_ID,
+    // 〔BE-5 追加，既有断言逐条不变〕本 spec 用「两家公司」构造跨公司隔离/归属
+    // 场景（listEmployees 按公司过滤、D1 顺序无关性、listAdministrators 的公司
+    // 隔离、listTeams 的部门不跨公司）。配额**不是**本 spec 的验证面，而缺省的
+    // `free` 计划（1 公司）会让第二个 `enterprise` 被拒——那会把「隔离语义」的
+    // 用例变成「配额拒绝」的用例（假覆盖：标题说隔离、实际撞配额）。
+    // 故本 fixture 显式取**无限制**计划；配额行为由 `quota-tree.spec.ts` 验证。
+    planCode: "enterprise",
   });
 });
 
