@@ -79,10 +79,13 @@ import type {
 import type {
   SoloipsActivateTeamInput,
   SoloipsActivateTeamResult,
+  SoloipsAdministratorProjection,
+  SoloipsAdministratorView,
   SoloipsAppointmentId,
   SoloipsAppointmentRecord,
   SoloipsAppointmentRole,
   SoloipsAppointmentScope,
+  SoloipsAppointmentView,
   SoloipsCloseTeamInput,
   SoloipsCloseTeamResult,
   SoloipsCommitOutcome,
@@ -105,6 +108,7 @@ import type {
   SoloipsDocumentType,
   SoloipsDocumentVersionId,
   SoloipsDocumentVersionRecord,
+  SoloipsEmployeeAffiliation,
   SoloipsEmployeeId,
   SoloipsEmployeeRecord,
   SoloipsInitializeMemoryInput,
@@ -914,6 +918,179 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     }
     // 分支 2：现有形状即部门级任职（companyId 由部门记录反解）。
     return { kind: "department", companyId: department.companyId, departmentId };
+  }
+
+  /**
+   * 作用域解析的**失败可判定**包装（BE-4a）：把 §2.3 分支 3 的
+   * `SOLOIPS_CORE_RECORD_INVALID` 转成判别结果，供「扫描中遇到不可判定记录」的
+   * 读面决定如何处置。
+   *
+   * 〔为什么需要它〕同一形状（无 `scope` 且解析不出公司）在**不同读面**上的正确
+   * 处置**方向相反**，而两者都不能靠猜测：
+   *  - 「这条记录**是不是**某集合的成员」类查询（`listEmployees`/
+   *    `listAppointments`/`listAdministrators`）：不可判定即**报错**——跳过会让
+   *    结果静默漏掉该记录，而它**可能**正是查询目标（fail-closed，与
+   *    `#assertNoActiveGeneralAssistant` 同向）；
+   *  - 「这条记录**是不是**某个已给出引用」类核验（`#evaluateLeadReference`）：
+   *    不可判定即**不算命中**——核验的对象是引用有效性，一条不可判定的记录不是
+   *    有效引用（该处用 try/catch 直接归类为 `scope-unresolvable`，不走本包装）。
+   *
+   * 本包装只把**已知的**分支 3 失败转成结果；其它异常（如介质读取失败）原样冒泡
+   * ——那类失败不是「不可判定」，把它折进判别结果会把基础设施故障伪装成数据结论。
+   */
+  #tryResolveAppointmentScope(
+    record: SoloipsAppointmentRecord,
+  ): { readonly ok: true; readonly scope: SoloipsAppointmentScope } | { readonly ok: false } {
+    try {
+      return { ok: true, scope: this.#resolveAppointmentScope(record) };
+    } catch (error) {
+      if (error instanceof SoloipsCoreError && error.code === "SOLOIPS_CORE_RECORD_INVALID") {
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 扫描任职表并**解析后**过滤（BE-4a 读投影的共同内核）。
+   *
+   * 〔顺序契约〕逐条解析、逐条判定；遇到分支 3 的记录**立即抛错**（不跳过、不继续
+   * 收集）——「能定则定、不能定即报错」的落点，见 `#tryResolveAppointmentScope`。
+   * 错误消息带上**本次查询的过滤条件**：调用方需要知道「哪次查询因为哪条记录而
+   * 失败」，否则只能拿到一条与本次调用无关的孤立诊断。
+   *
+   * 〔D1：部门过滤的公司核对〕部门过滤**反解部门记录**（`filterDepartment`）并
+   * 要求 `scope.companyId === filterDepartment.companyId`；不一致即
+   * `SOLOIPS_CORE_RECORD_INVALID`。为什么必须核对：`#resolveAppointmentScope`
+   * 的分支 1「有 `scope` 直接采用」**不**核对 `scope.departmentId` 与
+   * `scope.companyId` 是否自洽（写面 `createAppointment` 才拒该形状），故迁移
+   * 残留/外部直写可产生「声明的公司 ≠ 部门实际所属公司」的记录。若只比
+   * `scope.departmentId`，这类记录会进入结果集，其 `scope.companyId` 是**记录
+   * 自己写的值**——同一员工两条声明不同公司的记录会让聚合结果取决于介质遍历
+   * 顺序，而 §2.3 明文**禁止任何时序/「首个」推断**。核对后，部门过滤下的全部
+   * 命中共享**同一个由部门记录反解出的**公司，取值不再是「选择」。
+   *
+   * 〔只读〕本方法只经 domain 表读取，不产生 kind、不写状态、不持锁。
+   */
+  #scanAppointments(
+    filter: {
+      readonly companyId?: SoloipsCompanyId;
+      readonly departmentId?: SoloipsDepartmentId;
+      readonly employeeId?: SoloipsEmployeeId;
+      readonly includeRevoked?: boolean;
+    },
+    query: string,
+  ): readonly {
+    readonly record: SoloipsAppointmentRecord;
+    readonly scope: SoloipsAppointmentScope;
+  }[] {
+    const includeRevoked = filter.includeRevoked === true;
+    // 部门过滤的公司基准：反解一次（部门记录缺失时保持 `undefined`，只在真有命中
+    // 该部门的记录时才报错——「部门不存在」的空结果语义因此不受影响）。
+    const filterDepartment =
+      filter.departmentId === undefined
+        ? undefined
+        : this.#domain.table("department").get(filter.departmentId);
+    const found: {
+      readonly record: SoloipsAppointmentRecord;
+      readonly scope: SoloipsAppointmentScope;
+    }[] = [];
+    for (const [, record] of this.#domain.table("appointment").entries()) {
+      if (!includeRevoked && record.status !== "active") continue;
+      // 直接字段先过滤（员工 id 无需解析作用域）——既省解析，也让「按员工查」
+      // 在存在损坏记录时仍然可用（过滤条件与该记录无关）。
+      if (filter.employeeId !== undefined && record.employeeId !== filter.employeeId) continue;
+      const resolved = this.#tryResolveAppointmentScope(record);
+      if (!resolved.ok) {
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_RECORD_INVALID",
+          `任职 ${record.id} 的作用域不可判定（data-contract §2.3 分支 3），` +
+            `无法参与「${query}」的归属过滤；` +
+            "本读面**不跳过**不可判定记录（跳过会让结果静默漏掉该员工）——" +
+            "须先经迁移工具人工确认后显式补写 scope/departmentId",
+        );
+      }
+      const scope = resolved.scope;
+      if (filter.companyId !== undefined && scope.companyId !== filter.companyId) continue;
+      if (filter.departmentId !== undefined) {
+        // 部门过滤只认部门级作用域：公司级/团队级任职**不挂部门**
+        // （`team.departmentId` 是团队归属，不是任职归属），把它们算进来会让
+        // 「部门员工名单」包含不属该部门的人。
+        if (scope.kind !== "department" || scope.departmentId !== filter.departmentId) continue;
+        // D1：声明的公司必须与部门记录反解出的公司一致（见方法头注释）。
+        // 不一致 = 记录自相矛盾（写面会拒），fail-closed 报错而不是按任一侧取值。
+        if (filterDepartment === undefined || scope.companyId !== filterDepartment.companyId) {
+          throw new SoloipsCoreError(
+            "SOLOIPS_CORE_RECORD_INVALID",
+            `任职 ${record.id} 声明 scope.companyId=${scope.companyId}，` +
+              `与部门 ${filter.departmentId} 实际所属公司 ` +
+              `${filterDepartment === undefined ? "<部门记录缺失>" : filterDepartment.companyId} ` +
+              `不一致，无法参与「${query}」的部门过滤；` +
+              "部门过滤要求作用域公司由部门记录反解（读面不得采信记录自报的公司，" +
+              "那会让同一查询的结果取决于介质遍历顺序——§2.3 禁止时序/「首个」推断）",
+          );
+        }
+      }
+      found.push({ record, scope });
+    }
+    return found;
+  }
+
+  /**
+   * 员工读面的去重聚合（BE-4a）：把 `#scanAppointments` 的结果收成**员工集合**。
+   *
+   * 〔去重键 = `employeeId`〕同一员工多条任职命中只出现一次；命中的任职 id 全部
+   * 收入 `appointmentIds`（保持扫描顺序、天然无重复——一条任职只被扫到一次）。
+   *
+   * 〔已删员工的悬挂任职〕任职指向的员工记录缺失（介质被外部改动/迁移残留）时
+   * **抛** `SOLOIPS_CORE_RECORD_INVALID`：跳过它会让「该员工属于本公司」这一事实
+   * 静默消失（与分支 3 同向的 fail-closed 处置）。
+   */
+  #affiliationsOf(
+    hits: readonly {
+      readonly record: SoloipsAppointmentRecord;
+      readonly scope: SoloipsAppointmentScope;
+    }[],
+  ): readonly SoloipsEmployeeAffiliation[] {
+    const byEmployee = new Map<
+      SoloipsEmployeeId,
+      { readonly record: SoloipsAppointmentRecord; readonly scope: SoloipsAppointmentScope }[]
+    >();
+    for (const hit of hits) {
+      const existing = byEmployee.get(hit.record.employeeId);
+      if (existing === undefined) {
+        byEmployee.set(hit.record.employeeId, [hit]);
+      } else {
+        existing.push(hit);
+      }
+    }
+    const found: SoloipsEmployeeAffiliation[] = [];
+    for (const [employeeId, employeeHits] of byEmployee) {
+      const employee = this.#domain.table("employee").get(employeeId);
+      if (employee === undefined) {
+        throw new SoloipsCoreError(
+          "SOLOIPS_CORE_RECORD_INVALID",
+          `任职 ${employeeHits.map((hit) => hit.record.id).join("、")} 指向的员工 ${employeeId} 不存在` +
+            "（悬挂引用）；员工列表**不跳过**这类记录（跳过会让该员工静默消失），" +
+            "须先核对介质上被删除/迁移的员工记录",
+        );
+      }
+      // 同一员工的全部命中共享同一 `companyId`——这条不变量**由过滤条件保证**，
+      // 不是对数据的假设：按公司过滤时全部等于该值；按部门过滤时 `#scanAppointments`
+      // 已核对每条命中的 `scope.companyId` 等于**部门记录反解出**的公司（D1）。
+      // 故取首条不是「选择」而是取值——不引入时序/首任推断（§2.3 禁止的正是那类
+      // 推断）。若该保证被移除（例如去掉 D1 核对），这里会退化为顺序相关的结果。
+      // 需要逐条归属的调用方用 `listAppointments`（一条任职一项）。
+      const first = employeeHits[0];
+      if (first === undefined) continue; // 不可能：Map 的值由上面 push 建出，至少一项。
+      found.push({
+        employeeId,
+        employee,
+        companyId: first.scope.companyId,
+        appointmentIds: employeeHits.map((hit) => hit.record.id),
+      });
+    }
+    return found;
   }
 
   #readDocumentVersion(id: string): SoloipsDocumentVersionRecord {
@@ -2122,6 +2299,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
 
   getCompany(id: SoloipsCompanyId): SoloipsCompanyRecord | undefined {
     this.#assertOpen();
+    if (!isCompanyId(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
     return this.#domain.table("company").get(id);
   }
 
@@ -2187,6 +2367,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
 
   listDepartments(companyId: SoloipsCompanyId): readonly SoloipsDepartmentRecord[] {
     this.#assertOpen();
+    if (!isCompanyId(companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
     const found: SoloipsDepartmentRecord[] = [];
     for (const [, record] of this.#domain.table("department").entries()) {
       if (record.companyId === companyId) found.push(record);
@@ -2194,8 +2377,27 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     return found;
   }
 
+  /**
+   * 读取部门（读面；`get*` 惯例返回 `undefined`，**不抛**）。
+   *
+   * 〔不复用 `#readDepartment`〕后者抛 `SOLOIPS_CORE_PRECONDITION`（写路径辅助的
+   * 「引用的既有事实不存在」语义）；查询里「部门不存在」是可预期结果，
+   * 与 `getCompany`/`getEmployee` 同口径。混用会让调用方被迫用 try/catch 表达
+   * 「没找到」，也让「查询」与「命令」的失败语义不再可区分。
+   */
+  getDepartment(id: SoloipsDepartmentId): SoloipsDepartmentRecord | undefined {
+    this.#assertOpen();
+    if (!isDepartmentId(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "departmentId 形状不合法");
+    }
+    return this.#domain.table("department").get(id);
+  }
+
   getEmployee(id: SoloipsEmployeeId): SoloipsEmployeeRecord | undefined {
     this.#assertOpen();
+    if (!isEmployeeId(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "employeeId 形状不合法");
+    }
     return this.#domain.table("employee").get(id);
   }
 
@@ -2218,6 +2420,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    */
   getAppointment(id: SoloipsAppointmentId): SoloipsAppointmentRecord | undefined {
     this.#assertOpen();
+    if (!isAppointmentId(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "appointmentId 形状不合法");
+    }
     const record = this.#domain.table("appointment").get(id);
     if (record === undefined) return undefined;
     return { ...record, scope: this.#resolveAppointmentScope(record) };
@@ -2225,6 +2430,9 @@ class SoloipsCompanyStore implements SoloipsCoreService {
 
   getDocumentVersion(id: SoloipsDocumentVersionId): SoloipsDocumentVersionRecord | undefined {
     this.#assertOpen();
+    if (!isDocumentVersionId(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "versionId 形状不合法");
+    }
     return this.#domain.table("document_version").get(id);
   }
 
@@ -2257,19 +2465,33 @@ class SoloipsCompanyStore implements SoloipsCoreService {
    *
    * 〔`includeUnusable` 的用途〕管理/诊断视图需要看到「为什么这个团队不可用」，
    * 此时返回全部并逐项带 `usable`/`leadReference`（P-8.5 的显式状态要求）。
+   *
+   * 〔`departmentId` 过滤（BE-4a 扩键）〕组织树「部门 → 团队」与编组场景需要按
+   * 部门收窄。**扩键而非新增方法**：同一份可用性判据与投影不应有第二条实现路径
+   * （多一个方法就多一处可能与 P-4 判据漂移的读面）。缺省＝不过滤，既有语义不变。
+   * 两个条件为**与**关系；`departmentId` 指向不存在/别的公司的部门时返回空数组
+   * （查询语义是「在这个范围内找」，空结果是合法结论，不报错）。
    */
   listTeams(
     companyId: SoloipsCompanyId,
-    options?: { readonly includeUnusable?: boolean },
+    options?: {
+      readonly includeUnusable?: boolean;
+      readonly departmentId?: SoloipsDepartmentId;
+    },
   ): readonly SoloipsTeamView[] {
     this.#assertOpen();
     if (!isCompanyId(companyId)) {
       throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
     }
+    const departmentId = options?.departmentId;
+    if (departmentId !== undefined && !isDepartmentId(departmentId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "departmentId 形状不合法");
+    }
     const includeUnusable = options?.includeUnusable === true;
     const found: SoloipsTeamView[] = [];
     for (const [, record] of this.#domain.table("team").entries()) {
       if (record.companyId !== companyId) continue;
+      if (departmentId !== undefined && record.departmentId !== departmentId) continue;
       const view = this.#teamView(record);
       if (!includeUnusable && !view.usable) continue;
       found.push(view);
@@ -2277,8 +2499,192 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     return found;
   }
 
+  // ── 读投影扩容（BE-4a；全部只读：不产生 kind、不写状态、不跑 reconcile） ────
+
+  /**
+   * 列员工（两跳：`appointment` → `employee`；去重键 = `employeeId`）。
+   *
+   * 过滤参数**二选一**（类型层钉住；运行期再校验一次——JS 调用方不受类型保护）：
+   *  - `companyId`：任意 kind 的任职，解析后 `companyId` 相符；
+   *  - `departmentId`：仅部门级任职且 `departmentId` 相符（公司级/团队级不挂部门）。
+   *
+   * 〔status 口径〕只计 `status='active'` 的任职（撤销不构成当前归属）。
+   * 〔不可判定记录〕分支 3 → `SOLOIPS_CORE_RECORD_INVALID` 冒泡，**不跳过**
+   * （跳过会让结果静默漏掉该员工；与总助理唯一性判定同向 fail-closed）。
+   */
+  listEmployees(
+    filter:
+      | { readonly companyId: SoloipsCompanyId; readonly departmentId?: undefined }
+      | { readonly departmentId: SoloipsDepartmentId; readonly companyId?: undefined },
+  ): readonly SoloipsEmployeeAffiliation[] {
+    this.#assertOpen();
+    const companyId = filter.companyId;
+    const departmentId = filter.departmentId;
+    if ((companyId === undefined) === (departmentId === undefined)) {
+      throw new SoloipsCoreError(
+        "SOLOIPS_CORE_VALIDATION",
+        "listEmployees 需要且只需要一个过滤键：companyId 或 departmentId" +
+          "（两者都给会让「按公司」与「按部门」的语义混在一处，都不给则退化为全量扫描，非本方法用途）",
+      );
+    }
+    if (companyId !== undefined) {
+      if (!isCompanyId(companyId)) {
+        throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+      }
+      return this.#affiliationsOf(
+        this.#scanAppointments({ companyId }, `按公司 ${companyId} 列员工`),
+      );
+    }
+    if (departmentId === undefined || !isDepartmentId(departmentId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "departmentId 形状不合法");
+    }
+    return this.#affiliationsOf(
+      this.#scanAppointments({ departmentId }, `按部门 ${departmentId} 列员工`),
+    );
+  }
+
+  /**
+   * 列任职（过滤键可任意组合；**不去重**——一条任职一项）。
+   *
+   * 〔status 口径〕缺省只给 `active`（与 `listEmployees` 同一口径）；
+   * `includeRevoked: true` 返回全部（历史/审计视图）。
+   * 〔作用域〕返回项 `scope` 恒为解析后（§2.3）；分支 3 → `RECORD_INVALID` 冒泡。
+   * 〔`departmentId` 与 `employeeId` 的组合〕与关系：部门级任职 + 该员工。
+   */
+  listAppointments(filter?: {
+    readonly companyId?: SoloipsCompanyId;
+    readonly departmentId?: SoloipsDepartmentId;
+    readonly employeeId?: SoloipsEmployeeId;
+    readonly includeRevoked?: boolean;
+  }): readonly SoloipsAppointmentView[] {
+    this.#assertOpen();
+    const companyId = filter?.companyId;
+    const departmentId = filter?.departmentId;
+    const employeeId = filter?.employeeId;
+    if (companyId !== undefined && !isCompanyId(companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
+    if (departmentId !== undefined && !isDepartmentId(departmentId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "departmentId 形状不合法");
+    }
+    if (employeeId !== undefined && !isEmployeeId(employeeId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "employeeId 形状不合法");
+    }
+    const hits = this.#scanAppointments(
+      {
+        ...(companyId === undefined ? {} : { companyId }),
+        ...(departmentId === undefined ? {} : { departmentId }),
+        ...(employeeId === undefined ? {} : { employeeId }),
+        ...(filter?.includeRevoked === undefined ? {} : { includeRevoked: filter.includeRevoked }),
+      },
+      "列任职",
+    );
+    return hits.map((hit) => ({ ...hit.record, scope: hit.scope }));
+  }
+
+  /**
+   * 列某员工的全部文档版本（历史，含非当前版本）。
+   *
+   * 〔为什么不按 `currentDocuments` 收窄〕本方法是**版本历史**：CAS 冲突时
+   * 未提升的版本仍持久保留（02-company-contract §11.1），调用方需要看到它。
+   * 当前引用由 `getEmployee().currentDocuments` 表达，两者分工不同。
+   *
+   * 〔空结果不是错误〕员工不存在或没有版本都返回空数组——列表方法不因过滤键
+   * 指向不存在的实体而报错（需要存在性判定用 `getEmployee`）。
+   */
+  listDocumentVersions(employeeId: SoloipsEmployeeId): readonly SoloipsDocumentVersionRecord[] {
+    this.#assertOpen();
+    if (!isEmployeeId(employeeId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "employeeId 形状不合法");
+    }
+    const found: SoloipsDocumentVersionRecord[] = [];
+    for (const [, record] of this.#domain.table("document_version").entries()) {
+      if (record.ownerId === employeeId) found.push(record);
+    }
+    return found;
+  }
+
+  /**
+   * 总助理读面（SA-01.1 的**显式状态**实现，data-contract §2.4.1）。
+   *
+   * 判据与 `#assertNoActiveGeneralAssistant` **同一口径**（读面不得有第二套语义）：
+   * `status='active'` ∧ `role='general_assistant'` ∧ 作用域解析后
+   * `kind='company'` 且 `companyId` 相符。
+   *
+   * 〔三态区分，缺一不可〕
+   *  - 公司记录**读不到** → `uncovered`（查询未覆盖该公司）；
+   *  - 公司存在且无有效总助理 → `vacant`（§2.4.1 的合法「待招募」态；
+   *    `administrators` 显式为空数组，不让调用方去区分「缺省」与「空」）；
+   *  - 存在一条 → `present`；**多于一条** → `inconsistent`（§2.4.2 的唯一性被
+   *    破坏时不取首条掩盖，如实暴露，见 `SoloipsAdministratorProjection`）。
+   *
+   * 〔失败＝抛出，不是某个分支〕store 已关闭、介质读取失败、以及**作用域不可
+   * 判定**的记录（§2.3 分支 3）都抛错。最后一条是刻意的 fail-closed：一条
+   * `role='general_assistant'` 但解析不出归属的记录**可能**就是本公司的总助理
+   * （猜「不是」同样是猜，与 `#assertNoActiveGeneralAssistant` 同向），故查询
+   * 失败而不是返回 `vacant`——否则数据损坏会被读成「待招募」。
+   * 撤销的任职**不是**失败：它确定不占名额（与唯一性判定一致），故不入选。
+   *
+   * 〔读面纪律〕不产生 kind、不写状态、不跑 reconcile（P-8.1 的落盘由
+   * `reconcileTeams` 显式承担）。
+   */
+  listAdministrators(companyId: SoloipsCompanyId): SoloipsAdministratorProjection {
+    this.#assertOpen();
+    if (!isCompanyId(companyId)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "companyId 形状不合法");
+    }
+    if (this.#domain.table("company").get(companyId) === undefined) {
+      return {
+        status: "uncovered",
+        companyId,
+        message:
+          `公司 ${companyId} 不在本读面的覆盖范围内（公司记录不存在）；` +
+          "这不表示该公司「没有总助理」——两者不得互相冒充（SA-01.1）",
+      };
+    }
+    const administrators: SoloipsAdministratorView[] = [];
+    for (const [, record] of this.#domain.table("appointment").entries()) {
+      if (record.status !== "active" || record.role !== "general_assistant") continue;
+      // 作用域先解析后比较（§2.3）：存量记录（无 scope、只有 departmentId）
+      // 解析为**部门级**，因此不会被误算作公司总助理；不可判定则抛错（见上）。
+      const scope = this.#resolveAppointmentScope(record);
+      if (scope.kind !== "company" || scope.companyId !== companyId) continue;
+      administrators.push({
+        appointmentId: record.id,
+        employeeId: record.employeeId,
+        status: "active",
+        scope,
+      });
+    }
+    if (administrators.length === 0) {
+      return {
+        status: "vacant",
+        companyId,
+        administrators: [],
+        message:
+          `公司 ${companyId} 没有有效的公司级 general_assistant 任职（data-contract §2.4.1 的` +
+          "「待招募总助理」合法状态）；招募入口见 §2.4.2（createEmployee + createAppointment）",
+      };
+    }
+    if (administrators.length > 1) {
+      return {
+        status: "inconsistent",
+        companyId,
+        administrators,
+        message:
+          `公司 ${companyId} 存在 ${administrators.length} 条有效的公司级 general_assistant 任职，` +
+          "违反 data-contract §2.4.2「同一公司同一时刻至多一条」；" +
+          "读面如实暴露全部条目（不取首条掩盖），须先撤销多余任职",
+      };
+    }
+    return { status: "present", companyId, administrators };
+  }
+
   getOperation(id: SoloipsOperationId): SoloipsOperationRecord | undefined {
     this.#assertOpen();
+    if (!isOperationIdShape(id)) {
+      throw new SoloipsCoreError("SOLOIPS_CORE_VALIDATION", "operationId 形状不合法");
+    }
     return this.#gate.getOperation(id);
   }
 
