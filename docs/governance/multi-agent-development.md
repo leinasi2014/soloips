@@ -306,6 +306,15 @@ L4: 新系统/子系统设计，影响多个团队/模块
 2. **完成即清理**。分支合并或任务终止后，用 `git worktree remove` 解除登记并删除目录；**不留孤儿目录**。
 3. **死目录必须清除**。`gitdir` 指向不存在路径的 worktree 目录（如 `.git` 文件写 `gitdir: <repo>/.git/worktrees/<name>` 而该路径不存在）会让 `git rev-parse HEAD` 报 `fatal: not a git repository`——**不得**把这种目录当作工作区使用，须清理。
 4. **不得据滞留目录做交付判断**。目录内自述为「快照/非 worktree」的标记（如 `_STALE_SNAPSHOT.md`）即视为**非权威**，不得作为开发或验收依据。
+5. **候选必须经分支提交，不得经文件拷贝合并**〔2026-09-18 补，来自实测事故〕。交付路径固定为：
+   `写手在 worktree 内改动 → 指挥在**该 worktree 内** commit 到其分支 → push → PR → CI 绿 → merge`。
+   **禁止**把候选文件从 worktree **拷贝**到主仓另一分支后提交——那样 worktree 里的原件会永远留在工作区成为「孤儿副本」，且**合并后无法用 `git merge-base` 判断它是否已交付**（`branch --merged` 只证明**分支指针**是祖先，而工作区改动**从未进入任何提交**）。
+   〔实测〕2026-09-18：6 个 worktree 中 4 个的改动全部已进 `main`，但因采用拷贝合并，其工作区仍显示 12 处 `M`/`??`，且 `git branch --merged` 给出**误导性的「已合并」**结论。
+6. **合并后的清理判据：按内容判，不按指针判**〔约束〕。rebase 合并会**重写提交 hash**，故 `git merge-base --is-ancestor <branch> main` 对**已合并**分支可能返回假（分支独有 commit 数非 0）。正确判据二选一：
+   - **`git cherry main <branch>`**：全部输出 `-`（等价补丁已在 main）即已交付；或
+   - **逐文件比对**：对分支改动的每个文件 `git cat-file -e main:<path>` 存在**且内容一致**。
+   **不得**仅凭 `branch --merged`、`git diff --stat` 的删除行数、或「分支名存在」判定可删。
+7. **清理动作留证据**。删除 worktree / 分支前记录：分支名、`git cherry` 结果（或逐文件比对结果）、被删目录；删除后复算 `git worktree list` 与 `git branch` 确认登记已解除。
 
 > **实例记录（2026-09-18，仅作纪律背景）**：`docs/operations/environment-handoff.md` 于 2026-09-16 声明 SoloIPs 候选位于 `.worktrees/team`、分支 `codex/team-fork-integration`。2026-09-18 盘点实测：该分支**在所有 ref 中不存在**，`.worktrees/team` **不是 git 登记的 worktree**（`gitdir` 指向不存在的 `.git/worktrees/team`），目录内 `_STALE_SNAPSHOT.md` 自述为非 worktree 快照。即**建了未用、遗留死目录**——正是本节纪律要避免的情形。详见 `.artifacts/operations/environment.local.md` §9.1 C2。
 
@@ -1020,3 +1029,4 @@ S0-T{01-06}-{子任务}
 |------|------|--------|------|
 | {YYYY-MM-DD} | {变更描述} | {Agent ID/用户} | {原因} |
 ```
+| 2026-09-18 | §4.5.2 新增第 5–7 条：**候选必须经分支提交、不得经文件拷贝合并**（拷贝合并会让 worktree 留下孤儿副本，且合并后无法用 `merge-base` 判断是否已交付——`branch --merged` 只证明分支指针是祖先）；**合并后清理判据按内容判不按指针判**（rebase 重写 hash 会让祖先判定失效，须用 `git cherry` 或逐文件比对）；**清理留证据** | 指挥 | 用户 2026-09-18 指出「worktree 里很多分区的代码」并追问「合并了为何不删除」；实测 6 个 worktree 中 4 个为拷贝合并遗留的孤儿副本 |
