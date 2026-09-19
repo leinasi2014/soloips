@@ -10,6 +10,26 @@
  * | 5. `unavailable` 与「空数据」可区分 | 「读面三态」一组 |
  * | 6. 界面/状态/调用输入中不存在账户标识字段 | 「身份边界」一组 |
  * | 9. 表单校验、确认前不写、按钮 disable/enable | 「表单与确认步骤」一组 |
+ * | 〔补盲〕无树根时 `refresh()` 不得发读请求 | 「无树根时 `refresh()`…」 |
+ * | 〔补盲〕读面 `ok:false` 两臂落 `failed`（不是 `unavailable`） | 「读根/读树返回 `ok:false`…」 |
+ *
+ * ── 〔补盲 FE-1a-GUARD〕两条由独立 QA 变异测试发现的守卫 ────────────────────
+ *
+ * 产品行为正确，缺的是**能发现行为被改坏**的断言。两处盲区的共同形态是
+ * 「状态可分性在一条无人观察的臂上失守」：
+ *
+ *  1. **无树根时的 `refresh()`**：既有用例只断言「**构造后**是 `no-root`、没有读
+ *     请求」，从不调用 `refresh()`；而刷新按钮不看 list 状态无条件渲染
+ *     （`CompanyPanel.tsx:416`），用户在 `no-root` 相位照样点得到。把 `#refresh`
+ *     的早退分支改成「伪造一个 `companyId` 去发读请求」曾让全套保持全绿。
+ *  2. **读面 `ok:false` 的两条错误臂**（`surface.ts:198` 与 `:203`）：全套里唯一的
+ *     `ok:false` 是给 `createCompany` 的，读面**从不**返回 `ok:false`。把两处
+ *     `{ kind: "failed" }` 改成 `{ kind: "unavailable" }` 曾让全套保持全绿——而
+ *     两者对用户的可行动指引不同（「读取出错，请排查」vs「服务尚未就绪，稍后刷新」），
+ *     把网关层失败伪装成「服务未就绪」是**错误的指引**。
+ *
+ * 〔判据形态〕两条守卫都断言**可观察行为**（调用记录 + 真渲染的文案/数据属性），
+ * 不是「代码里写着哪一行」；「先红后绿」的实测证据见切片 FE-1a-GUARD 的交付报告。
  *
  * ── 判据形态：真调用 + 真渲染，不是读文本 ──────────────────────────────────
  * 业务面（`./surface.js`）用**可编程的 Remote 替身**真调用；视图
@@ -139,6 +159,43 @@ function remoteStub(): RemoteStub {
     },
   };
   return stub;
+}
+
+/**
+ * 替身失败对象的形状：**只**要求「有字符串 `code`」，与消费侧的结构判别同口径。
+ *
+ * 〔为什么不是 `RemoteFailure`〕`RemoteFailure` 是 `RemoteError` **类实例**的联合
+ * （协议用类承载码与明细），替身不可能逐字段复制一个类实例；而本仓取文案的判据
+ * 本来就是结构判别（`soloipsErrorCopyOf` → `soloipsErrorCodeOf`：对象上有字符串
+ * `code` 即可），与协议自身的口径一致（`remote-error.d.ts`：「Discrimination is
+ * always by `code`, never by `instanceof`」）。因此「携带真实可读码的普通对象」
+ * 与真实失败在**被消费的维度上**等价——判据不是 `as` 伪造出来的形状。
+ */
+interface StubRemoteFailure {
+  readonly code: string;
+  readonly message: string;
+  readonly details: Readonly<Record<string, never>>;
+  readonly name: string;
+}
+
+/**
+ * 造一个**网关层失败**（`ok:false`）的替身。
+ *
+ * 〔为什么 `message` 刻意写成中文诊断〕它**不得上屏**（`data-contract.md`
+ * §2.7 I18N-1）：界面只按 `code` 取文案。写成一句可识别的诊断文本，使「有人把
+ * `message` 渲染出来」在断言里显形（下方用例断言的是**字典文案**，不是这句话）。
+ *
+ * @param code - 失败码；`gateway/internal` 是「载体/派发/未归类 Host 失败」。
+ * @returns 可放进 `RemoteResult` 错误臂的对象（用点处按本文件既有写法转 `never`，
+ *   与给 `createCompany` 的那条 `ok:false` 用例同形）。
+ */
+function gatewayFailure(code: string): StubRemoteFailure {
+  return {
+    code,
+    message: "替身：网关层失败（诊断文本不上屏）",
+    details: {},
+    name: "RemoteError",
+  };
 }
 
 /** 一个**确定性**的编号（测试不依赖随机 UUID）。 */
@@ -636,6 +693,163 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
       html,
       "no-root **不得**复用 list.empty——那是假陈述（公司可能存在，只是本会话不知道 id）",
     ).not.toContain(translate("soloips.company.list.empty"));
+  });
+
+  // ── 〔补盲 FE-1a-GUARD ①〕无树根时 `refresh()` 的守卫 ───────────────────────
+  //
+  // 〔为什么上一条用例不足以守住它〕上一条只断言「**构造后**是 `no-root`、没有读
+  // 请求」——`#refresh()` 的早退分支（`surface.ts:287-294`）从未被**调用**过。而
+  // 刷新按钮无条件渲染（`CompanyPanel.tsx:416`：不看 list 状态），用户在 `no-root`
+  // 相位照样点得到它，所以「点了会怎样」是真实的用户路径，不是理论分支。
+  //
+  // 〔变异体的形态〕把早退分支改成「伪造一个 `companyId` 去发读请求」曾让全套保持
+  // 全绿：构造路径不经过 `#refresh()`，而唯一调用 `refresh()` 的用例都先经
+  // `rootedPanel()` 确定了树根。下面的用例把「调用之后**仍然**没有任何读请求」钉住
+  // ——它同时覆盖状态面（`no-root` 保持）与调用面（`readCalls`/`treeCalls` 仍为空）。
+  it("无树根时调用 `refresh()`：**不得发出任何读请求**，状态仍是 `no-root`", async () => {
+    const stub = remoteStub();
+    const panel = new SoloipsCompanyPanel(stub.remote);
+    // 前置：构造后确实没有请求（把「构造」与「刷新」两条路径分开观察）。
+    expect(stub.readCalls.length, "前置：构造后不得有读请求").toBe(0);
+    expect(stub.treeCalls.length, "前置：构造后不得有树请求").toBe(0);
+
+    panel.actions.refresh();
+    // 读面调用是异步发起的：给替身足够的机会结算（若变异体发了请求，它必在此显形）。
+    await settle();
+    await settle();
+
+    expect(
+      stub.readCalls.length,
+      "无树根时 `refresh()` 不得发出 `getCompany`——「不猜 id」不只在构造时成立，用户点刷新时同样成立",
+    ).toBe(0);
+    expect(
+      stub.treeCalls.length,
+      "无树根时 `refresh()` 不得发出 `getCompanyTree`——伪造 id 去查会把「还没建」误导成「编号错了」",
+    ).toBe(0);
+    expect(
+      panel.getSnapshot().list.kind,
+      "无树根时 `refresh()` 之后仍是 `no-root`（不是 `loading`——那会让界面停在「读取中」）",
+    ).toBe("no-root");
+
+    const html = render(panel);
+    expect(html, "刷新后界面仍是 no-root 呈现").toContain('data-soloips-list-state="no-root"');
+    expect(html, "刷新后仍显示「本会话还没建」文案").toContain(
+      translate("soloips.company.list.noRoot"),
+    );
+    expect(html, "**不得**落到 loading——那正是「伪造 id 发请求」变异体的可观察形态").not.toContain(
+      'data-soloips-list-state="loading"',
+    );
+  });
+
+  it("无树根时连续多次 `refresh()` 仍不发请求（幂等，不因重复点击而猜 id）", async () => {
+    // 〔为什么还要一条〕刷新按钮**不禁用**（`CompanyPanel.tsx:416` 没有 `disabled`），
+    // 用户可连点。若早退分支被改成「先发请求、失败后再置 `no-root`」，连点会让
+    // 请求数随点击次数增长——单次断言可能被「第一次恰好没发」这类实现蒙混过关。
+    const stub = remoteStub();
+    const panel = new SoloipsCompanyPanel(stub.remote);
+    panel.actions.refresh();
+    panel.actions.refresh();
+    panel.actions.refresh();
+    await settle();
+    await settle();
+    expect(stub.readCalls.length, "三次 `refresh()` 后仍不得有 `getCompany`").toBe(0);
+    expect(stub.treeCalls.length, "三次 `refresh()` 后仍不得有 `getCompanyTree`").toBe(0);
+    expect(panel.getSnapshot().list.kind).toBe("no-root");
+  });
+
+  // ── 〔补盲 FE-1a-GUARD ②〕读面 `ok:false` 两条错误臂的守卫 ──────────────────
+  //
+  // 〔为什么是两条而不是一条〕`loadSoloipsCompanyList` 有两个独立的 `ok:false`
+  // 判定点（`surface.ts:198` 的读根、`:203` 的读树），各自早退。QA 实测**两处都可
+  // 单独被改成 `unavailable` 而全套全绿**——只覆盖其中一条会留下另一条无守卫。
+  //
+  // 〔为什么必须与 `unavailable` 分开〕两者对用户的可行动指引不同：
+  // `failed` 是「读取出错，请排查」；`unavailable`（Host 装配态 `core-unavailable`）
+  // 是「业务服务尚未就绪，稍后刷新」。把网关层失败伪装成「服务未就绪」会让用户
+  // **等一个不会自己好的状态**。这与验收条款 5（`unavailable` 与「查询成功但无数据」
+  // 必须可分）是**同一条可分性纪律在错误臂上的延伸**：不仅「未就绪 vs 空数据」要分，
+  // 「未就绪 vs 读取出错」也要分。
+  it("读根返回 `ok:false`：状态落 `failed`（**不是** `unavailable`），文案是 list.failed", async () => {
+    const stub = remoteStub();
+    const panel = await rootedPanel(stub);
+    stub.nextRead = () =>
+      Promise.resolve({ ok: false, error: gatewayFailure("gateway/internal") as never });
+    panel.actions.refresh();
+    await settle();
+
+    expect(
+      panel.getSnapshot().list.kind,
+      "网关层失败是 `failed`——`unavailable` 专指 Host 装配态（core-unavailable），两者不可互换",
+    ).toBe("failed");
+
+    const html = render(panel);
+    expect(html, "必须带 failed 的数据属性").toContain('data-soloips-list-state="failed"');
+    expect(html, "必须显示「读取公司列表时发生错误」").toContain(
+      translate("soloips.company.list.failed"),
+    );
+    expect(
+      html,
+      "**不得**显示「业务服务尚未就绪」——那会把网关层失败误导成「等一会儿就好」",
+    ).not.toContain(translate("soloips.company.list.unavailable"));
+    expect(
+      html,
+      "**不得**带 unavailable 的数据属性（界面按它选文案，属性对了文案才可能对）",
+    ).not.toContain('data-soloips-list-state="unavailable"');
+  });
+
+  it("读树返回 `ok:false`：状态落 `failed`（**不是** `unavailable`），文案是 list.failed", async () => {
+    const stub = remoteStub();
+    const panel = await rootedPanel(stub);
+    // 读根成功、读树失败：这是 `loadSoloipsCompanyList` 的**第二个**早退点。
+    stub.nextTree = () =>
+      Promise.resolve({ ok: false, error: gatewayFailure("gateway/internal") as never });
+    panel.actions.refresh();
+    await settle();
+
+    expect(
+      stub.treeCalls.length,
+      "前置：读树确实被调用过（否则本用例断言的是「没走到那里」而不是「走到了且判定正确」）",
+    ).toBeGreaterThan(0);
+    expect(
+      panel.getSnapshot().list.kind,
+      "读树的网关层失败同样是 `failed`，不得落 `unavailable`",
+    ).toBe("failed");
+
+    const html = render(panel);
+    expect(html, "必须带 failed 的数据属性").toContain('data-soloips-list-state="failed"');
+    expect(html, "必须显示「读取公司列表时发生错误」").toContain(
+      translate("soloips.company.list.failed"),
+    );
+    expect(html, "**不得**显示「业务服务尚未就绪」——读树失败与装配态是两回事").not.toContain(
+      translate("soloips.company.list.unavailable"),
+    );
+    expect(html).not.toContain('data-soloips-list-state="unavailable"');
+  });
+
+  it("两条错误臂都带失败原因（`error` 被保留，不是空对象）", async () => {
+    // 〔为什么这条必要〕`failed` 的渲染除了 `list.failed` 还会按**码**取一条诊断文案
+    // （`CompanyPanel.tsx:128` 的 `soloipsErrorCopyOf(list.error)`）。若错误臂把
+    // `error` 丢掉（例如 `{ kind: "failed", error: undefined }`），状态与文案仍会绿，
+    // 但界面失去可复制诊断——那是「失败但不可排查」的形态。
+    for (const arm of ["getCompany", "getCompanyTree"] as const) {
+      const stub = remoteStub();
+      const panel = await rootedPanel(stub);
+      const failure = gatewayFailure("gateway/internal");
+      if (arm === "getCompany") {
+        stub.nextRead = () => Promise.resolve({ ok: false, error: failure as never });
+      } else {
+        stub.nextTree = () => Promise.resolve({ ok: false, error: failure as never });
+      }
+      panel.actions.refresh();
+      await settle();
+      const list = panel.getSnapshot().list;
+      expect(list.kind, `${arm} 臂必须落 failed`).toBe("failed");
+      if (list.kind !== "failed") return;
+      expect(list.error, `${arm} 臂必须保留原失败对象（不得吞掉原因）`).toBe(failure);
+      expect(render(panel), `${arm} 臂必须把失败码上屏（可复制诊断）`).toContain(
+        translate("soloips.error.unknown", { code: "gateway/internal" }),
+      );
+    }
   });
 
   it("`ok` 非空时逐条渲染公司，且类型/状态经字典映射（四类型穷举可渲染）", async () => {
