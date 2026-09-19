@@ -37,7 +37,7 @@
 | 文档类型 `ip_summary` / `storyboard` | **未实现** | 代码枚举只有 `profile`/`avatar`/`soul`/`operating`/`work` |
 | `SoloipsEntitlement*` 与完整三层配额表（§3/§4） | **未实现** | 目标设计，属 **M0.2**（C-1）。**M0.1 的配额口径见下方「C-1 配额口径」** |
 | `SoloipsAuthContext` / `SoloipsPermissionService` | **未实现** | S0 用部署账户绑定替代，见 §3.1 临时例外。**账户绑定本身已实现**（BE-1）：根级绑定元数据 + `SOLOIPS_CORE_ACCOUNT_MISMATCH` 打开即拒 + `createCompany` 写真实 `accountId`（`store.ts:272-340`、`contracts.ts:531`） |
-| `SoloipsTeamRecord`（独立 Team 实体） | **已实现**（BE-3） | 四 kind（`SoloipsTeamKind`）+ 四值 status + P-4 组长引用核验 + P-7~P-9 三步成团协议；读面 `SoloipsTeamView` 带 `usable`/`leadReference` 显式状态（`contracts.ts:403-434`、`:864-917`） |
+| `SoloipsTeamRecord`（独立 Team 实体） | **已实现**（BE-3） | 十字段（`contracts.ts:442-467`：id / companyId / departmentId? / name / function / functionSource / confirmedBy? / leadAppointmentId? / status / createdAt）+ 四值 status（`SoloipsTeamStatus`）+ P-4 组长引用核验 + P-7~P-9 三步成团协议；读面 `SoloipsTeamView` 带 `usable`/`leadReference` 显式状态（`contracts.ts:1050`）。**注**：`SoloipsTeamKind` **不存在**——此前本行误记「四 kind」，2026-09-19 独立审查发现并订正（Team 无 kind 字段；职能由 `function`/`functionSource` 承载） |
 | `SoloipsTeamBindingRecord`（Team→DSH Team 绑定层） | **未实现** | adapter 的 `team` 端口是 fail-closed 占位；任务/attempt 状态归官方 Team。M0.1 只落纯数据层 `Team`（§2），`TeamBinding` 留后续——中间态合法，见 §1.2 注（C-6） |
 | `SoloipsExecutionBindingRecord` | **未实现** | 撤职使执行失效的验收因此尚未覆盖 |
 | `SoloipsAuditRecord` | **未实现** | 审计落库属 M3 里程碑 |
@@ -170,14 +170,17 @@ export type SoloipsCompanyId = SoloipsCoreId<'company'>;
 
 /**
  * 部门（公司内组织）
- * ⚠️ 以下为目标设计；代码只有 id/companyId/name，description/leaderAppointmentId/parentDepartmentId/status 待实现
+ * ⚠️ 以下为目标设计。**实现现状（2026-09-19 订正，逐字段核到 `contracts.ts:348-362`）**：
+ * 已实现 `id` / `companyId` / `name` / `leaderAppointmentId?`（DL-3 联动清除）；
+ * `description` / `parentDepartmentId` / `status` / `createdAt` 仍待实现。
+ * （此前本块整片标「待实现」而未区分字段，与 §0「Department 补 leaderAppointmentId?」自相矛盾。）
  */
 export interface SoloipsDepartmentRecord {
   readonly id: SoloipsDepartmentId;
   readonly companyId: SoloipsCompanyId;    // 必须归属公司
   readonly name: string;
   readonly description?: string;           // 待实现
-  readonly leaderAppointmentId?: SoloipsAppointmentId;  // 待实现
+  readonly leaderAppointmentId?: SoloipsAppointmentId;  // 已实现（DL-3：撤销部长时联动清除）
   readonly parentDepartmentId?: SoloipsDepartmentId;    // 待实现
   readonly status?: 'active' | 'paused' | 'archived';   // 待实现
   readonly createdAt?: string;             // 待实现
@@ -207,17 +210,19 @@ export type SoloipsAppointmentRole =
 
 /**
  * 任职记录
- * ⚠️ 以下为目标设计；代码用 departmentId/requiredCapabilities，scope(判别联合) 与 role 待实现
+ * ⚠️ 以下为目标设计。**实现现状（2026-09-19 订正，逐字段核到 `contracts.ts:382-412`）**：
+ * 已实现 `id` / `employeeId` / `departmentId?`（可选）/ `scope?`（判别联合）/
+ * `role?` / `requiredCapabilities`；其余仍待实现。
+ * （此前本块标「scope 与 role 待实现」，与 §0「Appointment 补 scope?/role?」自相矛盾。）
  */
 export interface SoloipsAppointmentRecord {
   readonly id: SoloipsAppointmentId;
   readonly employeeId: SoloipsEmployeeId;
-  // 当前已实现字段：
-  readonly departmentId: SoloipsDepartmentId;
+  readonly departmentId?: SoloipsDepartmentId;   // 已实现（可选）
   readonly requiredCapabilities: readonly string[];
+  readonly scope?: SoloipsAppointmentScope;      // 已实现（判别联合）
+  readonly role?: SoloipsAppointmentRole;        // 已实现
   // 待实现字段：
-  readonly scope?: SoloipsAppointmentScope;     // 任职作用域（判别联合）
-  readonly role?: SoloipsAppointmentRole;       // 任职角色
   readonly generation: number;                   // 权限代际（用于撤职后失效）
   readonly status: 'active' | 'revoked';
   readonly revokedAt?: string;
@@ -239,7 +244,10 @@ export type SoloipsAppointmentId = SoloipsCoreId<'appointment'>;
  * （`TeamMemberView.role`，fork `abdfeb4831`，`packages/experimental/agent-team/src/types.ts:61`）。
  * 二者分属不同层（core 任职 vs DSH Team roster），**不得**在 core 记录里写 `'lead'`/`'teammate'`。
  *
- * 〔待实现〕以下字段均属 M0.1 目标（`team` 表尚未建，见 §0）。
+ * 〔实现现状，2026-09-19 订正〕**`team` 表已建**（BE-3 交付；`domain.ts:472/480` 的
+ * `SoloipsDomainTableSpec<SoloipsTeamId, SoloipsTeamRecord>` 与 `teamRecordSchema`），
+ * 本块即其**逐字段现状**（核到 `contracts.ts:442-467`）。此前本行写「`team` 表尚未建」
+ * 与 §0「已实现（BE-3）」自相矛盾。
  */
 export interface SoloipsTeamRecord {
   readonly id: SoloipsTeamId;
@@ -592,8 +600,11 @@ export type SoloipsEmployeeId = SoloipsCoreId<'employee'>;
 /**
  * 操作记录（提交门的意图先行台账）
  *
- * 〔2026-09-18 BE-002〕**目标形状补 `schemaVersion`**——现有代码**无**该字段
- * （核验 `contracts.ts:183-191`），属〔待实现〕。
+ * 〔2026-09-18 BE-002 提出；**2026-09-19 订正为已实现**〕`schemaVersion?` 已落地
+ * （`contracts.ts:549`，随 BE-3 交付）。此前本行写「现有代码**无**该字段」，
+ * 与 §0 第 35 行「**及 `schemaVersion?`**（BE-3 交付）」自相矛盾。
+ * 〔边界〕字段存在 ≠ 写入总是带版本戳：`contracts.ts:546-548` 明记「**当前不满足**该介质
+ * 能力（sqlite 后端不写版本戳）」，读取策略按「无 `schemaVersion` ⇒ 版本 1 之前」处理。
  *
  * **为什么需要**：`kind` 是**封闭联合**，而契约扩展（如 BE-3 新增 `team.*`）
  * 会不断加项。若 operation 台账**不带版本**，则：

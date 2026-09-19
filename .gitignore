@@ -51,3 +51,13 @@ Thumbs.db
 # 本机智能体记忆与工作日志（ENV-01：本机记录不入库；含机器路径、内网地址与瞬时进程细节）
 .workbuddy-ai/
 .workbuddy/
+
+# 本机运行时产物（DSH 实例在仓库根就地启动时生成；非交付物）
+#
+# `profiles/soloips/cordis.yml` 是 profile 的 entry 树根文件（内容恒为 `[]`，
+# 由 dsh 在启动时就地生成）；`storages/` 是 storage-json 后端的默认落点
+# （`workspace.json`）。二者随实例运行变化，**不入版本控制**。
+# 〔注意〕同目录的 `cordis.patch.yml` / `package.json` / `pnpm-lock.yaml` 是
+# **交付物**，继续跟踪——故规则必须精确到文件/目录名，不得忽略整个 profiles/soloips/。
+profiles/soloips/cordis.yml
+/storages/
