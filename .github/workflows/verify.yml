@@ -45,11 +45,29 @@ jobs:
       - name: Format check
         run: pnpm run format:check
 
-      - name: Lint
-        run: pnpm run lint
-
+      # 〔约束〕Typecheck **必须**排在 Lint 之前，顺序不得调换。
+      #
+      # `pnpm run lint` 是 `oxlint --type-aware`，其类型感知规则（no-unsafe-* 等）
+      # 依赖 **跨包类型解析**：`soloips-core/contracts`、`soloips-adapter-dsh/contracts`
+      # 等裸说明符经各包 `exports.types` 指向 `lib/*.d.ts`，而这些文件由 `tsc -b`
+      # 生成（`lib/` 与 `*.tsbuildinfo` 均在 .gitignore 中，CI 检出时不存在）。
+      #
+      # 若 Lint 先跑，oxlint 解析不到这些模块，把每个导入值判为 `error` 类型，
+      # 于是报出成百上千条「Unsafe assignment of an error typed value」等
+      # **伪错误**（实测 f90cc99：863 条，横跨 core/store.ts、commit-gate.ts、
+      # web/src/index.ts、i18n 等），真实违规被淹没、门禁变成噪声。
+      #
+      # 〔实测，2026-09-19 单变量对照〕真清（删 `packages/*/lib` 与
+      # `packages/*/tsconfig.tsbuildinfo`）后：
+      #   - Lint 先跑 → 863 errors（复现 CI 红）
+      #   - Typecheck 先跑 → Lint 0 warnings / 0 errors（34 rules，66 files）
+      # 注意本地「绿灯」可能是**假绿**：残留的 `lib/` 或包根部的 stale
+      # `tsconfig.tsbuildinfo` 会让 `tsc -b` 跳过重建，从而掩盖本顺序缺陷。
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
 
       - name: Test
         run: pnpm run test
@@ -136,11 +154,13 @@ jobs:
       - name: Format check
         run: pnpm run format:check
 
-      - name: Lint
-        run: pnpm run lint
-
+      # 与主检查同一理由（见 verify job 内该步骤的长注释）：Typecheck 必须先于
+      # Lint，否则类型感知规则解析不到跨包 `lib/*.d.ts`，产出成百上千条伪错误。
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
 
       - name: Test
         run: pnpm run test
