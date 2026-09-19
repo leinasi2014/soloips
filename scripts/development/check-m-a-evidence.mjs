@@ -219,25 +219,41 @@ if (manifest.artifactSha256 !== actualArtifactSha) {
 }
 
 // ── 3. 证据内容自证 ─────────────────────────────────────────────────────────
+// `reports` 接受两种形态：
+//   - 字符串：`"report.json"`（无独立摘要；仅当 manifest 顶层给了 reportSha256 时校验）
+//   - 对象：`{ file, sha256 }`（**推荐**——每份报告各自绑定摘要，多报告时唯一正确形态）
+// 〔为什么必须支持对象形态〕多份证据（如「修复后全绿」+「摘除对照全绿」）用一个顶层
+// reportSha256 无法表达；若沿用字符串形态，第二份报告就没有摘要绑定。
 const reports = Array.isArray(manifest.reports) ? manifest.reports : [];
 if (reports.length === 0) {
   fail("M-A 证据门失败：manifest.reports 为空——必须列出至少一份 E2E 报告文件。");
 }
 
-for (const reportName of reports) {
+for (const entry of reports) {
+  const reportName = typeof entry === "string" ? entry : entry?.file;
+  if (typeof reportName !== "string" || reportName.length === 0) {
+    fail(
+      `M-A 证据门失败：manifest.reports 的条目形状非法（需字符串或 {file, sha256}）：${JSON.stringify(entry)}`,
+    );
+  }
   const reportPath = join(repo, "docs", "evidence", "be6a", reportName);
   if (!existsSync(reportPath)) {
     fail(`M-A 证据门失败：manifest 列出的报告不存在：docs/evidence/be6a/${String(reportName)}`);
   }
-  // 报告字节摘要：防止「报告文件被换掉而 manifest 未更新」。manifest 声明了
-  // reportSha256 就必须被强制——「声明了却不校验」正是本项目抓过的假绿形态
-  // （如 registerClient 声明了却不被读取）。
-  if (typeof manifest.reportSha256 === "string") {
+  // 报告字节摘要：防止「报告文件被换掉而 manifest 未更新」。声明了摘要就必须被强制
+  // ——「声明了却不校验」正是本项目抓过的假绿形态（如 registerClient 声明了却不被读取）。
+  const declaredSha =
+    typeof entry === "object" && entry !== null && typeof entry.sha256 === "string"
+      ? entry.sha256
+      : typeof manifest.reportSha256 === "string"
+        ? manifest.reportSha256
+        : undefined;
+  if (declaredSha !== undefined) {
     const actualReportSha = sha256Of(reportPath);
-    if (manifest.reportSha256 !== actualReportSha) {
+    if (declaredSha !== actualReportSha) {
       fail(
         `M-A 证据门失败：${String(reportName)} 的实际 sha256=${actualReportSha}，\n` +
-          `  与 manifest.reportSha256=${manifest.reportSha256} 不符——报告文件被改动过。`,
+          `  与 manifest 声明的 ${declaredSha} 不符——报告文件被改动过。`,
       );
     }
   }
@@ -263,9 +279,27 @@ for (const reportName of reports) {
   }
 }
 
+// `additionalEvidence[]` 的存在性校验：QA 复验指出「登记在案的文件可静默消失」
+// ——`reports[]` 有存在性 + 摘要校验，而 `additionalEvidence[]` 此前 0 处引用。
+// 这里补存在性（摘要可选，因该数组条目形状未约定摘要字段）。
+const additional = Array.isArray(manifest.additionalEvidence) ? manifest.additionalEvidence : [];
+for (const entry of additional) {
+  const name = typeof entry === "string" ? entry : entry?.file;
+  if (typeof name !== "string" || name.length === 0) {
+    fail(`M-A 证据门失败：manifest.additionalEvidence 条目形状非法：${JSON.stringify(entry)}`);
+  }
+  if (!existsSync(join(repo, "docs", "evidence", "be6a", name))) {
+    fail(
+      `M-A 证据门失败：manifest.additionalEvidence 登记的文件不存在：docs/evidence/be6a/${String(name)}\n` +
+        "  登记在案的文件不得静默消失（存在性由本门强制）。",
+    );
+  }
+}
+
 process.stdout.write(
   `M-A 证据门通过：触及 M-A 写面 ${String(touched.length)} 个文件；证据绑定 ${String(
     manifest.candidateSha,
   ).slice(0, 12)}（HEAD ${head.slice(0, 12)}），` +
-    `产物摘要一致，报告 ${String(reports.length)} 份且 embedded=true、无 failure。\n`,
+    `产物摘要一致，报告 ${String(reports.length)} 份且 embedded=true、无 failure；` +
+    `附加证据 ${String(additional.length)} 份均存在。\n`,
 );

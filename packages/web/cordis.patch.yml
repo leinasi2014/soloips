@@ -22,23 +22,30 @@
 - insert:
     - id: soloips-web
       name: "soloips-web"
-      # inject 只声明**必需且由目标组合保证存在**的服务（与 core 行
-      # `inject: [soloipsAdapter]` 同构）。
+      # 无 inject：Host 半边是纯投影消费者，方法体内**按调用**经 `coreOf(this.ctx)`
+      # 解析 `soloipsCore`（`src/index.ts:224-227`），未就绪时返回 `unavailable` 态
+      # 而不是让本行 pending（§2.5.1 裁定三：不伪装空数据）。
       #
-      # `soloipsCore`：Host 半边的全部业务方法（createCompany / getCompany /
-      # getCompanyTree / listDepartments / listTeams）经模块级 `coreOf(this.ctx)`
-      # 解析该服务（src/index.ts:224-227）；`getStatus` 探针不经它。
+      # 〔约束〕不得把 `soloipsCore` 写进本行 inject：
+      #   - **不必要**——`ctx.get` 走 isolate map + store 直查，**不读** `fiber.inject`
+      #     （`@deepseek-ai/cordis/lib/index.js:762-771`，其 docstring 明写
+      #     "without the inject requirement"）。读 `fiber.inject` 的是**属性访问**
+      #     路径（`ctx.soloipsCore`，同文件 :683-693），本包不用属性访问取 core。
+      #   - **有害**——写进 inject 会让本行在 core 就绪前保持 pending，连 `getStatus`
+      #     探针都不可用；且 core 被 disabled 时整个 web 行不激活，而本包的业务面
+      #     本可降级返回 `unavailable`（fail-soft 于本行，fail-closed 于调用）。
       #
-      # 〔约束〕不得省略本声明：cordis 的 `ctx.get` 沿 **fiber 链**向上读各 fiber
-      # 的依赖快照（@deepseek-ai/cordis/lib/index.js:683-693），而该快照**只在行
-      # 声明 inject 时填充**——`_checkImpl` 由 `this.inject` 的键集驱动
-      # （同文件 :1097-1099），服务发布后的 notify 也只唤醒 `name in fiber.inject`
-      # 的行（:836-842）。即「服务已 provide ≠ 本行可见」：漏声明时业务调用
-      # **静默**返回 `core-unavailable`，无 warn、无报错。
+      # 〔实测，2026-09-19 摘除对照〕在隔离实例上显式把本行 inject 置空后重跑真实
+      # 浏览器 E2E：`createCompany → committed`、读回 `ok`、刷新后读回 `ok`——
+      # **全绿**。即业务面可用性与本行 inject **无因果**。
+      # 〔同时修正的历史误判〕先前曾把某次 `core-unavailable` 归因于「inject 缺位」
+      # 并补上本声明；后经读源 + 摘除对照证实该归因错误——当时的真因是 **core 的
+      # 异步 open 尚未完成**（`_getImpl` 的 `strict && impl.fiber.state !== 2` 返回
+      # undefined），叠加 force-kill 残留的孤儿 lease 锁延长了 open 等待。该错误
+      # 修复已撤销（见本行现状）。
       #
-      # 客户端半边与本声明无关：`dsh.client` 是 package.json 字段（见文件头），
+      # 客户端半边与本行无关：`dsh.client` 是 package.json 字段（见文件头），
       # 浏览器内按 `dsh.client.inject` 排序，不由行 inject 驱动。
-      inject: [soloipsCore]
       config:
         # 统一开关位；false 时 Host 桥不注册任何路由/投影。
         enabled: true

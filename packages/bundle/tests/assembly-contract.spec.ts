@@ -185,18 +185,23 @@ describe("T01 assembly contract: patch shape (0.1.6 parser requirements)", () =>
     expect(duplicated).toEqual([]);
   });
 
-  it("declares soloipsCore in the soloips-web row inject (fiber dependency snapshot)", () => {
-    // 〔为什么这条是契约而非实现细节〕web 的五个业务方法经模块级 `coreOf(ctx)`
-    // 解析 `soloipsCore`（packages/web/src/index.ts:224-227），而 cordis 的
-    // `ctx.get` 沿 **fiber 链**读各 fiber 的依赖快照，快照**只在行声明 inject 时
-    // 填充**（@deepseek-ai/cordis/lib/index.js:683-693 的解析循环；`_checkImpl`
-    // 由 `this.inject` 的键集驱动，:1097-1099；服务发布后的 notify 也只唤醒
-    // `name in fiber.inject` 的行，:836-842）。
+  it("keeps soloipsCore out of the soloips-web row inject (call-time resolution)", () => {
+    // 〔这条守的是什么〕web 行**不得**声明 `inject: [soloipsCore]`。
     //
-    // 漏声明的失效模式是**静默**的：服务已 provide 也查不到，五个业务方法全部
-    // 返回 `core-unavailable`，无 warn、无报错——真实浏览器 E2E 实测如此。
-    // 与 `soloips-core` 行 `inject: [soloipsAdapter]` 同构（core 消费 adapter
-    // 服务同样必须声明）。
+    // 〔为什么〕`ctx.get` 走 isolate map + store **直查**，**不读** `fiber.inject`
+    // （@deepseek-ai/cordis/lib/index.js:762-771，docstring 明写 "without the inject
+    // requirement"）；读 `fiber.inject` 的是**属性访问**路径（`ctx.soloipsCore`，
+    // 同文件 :683-693）。web 的业务方法经模块级 `coreOf(ctx)` 用 `ctx.get` 解析
+    // （packages/web/src/index.ts:224-227），故**不需要**本行 inject。
+    //
+    // 写进 inject 反而有害：本行会在 core 就绪前 pending，连 `getStatus` 探针都不可用；
+    // core disabled 时整行不激活，而本包业务面本可降级返回 `unavailable`
+    // （§2.5.1 裁定三「不伪装空数据」）。
+    //
+    // 〔实测依据〕2026-09-19 摘除对照：隔离实例上显式把本行 inject 置空后重跑真实
+    // 浏览器 E2E —— `createCompany → committed`、读回 `ok`、刷新后读回 `ok`，**全绿**。
+    // 即业务面可用性与本行 inject 无因果。此前曾反向断言（要求必须声明 inject），
+    // 系误判（真因是 core 异步 open 未完成 + force-kill 残留孤儿 lease 锁），已撤销。
     const parsed = loadPatch(join(packagesRoot, "web", "cordis.patch.yml")) as {
       insert?: { id?: string; inject?: string[] }[];
     }[];
@@ -206,8 +211,8 @@ describe("T01 assembly contract: patch shape (0.1.6 parser requirements)", () =>
     expect(row, "web patch 必须声明 soloips-web 行").toBeDefined();
     expect(
       row?.inject ?? [],
-      "soloips-web 行必须 inject soloipsCore（缺声明时业务面静默返回 unavailable）",
-    ).toContain("soloipsCore");
+      "soloips-web 行不得 inject soloipsCore（ctx.get 不经 fiber.inject；声明会让本行在 core 就绪前 pending）",
+    ).not.toContain("soloipsCore");
   });
 
   it("does not insert the bundle package's own row (bundle only overwrites)", () => {
