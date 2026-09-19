@@ -61,6 +61,12 @@ jobs:
       # `packages/*/tsconfig.tsbuildinfo`）后：
       #   - Lint 先跑 → 863 errors（复现 CI 红）
       #   - Typecheck 先跑 → Lint 0 warnings / 0 errors（34 rules，66 files）
+      #
+      # 〔该数字是观测值，不是常量〕上面 863 条是 **f90cc99 当时的实测值**；它随
+      # 「新增/改动了多少文件」而变（QA 独立复现：同一顺序下 5fe75e3 为 913 条，
+      # 因三条修复分支新增了测试文件、`--type-aware` 的解析失败面随之扩大）。
+      # 故本注释的数字**只用于说明量级与机制**，不得当作断言去比对。
+      # 恒定的判据只有一条：**Typecheck 先跑 → Lint 0 errors**。
       # 注意本地「绿灯」可能是**假绿**：残留的 `lib/` 或包根部的 stale
       # `tsconfig.tsbuildinfo` 会让 `tsc -b` 跳过重建，从而掩盖本顺序缺陷。
       - name: Typecheck

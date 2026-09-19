@@ -80,7 +80,9 @@ Remote 业务面未变）。
 - 内层由严格 codec 的 zod `parse` **剥离**（非拒绝）。**实测**：`z.object({operationId,name,type}).parse({…, accountId:'x'})` → 结果键 `['operationId','name','type']`，`'accountId' in parsed === false`。
 - 故调用穿透到 core，撞上 free 计划的配额上限（该轮 create 已占满 1 家）。
 - **安全性成立**：`accountId` 未被采纳（core 用部署注入账户），零业务写。
-- 处置（已落地）：断言改为 5 条——不得 `committed`/`replayed`、错误码不含 `ACCOUNT`、同 operationId 重放无 `result`、对照调用同态、树条目数不变。判别力由 10 组响应形状的仿真证明（见该切片报告）。
+- 处置（已落地）：断言改为 5 条——不得 `committed`/`replayed`、错误码不含 `ACCOUNT`、同 operationId 重放无 `result`、对照调用同态、树条目数不变。判别力由 **11 组**响应形状的仿真证明（见该切片报告）。
+
+  **存活者（= 已知盲区，不是全绿注脚）**：该仿真捕获 8/11，**S6 与 S7 两组响应形状仍未被捕获**。独立 QA 对当前候选复跑该仿真器确认仍为 8/11，并用真实 core 构造出 S6 的具体复现：篡改调用若真建了**顶层**公司，介质公司总数 `1→2` 而本步的**子树计数判据 `1→1` 不变 ⇒ 检不出**。该限制在 E2E 脚本内（约 617-623 行）有注释自陈，检出责任转给 `tampered-replay` 步（同 operationId 重放无 `result`）。
 
 ### 本轮重启复现的环境事实（如实登记，勿读作产品能力）
 
