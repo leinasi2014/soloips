@@ -5,7 +5,7 @@
  * 为什么需要它（BE-0b-ii 单一目标的落点）：`getStatus` 这条通路此前只有
  * 「构建通过」与「单元 mock」两类证据，而本片要消除的正是「能构建但装不起来 /
  * 调不通」。curl 打 HTTP 不算浏览器验收——本脚本用 CDP 驱动真实 Chromium，
- * 在**页面上下文内**经官方 Remote 线协议调用 `soloipsWeb.getStatus`，
+ * 在**页面上下文内**经官方 Remote 线协议调用 `soloips.getStatus`，
  * 并同时记录：装配痕迹（页面模块图）、请求/响应（CDP Network domain）、
  * UI 呈现（截图 + DOM 文本）、刷新后复现。
  *
@@ -21,7 +21,13 @@
  *   --candidate-client <p>  必填。候选 `client.js` 绝对路径；用于**产物身份核对**
  *   --port <n>              CDP 端口，默认 9223
  *   --chrome <path>         Chromium 可执行文件；默认取本机 ms-playwright 缓存
- *   --method <ns/m>         Remote 方法，默认 soloipsWeb/getStatus
+ *   --method <ns/m>         Remote 方法，默认 soloips/getStatus
+ *
+ * 〔BE-6a：默认方法随 wire namespace 变更〕namespace 由服务键 `soloipsWeb`
+ * 显式覆盖为 `soloips`（`data-contract.md` §2.5 的调用面矩阵逐行写作
+ * `ctx.remote.soloips.<method>`）。端点 id 因此是 `soloips/getStatus`——本默认值
+ * 必须与生成物一致，否则脚本会打到不存在的路由。该一致性由
+ * `packages/web/tests/package-contract.spec.ts` 与产物套件分别钉住。
  *
  * 退出状态：0 = 两次往返均 ok:true、装配痕迹齐全、且加载的 bundle 含本次候选字节；
  *          1 = 任一断言失败。
@@ -71,7 +77,7 @@ function parseArgs(argv) {
     out: null,
     port: 9223,
     chrome: null,
-    method: "soloipsWeb/getStatus",
+    method: "soloips/getStatus",
     candidateClient: null,
   };
   for (let index = 0; index < argv.length; index++) {

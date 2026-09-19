@@ -22,14 +22,30 @@
 - insert:
     - id: soloips-web
       name: "soloips-web"
-      # 无 inject：
-      #   - Host 半边是纯投影消费者，通过 ctx.inject([...], cb) 在服务就绪后注册，
-      #     不阻塞本行挂载；
-      #   - 客户端半边在浏览器内按 dsh.client.inject 排序（该字段在 package.json，
-      #     当前为 `["@deepseek-ai/dsh-api-remotes"]`：api-remotes 是 `ctx.remote`
-      #     的提供者，本包的 `$mount` 依赖它先就位）。
-      # 在 0.1.6 下把非必需服务写进 inject 只会让本行 pending 并静默不工作
-      # （W0 MECH-06 / SOLO-F04），不会报错 —— 因此这里刻意留空。
+      # 无 inject：Host 半边是纯投影消费者，方法体内**按调用**经 `coreOf(this.ctx)`
+      # 解析 `soloipsCore`（`src/index.ts:224-227`），未就绪时返回 `unavailable` 态
+      # 而不是让本行 pending（§2.5.1 裁定三：不伪装空数据）。
+      #
+      # 〔约束〕不得把 `soloipsCore` 写进本行 inject：
+      #   - **不必要**——`ctx.get` 走 isolate map + store 直查，**不读** `fiber.inject`
+      #     （`@deepseek-ai/cordis/lib/index.js:762-771`，其 docstring 明写
+      #     "without the inject requirement"）。读 `fiber.inject` 的是**属性访问**
+      #     路径（`ctx.soloipsCore`，同文件 :683-693），本包不用属性访问取 core。
+      #   - **有害**——写进 inject 会让本行在 core 就绪前保持 pending，连 `getStatus`
+      #     探针都不可用；且 core 被 disabled 时整个 web 行不激活，而本包的业务面
+      #     本可降级返回 `unavailable`（fail-soft 于本行，fail-closed 于调用）。
+      #
+      # 〔实测，2026-09-19 摘除对照〕在隔离实例上显式把本行 inject 置空后重跑真实
+      # 浏览器 E2E：`createCompany → committed`、读回 `ok`、刷新后读回 `ok`——
+      # **全绿**。即业务面可用性与本行 inject **无因果**。
+      # 〔同时修正的历史误判〕先前曾把某次 `core-unavailable` 归因于「inject 缺位」
+      # 并补上本声明；后经读源 + 摘除对照证实该归因错误——当时的真因是 **core 的
+      # 异步 open 尚未完成**（`_getImpl` 的 `strict && impl.fiber.state !== 2` 返回
+      # undefined），叠加 force-kill 残留的孤儿 lease 锁延长了 open 等待。该错误
+      # 修复已撤销（见本行现状）。
+      #
+      # 客户端半边与本行无关：`dsh.client` 是 package.json 字段（见文件头），
+      # 浏览器内按 `dsh.client.inject` 排序，不由行 inject 驱动。
       config:
         # 统一开关位；false 时 Host 桥不注册任何路由/投影。
         enabled: true

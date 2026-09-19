@@ -1,0 +1,46 @@
+{
+  "note": "裁定六第 3 条（create → read → restart → read）的完整复现：同一 fact 在进程重启前后各读回一次。",
+  "companyId": "cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6",
+  "companyName": "BE-6a 验证公司 be6a-1789787511491",
+  "beforeRestart": {
+    "matched": true,
+    "readBack": {
+      "status": "ok",
+      "company": {
+        "id": "cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6",
+        "type": "enterprise",
+        "name": "BE-6a 验证公司 be6a-1789787511491",
+        "status": "active",
+        "createdAt": "2026-09-19T03:11:53.873Z"
+      }
+    },
+    "callUrl": "http://127.0.0.1:55321/api/soloips/getCompany",
+    "hostPid": 55404,
+    "hostPidSource": "Get-NetTCPConnection -LocalPort 55321 的 OwningProcess（实测）",
+    "probeWrittenAt": "2026-09-19T11:12:05+08:00",
+    "probeWrittenAtSource": "探针输出文件 mtime（实测）"
+  },
+  "afterRestart": {
+    "matched": true,
+    "readBack": {
+      "status": "ok",
+      "company": {
+        "id": "cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6",
+        "type": "enterprise",
+        "name": "BE-6a 验证公司 be6a-1789787511491",
+        "status": "active",
+        "createdAt": "2026-09-19T03:11:53.873Z"
+      }
+    },
+    "callUrl": "http://127.0.0.1:55321/api/soloips/getCompany",
+    "hostPid": 43872,
+    "hostPidSource": "Get-NetTCPConnection -LocalPort 55321 的 OwningProcess（实测）",
+    "probeWrittenAt": "2026-09-19T11:13:32+08:00",
+    "probeWrittenAtSource": "探针输出文件 mtime（实测）"
+  },
+  "identical": true,
+  "pidChanged": true,
+  "storageRoot": "D:/tmp/soloips-be6a/instance/storage-int3",
+  "host": "127.0.0.1:55321",
+  "boundary": "重启方式为强制终止（Stop-Process -Force，控制台应用无优雅关闭入口）→ 宿主残留 .soloips-writer-lease.json.lock（内容为已死 PID 55404）→ 按「锁主已死」判定清除后重启。该残留与清除动作属**环境事实**，如实登记；不证明产品具备自动失效锁检测。"
+}

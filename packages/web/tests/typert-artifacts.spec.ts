@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -19,12 +19,23 @@ const tsdownArtifacts = [
 ];
 
 /** tsc 产出（声明与类型面）：`typecheck` / `build` 都会写。 */
-const tscArtifacts = [
-  "types/index.d.ts",
-  "types/contracts.d.ts",
-  "types/index.js",
-  "types/contracts.js",
-];
+const tscArtifacts = ["types/index.d.ts", "types/contracts.d.ts"];
+
+/**
+ * tsc 在 `lib/types/` 下**不得**产出的文件（BE-6a 身份分裂修复）。
+ *
+ * 〔为什么是「不得存在」而不是「可以存在但不用」〕这两份 JS 中间产物是运行期
+ * 身份分裂的**唯一**来源：`lib/types/index.js`（tsc 副本）与 `lib/index.js`
+ * （tsdown 副本）各含一份 `SoloipsWebHost` 类定义，同一进程里 `A === B` 为
+ * false，`instanceof` 判别在装配路径上失败——E2E 实测表现为
+ * `soloips/createCompany → gateway/internal` /
+ * `"Receiver must be an instance of class SoloipsWebHost"`。
+ *
+ * 〔为什么不是只删掉不引用〕`files` 的 `lib/` 全量 glob 会把它们打进 tarball，
+ * `check-delivery-load` 的 `checkDeclaredDependencies` 也会把它们当交付面证据
+ * 扫裸说明符。故判据是**磁盘上不存在**。
+ */
+const forbiddenTscJsArtifacts = ["types/index.js", "types/contracts.js"];
 
 /**
  * Typert 生成物契约测试（BE-0a）。
@@ -278,6 +289,35 @@ describe("soloips-web Typert artifacts", () => {
     expect(missing, "tsc 已产出 lib/types 但声明文件不齐").toEqual([]);
   });
 
+  it("keeps lib/types free of JS (运行期身份分裂的唯一来源)", () => {
+    // 〔为什么非条件断言〕判据是「tsc 的 JS 中间产物**不存在**」，与 tsdown 是否
+    // 跑过无关；`lib/types` 由 `typecheck` 阶段写出，故 CI 的 `test` 步骤
+    // （build 之前）就已覆盖这一面。条件早退会让本断言在 CI 上恒被跳过。
+    //
+    // 〔本用例防的失效模式〕把 `packages/web/tsconfig.json` 的
+    // `emitDeclarationOnly` 去掉（或把 tsdown 的 entry 改回 `lib/types/index.js`）：
+    // 前者让 `lib/types/*.js` 复活、后者让交付面依赖它。两者都重建出
+    // 「两份 SoloipsWebHost 类定义」，而**没有任何其它门禁**会因此变红
+    // （tsc 通过、lint 通过、构建通过、产物形态检查通过）——只有真实浏览器
+    // E2E 才会在调用时以 `gateway/internal` 暴露。
+    if (!existsSync(join(libDir, "types"))) return;
+    const resurrected = forbiddenTscJsArtifacts.filter((file) => existsSync(join(libDir, file)));
+    expect(
+      resurrected,
+      "lib/types 下不得出现 tsc 的 JS 中间产物——它与 lib/index.js 构成两份 " +
+        "SoloipsWebHost 类定义（instanceof 判别失败，E2E 报 gateway/internal）",
+    ).toEqual([]);
+
+    // 〔更深一层〕目录里**任何** `.js` 都不得存在，而不只是上面两条具名文件：
+    // 新增源文件（如 `src/foo.ts`）会带来 `lib/types/foo.js`，具名清单漏掉它。
+    // 判据按扩展名扫全目录，与 `check-delivery-load` 的 `checkDeclaredDependencies`
+    // 口径一致（它扫 `lib/` 下全部 `.js`）。
+    const allJs = readdirSync(join(libDir, "types"), { recursive: true })
+      .map((entry) => String(entry).replaceAll("\\", "/"))
+      .filter((entry) => entry.endsWith(".js") || entry.endsWith(".js.map"));
+    expect(allJs, "lib/types 必须是纯声明目录（.d.ts / .d.ts.map）").toEqual([]);
+  });
+
   it("carries the getStatus invocation in the Host face model", () => {
     const path = join(libDir, "typert.host.js");
     if (!existsSync(path)) return;
@@ -285,7 +325,12 @@ describe("soloips-web Typert artifacts", () => {
     // 生成器的 Host 产物是 TYPERT 常量：含 package/face 与 invocations 表。
     expect(host).toContain("export const TYPERT");
     expect(host).toContain("'soloips-web'");
-    expect(host).toContain("soloipsWeb/getStatus");
+    // 〔端点 id 用 wire namespace，不是服务键〕BE-6a 起 namespace 显式覆盖为
+    // `soloips`（data-contract §2.5 的调用面矩阵）；服务键仍是 `soloipsWeb`。
+    // 两者不同形是**刻意的**（§2.5 的「两套命名面」约束），故本断言固定端点 id，
+    // 并由紧随的断言固定服务键仍在产物里——只钉一个会漏掉「两者被合并」这一形态。
+    expect(host).toContain("soloips/getStatus");
+    expect(host, "服务键仍须是 soloipsWeb（与 wire namespace 分离）").toContain("'soloipsWeb'");
   });
 
   it("emits a mountable Remote contribution for the browser half", () => {
@@ -294,7 +339,7 @@ describe("soloips-web Typert artifacts", () => {
     const remote = readFileSync(path, "utf8");
     // Client 侧挂载的是 TYPERT_REMOTE（TypertRemoteContribution，含严格 codec）。
     expect(remote).toContain("export const TYPERT_REMOTE");
-    expect(remote).toContain("soloipsWeb/getStatus");
+    expect(remote).toContain("soloips/getStatus");
   });
 
   it("generates Remote consumer types from the public ./contracts subpath", () => {

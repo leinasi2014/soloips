@@ -1,0 +1,28 @@
+{
+  "note": "M-A 装配层身份一致性（裁定六）证据绑定清单。任一字段对应的 SHA / 摘要变化即本证据 stale，必须在本机重跑真实消费者链路后更新。 本清单绑定**集成候选**（三条审查修复分支 + CI 顺序修复的合并结果）：reports[] 内的报告均由该候选在本机真实实例上产生。ablation-no-inject.json 是**历史对照**（绑定的是更早的候选 cf56b2c / 摘要 8eafb230），它证明「web 行 inject 与业务面可用性无因果」这一命题，**不是**本候选的证据，故登记在 additionalEvidence[] 而非 reports[]。",
+  "candidateSha": "2205d097d0815944bafe065847853aa9a426f558",
+  "artifactPath": "packages/web/lib/client.js",
+  "artifactSha256": "25059a0de99a7aa4d5dfec1da0db5a3a36d8beb779fd5c3f94ce85a2905d3df8",
+  "runtimeFingerprint": {
+    "harness": "deepseek-harness fork 0.1.6-alpha.1",
+    "runtimePath": "D:/Source/workspace/deepseek-harness/apps/cli/lib/bin.js",
+    "node": "v24.18.0",
+    "instance": "isolated DSH_HOME D:/tmp/soloips-be6a/instance/home",
+    "host": "127.0.0.1:55321",
+    "storageRoot": "D:/tmp/soloips-be6a/instance/storage-int3",
+    "planCode": "free"
+  },
+  "reports": [
+    {
+      "file": "e2e-company-final.json",
+      "sha256": "25cd735b49718dd4fdc73a4e93626941f5f00b5a01c252e876ad6112ea542a3a"
+    }
+  ],
+  "additionalEvidence": [
+    "restart-readback.json",
+    "restart-readback-pair.json",
+    "ablation-no-inject.json"
+  ],
+  "qaVerdict": "pending",
+  "ciRunId": "pending"
+}
