@@ -4,6 +4,13 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
+import {
+  PAGE_MODULE_TABLE_WORDS,
+  pageRequire,
+  type ModuleTableRequest,
+} from "./support/page-modules.js";
+import { pageContext } from "./support/page-context.js";
+
 const pkgRoot = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(pkgRoot, "..");
 const repoRoot = join(packageDir, "..", "..");
@@ -43,12 +50,36 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     // 它是「客户端半边存在」的最低事实，与 bundle 是否已打包无关。
     expect(existsSync(clientSource), `客户端入口必须存在：${clientSource}`).toBe(true);
     const source = readFileSync(clientSource, "utf8");
-    expect(source, "必须导出 apply（cordis 插件入口）").toContain("export function apply(");
-    expect(source, "必须导出 inject（服务等待声明）").toContain("export const inject");
-    // 值导入面必须**只有**本包的 /remote：跨插件值耦合是 DEV-04 违规。
-    const valueImports = [...source.matchAll(/^import\s+(?!type\b)[^;]*from\s+"([^"]+)"/gm)].map(
-      (match) => match[1],
+    // 〔判据一律先剥注释〕本文件的说明文字与 `src/client/index.ts` 的文件头都会
+    // **逐字引用**这些声明形态（讨论缺陷时必然要写出旧形态的原文）。不剥注释时
+    // `toContain` 会被注释本身满足——**实测**：把源码改回 `export function apply(`
+    // 后断言仍通过，因为文件头里写着 `export async function apply(...)`。故取值面
+    // 必须先剥掉注释，否则这是一条「读文本却读到了说明文本」的假绿。
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // 〔FE-1a-FIX 订正〕原断言是 `toContain("export function apply(")`，它把**缺陷形态**
+    // 当成了契约。cordis 的 `Fiber._execute` 用 `isConstructor` 分派
+    // （`@deepseek-ai/cordis@4.0.2` 的 `lib/index.js:1066-1070`），而该判据就是
+    // 「`func.prototype` 存在」（同文件 `:57-62`）——**函数声明有 `prototype`**，于是
+    // `apply` 被 `new` 调用、其返回值（卸载钩子）被丢弃，卸载路径静默失效。
+    // `async function` 声明没有 `prototype`，走普通调用分支，返回值被
+    // `Fiber._execute` 以 `then` 收下（`:1144`）。故本断言钉住的是**正确形态**；
+    // 行为判据（真 cordis 卸载路径）见
+    // `tests/artifacts/artifact-behavior.artifact.ts` 的「hands apply's disposer to
+    // the framework」用例——本条只是廉价的前哨，不能替代那条。
+    expect(code, "必须导出 async 形态的 apply（无 prototype，cordis 才会收下返回值）").toContain(
+      "export async function apply(",
     );
+    expect(
+      code,
+      "不得残留函数声明形态的 apply（有 prototype 即被 cordis 以 new 调用、返回值被丢弃）",
+    ).not.toContain("export function apply(");
+    expect(code, "必须导出 inject（服务等待声明）").toContain("export const inject");
+    // 值导入面必须**只有**本包的 /remote（`./company/register.js` 的导入不算：
+    // 它是**本包内部**的相对导入，不是跨包值耦合）。判据取**裸说明符**：相对
+    // 导入以 `.` 开头，而跨包值耦合必然是裸包名。
+    const valueImports = [...source.matchAll(/^import\s+(?!type\b)[^;]*from\s+"([^"]+)"/gm)]
+      .map((match) => match[1])
+      .filter((specifier) => specifier !== undefined && !specifier.startsWith("."));
     expect(
       valueImports,
       "浏览器半边只允许值导入本包生成的 /remote（其余经 cordis 服务协作）",
@@ -60,8 +91,8 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     // （`typert(client): soloips-web must export ./client/typert as …`）。
     // `remote` 的提供者是官方 api-gateway/client，我们只是消费者。
     //
-    // 判据先剥掉注释：本文件的说明文字里就写着这条约束，不剥会把注释本身当违规。
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // 判据用的 `code`（已剥注释）见本用例开头——本文件的说明文字里就写着这条约束，
+    // 不剥会把注释本身当违规。
     expect(code, "浏览器半边不得声明 Context 增强（会被生成器读成服务贡献面）").not.toContain(
       "declare module",
     );
@@ -132,35 +163,67 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     const registration = registrations[0];
     expect(registration?.id).toBe(CLIENT_PACKAGE_ID);
 
-    // 物化工厂。传入的 `require` 故意抛错：本 bundle 的说明符要么走模块表
-    // （页面 seed），要么已被内联——任何 `require` 都说明外部面漏配了。
-    const exports = registration?.factory((specifier: string) => {
-      throw new Error(`意外的 require：${specifier}（既非页面模块表词，也未被内联）`);
-    }) as { apply?: unknown; inject?: unknown };
+    // 物化工厂。`require` 用页面模块表的替身：表内说明符返回真实模块，表外的抛错。
+    // 〔FE-1a 起的事实变化〕此前这里传的是「必然抛错」的哨兵，用来证明「外部面
+    // 漏配了」；公司面板引入 React 后产物**合法地**请求 `react`（页面模块表的行），
+    // 故判据精确化为「请求面 ⊆ 模块表」——见 `./support/page-modules.js`。
+    const requests: ModuleTableRequest[] = [];
+    const exports = registration?.factory(pageRequire(requests)) as {
+      apply?: unknown;
+      inject?: unknown;
+    };
 
-    expect(exports.inject, "inject 必须声明 remote 服务").toEqual(["remote"]);
+    expect(
+      requests.map((request) => request.specifier).sort(),
+      "产物请求的每个说明符都必须在页面模块表内（表外即页面无法应答）",
+    ).toEqual(
+      requests
+        .filter((request) => request.inTable)
+        .map((request) => request.specifier)
+        .sort(),
+    );
+    expect(requests.length, "产物至少应请求 react 的 JSX 运行时").toBeGreaterThan(0);
+    expect(exports.inject, "inject 必须声明 remote / slots / locale 三个服务").toEqual([
+      "remote",
+      "slots",
+      "locale",
+    ]);
     expect(typeof exports.apply, "apply 必须是函数").toBe("function");
 
     // `apply` 必须把生成的贡献交给 `$mount`，并**透传**其 disposer
     // （cordis 以 apply 的返回值作为卸载钩子；丢弃会让重载泄漏 namespace）。
-    const disposer = async (): Promise<void> => undefined;
-    const mounted: { package?: string; descriptors?: { id: string }[] }[] = [];
-    const returned = await (exports.apply as (ctx: unknown) => Promise<unknown>)({
-      remote: {
-        async $mount(contribution: { package: string; descriptors: { id: string }[] }) {
-          mounted.push(contribution);
-          return disposer;
-        },
-      },
-    });
+    //
+    // 〔为什么用 `./support/page-context.js` 而不是手写 ctx 字面量〕FE-1a 起 `apply`
+    // 在 `$mount` 之后还要注册公司面板，面板经 `ctx.get("remote.soloips")` 解析本包
+    // 的 namespace 服务（`register.js` 的 `servicesOf`，**产品代码真实走过的取值
+    // 路径**）。手写的 `{ remote: { $mount } }` 替身没有 `get` →
+    // `TypeError: ctx.get is not a function`（实测）。替身按官方语义补齐三件事：
+    // `$mount` 在 resolve 前把 namespace 装进服务表（`api-gateway/client` 的
+    // `createNamespace` → cordis 的 `Service` → `reflect.provide`）、`ctx.get` 整串
+    // 键直查 store、未发布的键返回 `undefined`。读源清单见该模块文件头。
+    const page = pageContext<{ package: string; descriptors: { id: string }[] }>();
+    const returned = await (exports.apply as (ctx: unknown) => Promise<unknown>)(page.ctx);
 
-    expect(mounted.length, "$mount 必须被调用一次").toBe(1);
-    expect(mounted[0]?.package).toBe(CLIENT_PACKAGE_ID);
+    expect(page.mounts.length, "$mount 必须被调用一次").toBe(1);
+    expect(page.mounts[0]?.contribution.package).toBe(CLIENT_PACKAGE_ID);
     expect(
-      mounted[0]?.descriptors?.map((descriptor) => descriptor.id),
+      page.mounts[0]?.contribution.descriptors?.map((descriptor) => descriptor.id),
       "挂载的必须是 Host 半边生成的 getStatus 描述符",
     ).toContain("soloips-web#soloips/getStatus");
-    expect(returned, "apply 必须透传 $mount 的 disposer").toBe(disposer);
+    // 〔顺序契约的可判定形态〕既定顺序是「先 `$mount`、再注册面板」；调换后
+    // `ctx.get("remote.soloips")` 读不到（服务表里还没有），`servicesOf` 抛错。
+    // 这里把事实钉住：面板注册**读到了**与挂载同一批实例的 namespace 服务。
+    expect(
+      page.service("remote.soloips"),
+      "面板注册必须在 $mount 之后：`ctx.get('remote.soloips')` 应解析到本次挂载装出的服务",
+    ).toBeDefined();
+    expect(returned, "apply 必须透传 $mount 的 disposer").not.toBe(page.mounts[0]?.unmount);
+    // 〔为什么是「不相等」〕FE-1a 起 `apply` 的返回值不再是 `$mount` 的 disposer
+    // 本身，而是一个**组合** disposer（先注销面板、再 await 卸载贡献）——卸载顺序
+    // 与安装顺序相反。断言「不是同一个函数」证明包装确实存在；断言「await 它不抛」
+    // 证明包装是可调用的（下一条）。
+    await (returned as () => Promise<void>)();
+    expect(page.namespaces(), "卸载后 namespace 服务必须从服务表撤回").toEqual({});
   });
 
   it("carries a strict codec that actually validates (非空贡献)", async () => {
@@ -176,31 +239,28 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     vm.createContext(sandbox);
     vm.runInContext(source, sandbox, { filename: "client.js" });
 
-    const exports = registrations[0]?.factory(() => {
-      throw new Error("本 bundle 不应有外部 require");
-    }) as { apply: (ctx: unknown) => Promise<unknown> };
-    let contribution:
-      | {
-          descriptors: {
-            id: string;
-            parameters: {
-              codec: {
-                mode: string;
-                create: () => { safeParse: (v: unknown) => { success: boolean } };
-              };
-            }[];
-            result: { create: () => { safeParse: (v: unknown) => { success: boolean } } };
-          }[];
-        }
-      | undefined;
-    await exports.apply({
-      remote: {
-        async $mount(c: typeof contribution) {
-          contribution = c;
-          return async () => undefined;
-        },
-      },
-    });
+    const exports = registrations[0]?.factory(pageRequire([])) as {
+      apply: (ctx: unknown) => Promise<unknown>;
+    };
+    // 本用例只消费贡献的 **codec 形状**（真贡献的其余字段不参与断言）。
+    interface CodecContribution {
+      descriptors: {
+        id: string;
+        parameters: {
+          codec: {
+            mode: string;
+            create: () => { safeParse: (v: unknown) => { success: boolean } };
+          };
+        }[];
+        result: { create: () => { safeParse: (v: unknown) => { success: boolean } } };
+      }[];
+    }
+    // 〔替身同上一用例〕`apply` 需要 `ctx.get("remote.soloips")` 解析本包的
+    // namespace 服务（面板注册路径）；见 `./support/page-context.js` 的读源清单。
+    // 本用例的判据是**贡献内容**，故从替身的挂载记录里取回贡献。
+    const page = pageContext<CodecContribution>();
+    await exports.apply(page.ctx);
+    const contribution = page.mounts[0]?.contribution;
 
     // 〔按 id 选，不按下标〕BE-6a 起本贡献含 6 条描述符（getStatus + 业务面五项），
     // 且生成顺序由生成器决定。按 `descriptors[0]` 取会让本用例的**判据**随描述符
@@ -248,11 +308,72 @@ describe("soloips-web browser half (BE-0b-i)", () => {
     ]) {
       expect(source, `浏览器产物不得含服务端实现/凭据标识 "${marker}"`).not.toContain(marker);
     }
-    // Node 内置模块（`node:` 前缀与裸名）都不得出现：本 bundle 在浏览器里执行。
-    const nodeRequires = [...source.matchAll(/require\(\s*["'](?:node:)?([a-z_]+)["']\s*\)/g)].map(
-      (match) => match[1],
+    // Node 内置模块都不得出现：本 bundle 在浏览器里执行。
+    //
+    // 〔判据口径（FE-1a 收紧）〕原判据是「任何裸 `require("<小写名>")` 都不允许」，
+    // 它把 `react` 这类**页面模块表行**也判成 Node 内置——因为正则只按「小写裸名」
+    // 匹配。公司面板引入 React 后该口径直接误报（实测：`expected [ 'react' ] to
+    // deeply equal []`）。改为按**Node 内置清单**判定（`node:` 前缀 + 官方内置名），
+    // 这才是原判据真正想表达的性质；「模块表外的裸说明符」由
+    // `materializes in a simulated page …` 用例的请求面断言覆盖。
+    const nodeBuiltins = new Set([
+      "assert",
+      "buffer",
+      "child_process",
+      "cluster",
+      "crypto",
+      "dgram",
+      "dns",
+      "events",
+      "fs",
+      "http",
+      "https",
+      "net",
+      "os",
+      "path",
+      "process",
+      "querystring",
+      "readline",
+      "stream",
+      "string_decoder",
+      "timers",
+      "tls",
+      "tty",
+      "url",
+      "util",
+      "v8",
+      "vm",
+      "worker_threads",
+      "zlib",
+    ]);
+    const requires = [...source.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map(
+      (match) => match[1] ?? "",
     );
-    expect(nodeRequires, "浏览器产物不得 require Node 内置模块").toEqual([]);
+    expect(
+      requires.filter((specifier) => specifier.startsWith("node:")),
+      "浏览器产物不得 require node: 前缀的内置模块",
+    ).toEqual([]);
+    expect(
+      requires.filter((specifier) => nodeBuiltins.has(specifier)),
+      "浏览器产物不得 require Node 内置模块的裸名",
+    ).toEqual([]);
+  });
+
+  it("pins the page module table to the build-time word list (模块表同步)", () => {
+    // 〔为什么必须钉住〕产物合法请求的说明符集合必须 ⊆ 页面模块表；而测试用的
+    // 替身（`./support/page-modules.js` 的 `PAGE_MODULE_TABLE_WORDS`）是**手写**的
+    // 一份。两者分叉时，测试会用一个比构建面更宽或更窄的表来判定——
+    // 更宽 → 放过表外说明符（假绿）；更窄 → 把合法请求判成违规（假红）。
+    // 故从**真值源**（`tsdown.config.ts` 的 `MODULE_TABLE_WORDS`）读出来双向比对。
+    const config = readFileSync(join(repoRoot, "tsdown.config.ts"), "utf8");
+    const block = /const MODULE_TABLE_WORDS: readonly string\[\] = \[([\s\S]*?)\];/.exec(config);
+    expect(block, "tsdown.config.ts 必须声明 MODULE_TABLE_WORDS").not.toBeNull();
+    const words = [...(block?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");
+    expect(words.length, "MODULE_TABLE_WORDS 不得为空").toBeGreaterThan(0);
+    expect(
+      [...PAGE_MODULE_TABLE_WORDS].sort(),
+      "测试的页面模块表替身必须与构建期的 MODULE_TABLE_WORDS 逐字相等",
+    ).toEqual([...words].sort());
   });
 
   it("wires the build-time mirror of the missing-bundle error (反例可判定)", () => {

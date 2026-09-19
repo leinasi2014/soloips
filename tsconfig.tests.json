@@ -7,7 +7,16 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "types": ["node"]
+    "types": ["node"],
+    // 〔FE-1a〕测试工程经源码导入浏览器半边（`packages/web/src/client/company/
+    // CompanyPanel.tsx` 用 `React.ChangeEvent<HTMLInputElement>` 等 DOM 类型）。
+    // base 的 `lib` 只有 ES2023，编译该文件会报
+    // `TS2339: Property 'value' does not exist on type 'EventTarget & HTMLInputElement'`
+    // （实测）。这里补 DOM 与浏览器半边工程（`packages/web/tsconfig.client.json`）
+    // 同值的 lib 面——测试面与被测面的环境必须一致，否则类型错误会随「从哪条
+    // 路径编译」而不同。
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx"
   },
   "include": ["packages/*/tests/**/*.ts"]
 }

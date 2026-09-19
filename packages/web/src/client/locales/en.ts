@@ -107,4 +107,61 @@ export const en = {
     "Onboarding is not complete, so work cannot be claimed yet. Finish the onboarding items first.",
   "soloips.work.entry.refused.employeeOperationUnknown":
     "This employee has an operation with an unknown result, so new work cannot start. Reconcile the pending operation — do not retry under a new id.",
+
+  // ── Company panel copy (FE-1a) ────────────────────────────────────────────
+
+  "soloips.company.panel.title": "Companies",
+
+  "soloips.company.form.name.label": "Company name",
+  "soloips.company.form.name.placeholder": "Enter a company name",
+  "soloips.company.form.type.label": "Company type",
+  "soloips.company.form.name.required": "Enter a company name first.",
+  "soloips.company.form.review": "Create…",
+  "soloips.company.confirm.summary": "The following company will be created:",
+  "soloips.company.confirm.submit": "Confirm creation",
+  "soloips.company.confirm.cancel": "Back to editing",
+
+  "soloips.company.submitting.first": "Creating the company…",
+  "soloips.company.submitting.retry": "Retrying under the same operation id…",
+
+  "soloips.company.outcome.committed": "The company was created.",
+  "soloips.company.outcome.replayed":
+    "This operation id had already created a company, so nothing was created again — the original result is shown.",
+  // 〔约束〕与 zh 同：不得承诺零副作用（未决意图可能已落盘、乃至业务已部分写入）。
+  "soloips.company.outcome.unknown":
+    "The result of this operation id is not yet known — the company may or may not exist. Keep operation id {operationId} and do not start another creation; reconcile the result before deciding what to do next.",
+  "soloips.company.outcome.refused":
+    "The quota is exhausted, so no company was created: the “{resource}” allowance of the {planCode} plan is {current}/{limit}. Adjust and submit again.",
+  "soloips.company.outcome.unavailable":
+    "The business service is not ready yet, so this call did not run. Try again later — it will reuse the same operation id {operationId}.",
+  "soloips.company.outcome.failed":
+    "Creating the company failed and the outcome of this operation must be reconciled. Keep operation id {operationId} and do not start another creation.",
+
+  "soloips.company.action.retry": "Retry",
+  "soloips.company.action.new": "Create another company",
+  "soloips.company.action.refresh": "Refresh",
+
+  "soloips.company.type.platform": "Platform company",
+  "soloips.company.type.operation": "Operating subsidiary",
+  "soloips.company.type.enterprise": "User company",
+  "soloips.company.type.subsidiary": "User subsidiary",
+
+  "soloips.company.status.active": "Active",
+  "soloips.company.status.archived": "Archived",
+
+  "soloips.company.limit.company": "user companies",
+  "soloips.company.limit.subsidiary": "subsidiaries",
+  "soloips.company.plan.free": "Free",
+  "soloips.company.plan.pro": "Pro",
+  "soloips.company.plan.enterprise": "Enterprise",
+
+  "soloips.company.list.heading": "Companies",
+  "soloips.company.list.empty": "No company has been created yet.",
+  "soloips.company.list.unavailable":
+    "The business service is not ready yet, so the company list cannot be read. This does not mean there are no companies — refresh later.",
+  "soloips.company.list.rootNotFound":
+    "No record of that company exists, so its subsidiaries cannot be shown (this does not mean it has none). Refresh and check again.",
+  "soloips.company.list.loading": "Reading the company list…",
+  "soloips.company.list.failed": "Reading the company list failed.",
+  "soloips.company.list.item.aria": "Company {name}",
 } satisfies Record<SoloipsLocaleKey, string>;

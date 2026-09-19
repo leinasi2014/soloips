@@ -44,6 +44,5 @@
   //     `lib/client.js`），因此不该存在。
   //  2. 两个工程若都编译同一文件，会争写 `lib/types/client/index.d.ts`。
   "include": ["src/**/*.ts"],
-  "exclude": ["src/client/**"],
-  "references": [{ "path": "./tsconfig.client.json" }]
+  "exclude": ["src/client/**"]
 }
