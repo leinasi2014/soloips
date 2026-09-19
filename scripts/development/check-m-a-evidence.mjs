@@ -271,6 +271,25 @@ for (const entry of reports) {
         "  无法确认页面实际加载的 bundle 含本候选字节（可能是旧产物/另一份副本）。",
     );
   }
+  // 〔报告自述的候选摘要必须与本候选一致〕此前只比对「manifest.artifactSha256 vs 磁盘
+  // 产物」，**不读**报告内自述的 `artifactIdentity.candidateSha256`。QA 独立验收用对照
+  // 变异证明该盲区：把报告内的 candidateSha256 改成 "deadbeef…"（并同步重绑报告字节
+  // 摘要）后，门**放行**——即「报告声称加载的是候选 X」这句话本身从未被校验。
+  //
+  // 同一处补丁同时堵住第二条路：把 `reports[]` 指向一份**历史对照件**（它也是真跑过的
+  // 报告，`embedded: true` 且无 `failure`）时，因对照件自述的摘要必不等于本候选摘要，
+  // 故会被本条拒绝。
+  //
+  // 〔为什么「缺字段」也红〕缺字段与字段不等一样，都属**无法确认绑定**。
+  const reportCandidateSha = report.artifactIdentity?.candidateSha256;
+  if (typeof reportCandidateSha !== "string" || reportCandidateSha !== manifest.artifactSha256) {
+    fail(
+      `M-A 证据门失败：${String(reportName)} 的 artifactIdentity.candidateSha256=` +
+        `${String(reportCandidateSha)}，\n` +
+        `  与 manifest.artifactSha256=${String(manifest.artifactSha256)} 不一致。\n` +
+        "  报告必须自证「页面实际加载的是**本候选**的字节」；不一致或缺该字段即无法确认绑定。",
+    );
+  }
   if (report.failure !== undefined) {
     fail(
       `M-A 证据门失败：${String(reportName)} 记录了 failure：${String(report.failure)}\n` +
