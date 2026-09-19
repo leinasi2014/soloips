@@ -10,13 +10,13 @@
  * 原因变化，混在一个文件里会让「生产默认路径没有测试」这个事实再次不可见。
  *
  * 盲区事实（本文件消除的对象）：
- *  - 生产缺省后端是 `sqlite`——`src/contracts.ts:777`
- *    （`SOLOIPS_ADAPTER_CONFIG_DEFAULTS.defaultBackend`），部署面见
- *    `profiles/soloips/cordis.patch.yml:41`；
- *  - 而修复前**全部**测试都显式传 `json`：`packages/core/tests/adapter-fakes.ts:291`
- *    （`options.backend ?? "json"`）、`packages/core/tests/store.spec.ts:54`
- *    （`backend: "json"`）；
- *  - 于是 `src/ports/storage.ts:386-390` 的 sqlite 分支（`new SqliteStorageBackend(root)`）
+ *  - 生产缺省后端是 `sqlite`——`src/contracts.ts` 的
+ *    `SOLOIPS_ADAPTER_CONFIG_DEFAULTS.defaultBackend`，部署面见
+ *    `profiles/soloips/cordis.patch.yml` 的 `defaultBackend`；
+ *  - 而修复前**全部**测试都显式传 `json`：`packages/core/tests/adapter-fakes.ts` 的
+ *    `options.backend ?? "json"`、`packages/core/tests/store.spec.ts` 的
+ *    `backend: "json"`；
+ *  - 于是 `src/ports/storage.ts` 的 sqlite 分支（`new SqliteStorageBackend(root)`）
  *    在修复前**从未在任何测试中执行**——「生产默认」与「测试默认」不同，缺省路径无保护。
  *
  * 与本目录既有测试的两点刻意不同（都是为了让「装配」真的被装配）：
@@ -284,7 +284,7 @@ describe("sqlite 装配路径 · fail-closed", () => {
     expect(host.registryNames()).toEqual([]);
   });
 
-  it("root 不可创建：拒绝、零残留、不创建目录", async () => {
+  it("root 不可创建：两个后端同一契约码、拒绝、零残留、不创建目录", async () => {
     const base = await newTempRoot();
     const occupied = join(base, "occupied");
     await writeFile(occupied, "occupied by a regular file\n");
@@ -293,15 +293,24 @@ describe("sqlite 装配路径 · fail-closed", () => {
     const host = realHost();
     const port = createStoragePort(host.ctx, { defaultBackend: "sqlite", leaseWaitMs: 200 });
 
+    // sqlite 侧：构造期 `mkdirSync` 失败，经 `mapHostError` 收敛（D-5 修复前抛裸
+    // Node ErrnoException，code=ENOTDIR，故本断言当时为析取）。
     const failure = await failureOf(port.createStack({ root }));
-    expect(failure).toBeInstanceOf(Error);
-    // 〔实测〕当前实现：`SqliteStorageBackend` 构造期直接 `mkdirSync`，抛裸 Node
-    // ErrnoException（code=ENOTDIR），**未经** `mapHostError` 收敛为契约码——与 json
-    // 后端同一操作「createStack 不触介质、mkdir 推迟到 open」的形态不一致（见报告
-    // 「未决问题 1」，收敛属另一切片）。本用例钉住与收敛方式无关的不变量（拒绝 +
-    // 零残留 + 不建目录），错误码取析取，使收敛落地后本用例仍绿。
-    const code = (failure as { code?: unknown }).code;
-    expect(code === "ENOTDIR" || code === "SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE").toBe(true);
+    expect(failure).toBeInstanceOf(SoloipsAdapterError);
+    expect(adapterCode(failure)).toBe("SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE");
+    expect(host.registryNames()).toEqual([]);
+    expect(existsSync(root)).toBe(false);
+
+    // json 侧对同一 root 给出**同一契约码**：其构造器只存 root（createStack 不触
+    // 介质），失败发生在 open（host 的 `JsonStorageBackend.openUnit` 里 mkdir）——
+    // 阶段不同、码相同，这就是 D-5 要求的「失败形态一致」的落点。
+    const jsonPort = createStoragePort(host.ctx, { defaultBackend: "json", leaseWaitMs: 200 });
+    const jsonStack = track(await jsonPort.createStack({ root }));
+    const jsonFailure = await failureOf(
+      jsonPort.requireFacility(jsonStack.facility).open(probeSpec),
+    );
+    expect(adapterCode(jsonFailure)).toBe("SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE");
+    await jsonStack.dispose();
     expect(host.registryNames()).toEqual([]);
     expect(existsSync(root)).toBe(false);
   });
@@ -326,6 +335,36 @@ describe("sqlite 装配路径 · fail-closed", () => {
     expect(host.registryNames()).toEqual([]);
     // 失败路径不得破坏既有文件：内容原样，且没有被改写成 sqlite 库。
     expect(await readFile(asFile, "utf8")).toBe(original);
+  });
+
+  it("core 启动序（lease → createStack）：不可创建 root 的首个失败点是取权，且已是契约码", async () => {
+    // 为什么这条在装配文件里：core 的真实调用序是
+    // `acquireWriterLease` → `createStack` → `facility.open`
+    // （`packages/core/src/store.ts` 的 openSoloipsCompanyStore，lease 先行）。
+    // 因此对「root 不可创建」，**首个**失败点不是 backend 构造，而是租约取权里的
+    // mkdir。只修 backend 侧等于让真实路径的首错继续是裸 ErrnoException——本用例
+    // 钉住的是**调用方实际会收到什么**，不是某个内部构造函数的形态。
+    const base = await newTempRoot();
+    const occupied = join(base, "occupied");
+    await writeFile(occupied, "occupied by a regular file\n");
+    const root = join(occupied, "nested");
+
+    const host = realHost();
+    const port = createStoragePort(host.ctx, { defaultBackend: "sqlite", leaseWaitMs: 200 });
+
+    // 第一步：取权失败（D-5 修复前为裸 ErrnoException code=ENOTDIR）。
+    const leaseFailure = await failureOf(port.acquireWriterLease({ root }));
+    expect(leaseFailure).toBeInstanceOf(SoloipsAdapterError);
+    expect(adapterCode(leaseFailure)).toBe("SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE");
+
+    // 第二步：即便调用方忽略首错继续建栈，形态仍是同一契约码（同 root、同根因）。
+    const stackFailure = await failureOf(port.createStack({ root }));
+    expect(adapterCode(stackFailure)).toBe("SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE");
+
+    // 零残留：不注册 backend、不建目录、不留租约/锁文件。
+    expect(host.registryNames()).toEqual([]);
+    expect(existsSync(root)).toBe(false);
+    expect(readdirSync(base)).toEqual(["occupied"]);
   });
 });
 

@@ -325,7 +325,20 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
         const leasePath = join(root, LEASE_FILE_NAME);
         const storageId = storageIdOf(config.defaultBackend, root);
         // withFileLock 要求父目录存在；数据根本身由 backend/租约共同使用。
-        await mkdir(root, { recursive: true });
+        //
+        // 〔D-5〕失败必须收敛为契约码：core 的启动序是 lease → createStack
+        // （`packages/core/src/store.ts` 的 openSoloipsCompanyStore），故对
+        // 「root 不可创建」**首个失败点就是这里**。裸 `mkdir` 的 ErrnoException
+        // （ENOTDIR/EACCES…）会让调用方拿到与 backend 侧不同的错误形态；本端口
+        // 已在 `acquireWriterLease` 的其余失败路径上统一用契约码（见
+        // `mapLeaseAcquireError`），此处与之一致。码取 SERVICE_UNAVAILABLE：
+        // root 的值形状已由 `canonicalRoot` 校验（INVALID_CONFIG 只用于那一层），
+        // 环境层失败沿用本端口对「不可用」的既有口径。
+        try {
+          await mkdir(root, { recursive: true });
+        } catch (error: unknown) {
+          throw mapHostError(`storage.lease.acquire('${root}')`, error);
+        }
         let signalAcquired!: (generation: number) => void;
         const acquired = new Promise<number>((resolveAcquired) => {
           signalAcquired = resolveAcquired;
