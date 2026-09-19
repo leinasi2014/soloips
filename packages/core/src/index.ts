@@ -89,6 +89,20 @@ export interface SoloipsCoreConfig {
    * 计划码缺失有**安全缺省**。
    */
   readonly planCode?: SoloipsPlanCode;
+  /**
+   * 存储后端名（`json` / `sqlite`；非可构造的名字由 adapter 在 `createStack` 以
+   * `SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE` 拒绝，core 侧不做词表校验）。
+   *
+   * 〔这是**对 adapter 缺省的显式覆写**，不是「缺省声明」〕有值时按原样透传给
+   * `storage.createStack`；无值时**不透传该键**，由 adapter 的 `defaultBackend`
+   * 决定（`SOLOIPS_ADAPTER_CONFIG_DEFAULTS`，当前 `sqlite`；消费点见
+   * `packages/adapter-dsh/src/ports/storage.ts` 的
+   * `options.backend ?? config.defaultBackend`）。两个键是**同一件事的两层**：
+   * core 的 `backend` 胜出，adapter 的 `defaultBackend` 是它缺席时的兜底。
+   *
+   * 〔与 `planCode` 的差别〕本键**无**词表校验也无缺省：`""` 与「不写本键」语义
+   * 不同——前者会被透传并在 adapter 侧拒绝（不可构造），后者走 adapter 缺省。
+   */
   readonly backend?: string;
 }
 
@@ -188,7 +202,20 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
     let opened: SoloipsCoreService | undefined;
     ctx2.effect(() => () => {
       unloaded = true;
-      void opened?.close();
+      // 〔STORAGE-01〕卸载必须**等待**关闭完成，且关闭失败必须**可见**：
+      //  - cordis 4.0.2 `src/fiber.ts:675-682` 的 `_unload()` 对每个 disposer 执行
+      //    `await runDisposable(dispose)`，而 `runDisposable`（同文件 L114-117）直接
+      //    返回回调的返回值——故**返回该 Promise** 才让宿主等到 domain/stack/lease
+      //    释放完毕；先前 `void opened?.close()` 让关闭成为 fire-and-forget，
+      //    宿主可在 sqlite 连接与 lease 锁释放前退出。
+      //  - 失败在此记录后**不再抛出**：卸载失败升级为崩溃会让宿主丢失其余清理步骤，
+      //    与「失败必须可见、但不自动重试」的纪律一致（SEAM-14 的释放链自身已保证
+      //    「一步失败也走完逆序释放」）。
+      const closing = opened?.close();
+      if (closing === undefined) return; // 未打开：无事可做，静默返回。
+      return closing.catch((error: unknown) => {
+        logger?.warn(`soloipsCore 关闭失败：${summarizeError(error)}`);
+      });
     });
 
     void (async () => {
@@ -200,6 +227,9 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
           // planCode 缺省由 store 取 `free`（最严格计划）；此处只在显式配置时透传，
           // 词表校验在 store 的 validatePlanCode（唯一落点）。
           ...(config.planCode === undefined ? {} : { planCode: config.planCode }),
+          // backend 同理：只在显式配置时透传。**不给**就由 adapter 的
+          // `defaultBackend` 决定——`backend: ""` 与「不写本键」语义不同（前者会被
+          // 透传并在 adapter 侧以「不可构造的 backend」fail-closed）。
           ...(config.backend === undefined ? {} : { backend: config.backend }),
         });
         if (unloaded) {
