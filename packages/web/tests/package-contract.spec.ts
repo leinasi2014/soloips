@@ -26,6 +26,15 @@ const EXPECTED_WEB_IMPORT_ALLOWLIST = [
   "@deepseek-ai/cordis/**",
   "@deepseek-ai/dsh-typert-protocol",
   "@deepseek-ai/dsh-typert-protocol/**",
+  // FE-1a：公司面板的槽位契约**类型**面（`SlotMap`/`LocaleNamespaceMap` 的声明
+  // 合并落点）。放行面限定为类型消费，运行期经 `ctx.slots` 服务协作。
+  "@deepseek-ai/dsh-client-ui-slots",
+  "@deepseek-ai/dsh-client-ui-slots/**",
+  // FE-1a：React。它是**页面模块表的行**（`MODULE_TABLE_WORDS` 首项），不是
+  // 「官方 DSH 能力包」——DEV-04 的收敛职责针对 `@deepseek-ai/*` 能力包。
+  "react",
+  "react/jsx-runtime",
+  "react/**",
   "soloips-core/contracts",
   "soloips-web/contracts",
   // BE-0b-i：浏览器半边以运行时值导入**本包生成的** `/remote` 贡献并自行

@@ -2,33 +2,33 @@
   "note": "重启后读回：同一 companyId 经真实浏览器调用 soloips/getCompany",
   "fact": {
     "note": "本文件由 E2E 脚本写出，用于与重启后的读回证据比对（同一次操作）",
-    "runId": "be6a-1789787511491",
-    "operationId": "be6a-1789787511491-create",
-    "companyId": "cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6",
-    "companyName": "BE-6a 验证公司 be6a-1789787511491",
+    "runId": "be6a-1789806627945",
+    "operationId": "be6a-1789806627945-create",
+    "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
+    "companyName": "BE-6a 验证公司 be6a-1789806627945",
     "company": {
-      "id": "cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6",
+      "id": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
       "type": "enterprise",
-      "name": "BE-6a 验证公司 be6a-1789787511491",
+      "name": "BE-6a 验证公司 be6a-1789806627945",
       "status": "active",
-      "createdAt": "2026-09-19T03:11:53.873Z"
+      "createdAt": "2026-09-19T08:30:29.108Z"
     },
-    "readBackAt": "2026-09-19T03:11:55.145Z"
+    "readBackAt": "2026-09-19T08:30:30.362Z"
   },
   "call": {
     "url": "http://127.0.0.1:55321/api/soloips/getCompany",
-    "rpcId": "be6a-restart-xdt1eey7zfe",
+    "rpcId": "be6a-restart-uiw1fw0f7o9",
     "status": 200,
-    "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-restart-xdt1eey7zfe\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"company\":{\"id\":\"cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789787511491\",\"status\":\"active\",\"createdAt\":\"2026-09-19T03:11:53.873Z\"}}}}"
+    "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-restart-uiw1fw0f7o9\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"company\":{\"id\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"status\":\"active\",\"createdAt\":\"2026-09-19T08:30:29.108Z\"}}}}"
   },
   "readBack": {
     "status": "ok",
     "company": {
-      "id": "cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6",
+      "id": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
       "type": "enterprise",
-      "name": "BE-6a 验证公司 be6a-1789787511491",
+      "name": "BE-6a 验证公司 be6a-1789806627945",
       "status": "active",
-      "createdAt": "2026-09-19T03:11:53.873Z"
+      "createdAt": "2026-09-19T08:30:29.108Z"
     }
   },
   "matched": true

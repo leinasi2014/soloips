@@ -180,6 +180,123 @@ export const zh = {
   /** `employee-operation-unknown`：该员工存在结果未知的操作（ORG-05：不换 ID 重做）。 */
   "soloips.work.entry.refused.employeeOperationUnknown":
     "该员工存在结果未知的操作，暂不能开始新工作。请先核对未决操作，不要更换编号重做。",
+
+  // ── 公司面板文案（FE-1a；键位 = 设计 §3.4.2 的 `soloips.<域>.<…>`）─────────
+
+  /** 面板标题（侧栏行标签与主区标题共用同一键：同一实体的两个位置）。 */
+  "soloips.company.panel.title": "公司",
+
+  // 表单与确认步骤
+
+  /** 公司名输入框标签。 */
+  "soloips.company.form.name.label": "公司名称",
+  /** 公司名占位提示。 */
+  "soloips.company.form.name.placeholder": "请输入公司名称",
+  /** 公司类型选择标签。 */
+  "soloips.company.form.type.label": "公司类型",
+  /** 表单校验失败：名称为空白（与 core 的 `requireNonEmpty` 同判据）。 */
+  "soloips.company.form.name.required": "请先填写公司名称。",
+  /** 「创建」按钮（进入确认步骤，**不**写任何数据）。 */
+  "soloips.company.form.review": "创建…",
+  /** 确认步骤说明：明确告知下一步才是真正的写入。 */
+  "soloips.company.confirm.summary": "确认后将创建以下公司：",
+  /** 确认按钮（唯一的写入口）。 */
+  "soloips.company.confirm.submit": "确认创建",
+  /** 取消确认，回到编辑。 */
+  "soloips.company.confirm.cancel": "返回修改",
+
+  // 提交中的相位文案
+
+  /** 首次提交进行中。 */
+  "soloips.company.submitting.first": "正在创建公司…",
+  /** 重试提交进行中（同一操作编号）。 */
+  "soloips.company.submitting.retry": "正在用同一操作编号重试…",
+
+  // ── 提交结果五态 + 失败（逐态独立文案；每态都带自己的可行动指引）──────────
+
+  /** `committed`：本次实际提交成功。 */
+  "soloips.company.outcome.committed": "公司已创建。",
+  /** `replayed`：同操作编号命中已提交结果——幂等重放，未新建第二家公司。 */
+  "soloips.company.outcome.replayed":
+    "该操作编号此前已成功创建，本次未重复创建（返回的是同一次创建的结果）。",
+  /**
+   * `unknown`：该操作编号存在未决意图，结果不可知。
+   *
+   * 〔约束〕文案**不得**承诺零副作用（与 `soloips.error.leaseLost` 同源约束）：
+   * 未决意图可能已落盘、乃至业务已部分写入。须保留编号、不换编号重做
+   * （ORG-05）。
+   */
+  "soloips.company.outcome.unknown":
+    "该操作编号的结果尚不明确，可能已创建也可能没有。请保留操作编号 {operationId}，不要另起新的创建操作；确认结果后再决定下一步。",
+  /** `refused`（配额拒绝）：在写入之前被拒，用户可调整后重新提交。 */
+  "soloips.company.outcome.refused":
+    "配额已满，公司未创建：当前 {planCode} 计划的「{resource}」额度为 {current}/{limit}。请调整后重新提交。",
+  /** `unavailable`：Host 侧业务服务尚未就绪——**不是**「没有公司」。 */
+  "soloips.company.outcome.unavailable":
+    "业务服务尚未就绪，本次调用没有执行。请稍后重试（将沿用同一操作编号 {operationId}）。",
+  /** 抛错（含 core 稳定码）：失败信息由错误码映射渲染，此处只给引导。 */
+  "soloips.company.outcome.failed":
+    "创建公司时发生错误，本次操作结果需核对。请保留操作编号 {operationId}，不要另起新的创建操作。",
+
+  // 各相位的按钮
+
+  /** 重试（**同一**操作编号）。 */
+  "soloips.company.action.retry": "重试",
+  /** 开始新一轮创建（清空表单；仅在终态可用）。 */
+  "soloips.company.action.new": "新建另一家公司",
+  /** 刷新公司列表。 */
+  "soloips.company.action.refresh": "刷新",
+
+  // 公司类型标签（四个值穷举；界面只允许创建其中 `enterprise`）
+
+  "soloips.company.type.platform": "平台公司",
+  "soloips.company.type.operation": "运营子公司",
+  "soloips.company.type.enterprise": "用户公司",
+  "soloips.company.type.subsidiary": "用户子公司",
+
+  // 公司状态标签
+
+  "soloips.company.status.active": "正常",
+  "soloips.company.status.archived": "已归档",
+
+  // 配额额度名与计划码（`refused` 文案的 `{resource}`/`{planCode}` 实参取值；
+  // 键位与 `data-contract.md` §2.1 的三层配额表同构）
+
+  "soloips.company.limit.company": "用户公司数",
+  "soloips.company.limit.subsidiary": "子公司数",
+  "soloips.company.plan.free": "Free",
+  "soloips.company.plan.pro": "Pro",
+  "soloips.company.plan.enterprise": "Enterprise",
+
+  // ── 列表读取三态（`ok` / `not-found` / `unavailable` **必须**可分）─────────
+
+  /** `ok` 且非空。 */
+  "soloips.company.list.heading": "公司列表",
+  /** `ok` 且为空：查询成功、确无数据——与 `unavailable` 是两件事。 */
+  "soloips.company.list.empty": "尚未创建任何公司。",
+  /**
+   * `no-root`：**本会话**尚无树根，故未发出任何读请求。
+   *
+   * 〔为什么必须与 `empty` 分开〕两者对用户含义不同：`empty` 是「查询成功、确无
+   * 公司」，`no-root` 是「**没查**——因为不知道以哪个公司为根」。复用时会让一个
+   * 已创建过公司、随后刷新页面的用户看到「尚未创建任何公司」——**那是假陈述**
+   * （公司确实在，只是本会话不知道它的 id；浏览器半边零可写业务状态，不持久化根，
+   * 见 `company/surface.ts` 文件头「树根从哪来」）。
+   */
+  "soloips.company.list.noRoot":
+    "本会话尚未创建公司，因此还不知道要显示哪一棵公司树。创建一家公司后这里会列出它；已创建过的公司不受影响，只是本页面不跨会话记住它。",
+  /** `unavailable`：**不得**显示成「暂无公司」。 */
+  "soloips.company.list.unavailable":
+    "业务服务尚未就绪，暂时无法读取公司列表。这不代表没有公司——请稍后刷新。",
+  /** 根公司不存在（`not-found`）：与「空树」是两件事。 */
+  "soloips.company.list.rootNotFound":
+    "找不到该公司的记录，无法显示其下级公司（这不代表它没有下级）。请刷新后确认。",
+  /** 列表读取进行中。 */
+  "soloips.company.list.loading": "正在读取公司列表…",
+  /** 列表读取抛错。 */
+  "soloips.company.list.failed": "读取公司列表时发生错误。",
+  /** 列表中每条公司的无障碍描述（`{name}` 为公司名）。 */
+  "soloips.company.list.item.aria": "公司 {name}",
 } satisfies Record<string, string>;
 
 /**

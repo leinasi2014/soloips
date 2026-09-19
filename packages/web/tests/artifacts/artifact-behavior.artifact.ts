@@ -10,9 +10,16 @@ import {
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import vm from "node:vm";
-import { Context } from "@deepseek-ai/cordis";
+import { Context, Service } from "@deepseek-ai/cordis";
+import type { Fiber } from "@deepseek-ai/cordis";
 import { describe, expect, it } from "vitest";
 
+import {
+  PAGE_MODULE_TABLE_WORDS,
+  pageRequire,
+  type ModuleTableRequest,
+} from "../support/page-modules.js";
+import { pageContext } from "../support/page-context.js";
 import {
   PACKAGE_ID,
   packageDir,
@@ -87,65 +94,478 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     const registration = registrations[0];
     expect(registration, "bundle 必须注册工厂").toBeDefined();
 
-    // 物化工厂。传入的 `require` 故意抛错：本 bundle 的说明符要么走模块表
-    // （页面 seed），要么已被内联——任何 `require` 都说明外部面漏配了。
-    const exports = registration?.factory((specifier: string) => {
-      throw new Error(`意外的 require：${specifier}（既非页面模块表词，也未被内联）`);
-    }) as { apply?: unknown; inject?: unknown };
+    // 物化工厂。`require` 用页面模块表的替身：表内说明符返回真实模块，表外的抛错。
+    // 〔FE-1a 起的事实变化〕此前传的是「必然抛错」的哨兵（用来证明外部面漏配）；
+    // 公司面板引入 React 后产物**合法地**请求 `react` / `react/jsx-runtime`
+    // （页面模块表的行），故判据精确化为「请求面 ⊆ 模块表」——见
+    // `../support/page-modules.js`。
+    const requests: ModuleTableRequest[] = [];
+    const exports = registration?.factory(pageRequire(requests)) as {
+      apply?: unknown;
+      inject?: unknown;
+    };
 
-    expect(exports.inject, "inject 必须声明 remote 服务").toEqual(["remote"]);
+    expect(
+      requests.filter((request) => !request.inTable).map((request) => request.specifier),
+      "产物请求的说明符必须在页面模块表内（表外即页面无法应答）",
+    ).toEqual([]);
+    expect(exports.inject, "inject 必须声明 remote / slots / locale 三个服务").toEqual([
+      "remote",
+      "slots",
+      "locale",
+    ]);
     expect(typeof exports.apply, "apply 必须是函数").toBe("function");
 
     // `apply` 必须把生成的贡献交给 `$mount`，并**透传**其 disposer
     // （cordis 以 apply 的返回值作为卸载钩子；丢弃会让重载泄漏 namespace）。
-    const disposer = async (): Promise<void> => undefined;
-    const mounted: { package?: string; descriptors?: { id: string }[] }[] = [];
-    const returned = await (exports.apply as (ctx: unknown) => Promise<unknown>)({
-      remote: {
-        async $mount(contribution: { package: string; descriptors: { id: string }[] }) {
-          mounted.push(contribution);
-          return disposer;
-        },
-      },
-    });
+    //
+    // 〔为什么用 `../support/page-context.js` 而不是手写一个 ctx 字面量〕FE-1a 起
+    // `apply` 在 `$mount` 之后还要注册公司面板，而面板经 `ctx.get("remote.soloips")`
+    // 解析本包的 namespace 服务（`register.js` 的 `servicesOf`，**产品代码真实走过的
+    // 取值路径**）。手写的 `{ remote: { $mount } }` 替身没有 `get` → `TypeError:
+    // ctx.get is not a function`（实测）。替身按官方语义补齐三件事：`$mount` 在
+    // resolve 前把 namespace 装进服务表（`api-gateway/client` 的 `createNamespace`
+    // → cordis 的 `Service` → `reflect.provide`）、`ctx.get` 整串键直查 store、
+    // 未发布的键返回 `undefined`。见该模块文件头的读源清单。
+    const page = pageContext<{ package: string; descriptors: { id: string }[] }>();
+    const returned = await (exports.apply as (ctx: unknown) => Promise<unknown>)(page.ctx);
 
-    expect(mounted.length, "$mount 必须被调用一次").toBe(1);
-    expect(mounted[0]?.package).toBe(PACKAGE_ID);
+    expect(page.mounts.length, "$mount 必须被调用一次").toBe(1);
+    expect(page.mounts[0]?.contribution.package).toBe(PACKAGE_ID);
     expect(
-      mounted[0]?.descriptors?.map((descriptor) => descriptor.id),
+      page.mounts[0]?.contribution.descriptors?.map((descriptor) => descriptor.id),
       "挂载的必须是 Host 半边生成的 getStatus 描述符",
     ).toContain("soloips-web#soloips/getStatus");
-    expect(returned, "apply 必须透传 $mount 的 disposer").toBe(disposer);
+    // 〔顺序契约的可判定形态〕`apply` 的既定顺序是「先 `$mount`、再注册面板」；
+    // 调换后 `ctx.get("remote.soloips")` 会读不到（服务表里还没有），`servicesOf`
+    // 抛错。这里把该事实钉住：面板注册**读到了**与挂载同一批实例的 namespace 服务。
+    expect(
+      page.service("remote.soloips"),
+      "面板注册必须在 $mount 之后：`ctx.get('remote.soloips')` 应解析到本次挂载装出的服务",
+    ).toBeDefined();
+    expect(page.namespaces(), "挂载必须把贡献里的 namespace 与方法逐条装进服务表").toEqual({
+      soloips: [
+        "createCompany",
+        "getCompany",
+        "getCompanyTree",
+        "getStatus",
+        "listDepartments",
+        "listTeams",
+      ],
+    });
+    // 〔为什么不是「相等」〕FE-1a 起 `apply` 返回一个**组合** disposer
+    // （先注销面板、再 await 卸载贡献），卸载顺序与安装顺序相反。
+    expect(returned, "apply 必须包一层组合 disposer（而不是直接透传 $mount 的）").not.toBe(
+      page.mounts[0]?.unmount,
+    );
+    await (returned as () => Promise<void>)();
+    // 〔卸载契约〕组合 disposer 必须真的把 `$mount` 的卸载函数跑掉——否则 namespace
+    // 服务留在服务表里（官方 `$mount` 的契约是「最后一个方法撤回即卸载该 namespace」，
+    // `api-gateway/client` 的 `disposeNamespace`）。
+    expect(page.namespaces(), "卸载后 namespace 服务必须从服务表撤回").toEqual({});
+  });
+
+  /**
+   * namespace 服务替身：`RemoteNamespaceService extends Service` 的最小同形
+   * （`api-gateway/src/client/index.ts:532-548` 的 `super(ctx, remoteServiceKey(name))`）。
+   *
+   * 〔为什么必须是 `Service` 子类，不能是 `ctx.provide` 普通对象〕`Service` 的构造器
+   * 把实例注册进**当前** fiber 的服务表（`reflect.provide`），服务随该 fiber 卸载自动
+   * 撤回——这正是真 namespace 的生命周期。`ctx.provide` 的语义等价，但 `Service` 是
+   * 官方形态，替身照抄它使「服务何时消失」与真实现一致。
+   *
+   * 〔约束〕字段不得用 `#` 私有成员：cordis 的 traceable Proxy 不满足 V8 的品牌检查，
+   * 经 Proxy 调用 `#` 成员会抛 `Cannot read private member … from an object whose class
+   * did not declare it`（**实测**；BE-6a 的同族陷阱）。本替身不用 `#`。
+   *
+   * 〔为什么类体是空的〕只继承基类构造签名（`(ctx, name)`）即可，不加任何成员：
+   * 转写构造器会被 `no-useless-constructor` 判成冗余（**实测**）。真实现的额外成员
+   * （方法表、`assertMethodAvailable`）属「运行期调用能不能通」的面，本用例不覆盖。
+   */
+  class StubNamespaceService extends Service {}
+
+  /**
+   * `remote` 容器服务替身：`ClientRemoteService extends Service` 的最小同形。
+   *
+   * 〔为什么必须也是 `Service` 子类〕`$mount` 的清理归属取决于**方法体内的
+   * `this.ctx` 解析成谁的上下文**：cordis 的 traceable proxy 只对经 `ctx.<name>`
+   * 取到的服务方法做 shadow 改绑（`lib/index.js` 的 `createTraceable` /
+   * `createShadowMethod`），普通对象方法拿不到这一层。**实测**：同一服务实例，
+   * 其自身 ctx 的 fiber 名是 `root`，而经 `ctx.remote.$mount(...)` 调用时方法体内
+   * `this.ctx` 读到的是**调用插件**的 ctx——真 gateway 的 `callerCtx` 正是这个。
+   * 替身若写成普通对象，`callerCtx.effect` 会挂在错误的 fiber 上，卸载语义就假了。
+   */
+  class StubRemoteService extends Service {
+    readonly mounted: string[];
+    readonly mountFails: boolean;
+    readonly ownerCtx: Context;
+
+    constructor(ctx: Context, mounted: string[], mountFails: boolean) {
+      super(ctx, "remote");
+      this.ownerCtx = ctx;
+      this.mounted = mounted;
+      this.mountFails = mountFails;
+    }
+
+    /**
+     * 真 `$mount` 的清理语义（`api-gateway/src/client/index.ts:201-209`）。
+     *
+     * 〔关键：清理挂在 `callerCtx.effect` 上，随**调用者** fiber 卸载自动发生〕
+     * 这不是本替身的自由发挥，而是官方实现逐字如此。它决定了本用例的判据落在
+     * 哪里：namespace 的撤回由调用者 fiber 的卸载兜住，**与 `apply` 的返回值无关**
+     * ——故 namespace 断言不具鉴别力（见用例内的标注）。
+     */
+    async $mount(contribution: {
+      readonly package: string;
+      readonly descriptors: readonly { readonly namespace: string }[];
+    }): Promise<() => Promise<void>> {
+      const callerCtx = this.ctx;
+      this.mounted.push(contribution.package);
+      const owned = callerCtx.effect(async () => {
+        if (this.mountFails) throw new Error("测试替身：$mount 失败");
+        // 〔按契约：namespace 在 `$mount` resolve **之前**装好〕官方 `$mount` 内部
+        // `await owned`（同文件 `:208`），而 `owned` 的 effect 里
+        // `await this.enqueue(() => this.mountContribution(...))` → `installNamespace`
+        // → `createNamespace`。`apply` 的既定顺序契约（先挂载、再注册面板）正是靠它
+        // 成立：面板注册时 `ctx.get("remote.soloips")` 必须读得到。
+        const namespaces = [...new Set(contribution.descriptors.map((entry) => entry.namespace))];
+        const fibers: Fiber[] = [];
+        for (const namespace of namespaces) {
+          const key = `remote.${namespace}`;
+          const fiber = this.ownerCtx.plugin({
+            name: key,
+            apply: (ctx: Context) => {
+              new StubNamespaceService(ctx, key);
+            },
+          });
+          await fiber;
+          fibers.push(fiber);
+        }
+        return async () => {
+          for (const fiber of fibers.reverse()) await fiber.dispose();
+        };
+      }, "gateway.$mount");
+      await owned;
+      return async () => {
+        await owned();
+      };
+    }
+  }
+
+  /**
+   * 用**真 cordis** 加载浏览器产物，让**框架**去投递 `apply` 的返回值。
+   *
+   * ── 为什么必须是真 cordis（本夹具存在的唯一理由）──────────────────────────
+   * FE-1a-FIX 的缺陷是「cordis 收不到 `apply` 的返回值」：`Fiber._execute` 用
+   * `isConstructor` 分派（`@deepseek-ai/cordis@4.0.2` 的 `lib/index.js:1066-1070`），
+   * 判据是「`func.prototype` 存在」（`:57-62`）——**函数声明有 `prototype`**，于是
+   * `apply` 被 `new` 调用、返回的 Promise 被丢弃。
+   *
+   * 这决定了夹具的**不可替代性**：如果测试自己调用 `apply(...)` 再自己 await 返回值，
+   * 那么它测的是「返回值是不是一个函数」，而不是「框架收没收到它」——缺陷形态下
+   * 该断言照样通过（`apply` 手动调用时确实返回 disposer）。所以本夹具只做一件事：
+   * `root.plugin({apply, inject})` + `fork.dispose()`，**全程不触碰返回值**。
+   * 卸载是否发生因此只取决于框架是否拿到了它。
+   *
+   * ── 服务替身按**契约**建模，不按「让测试过」建模（读源确认 + 实测）─────────
+   * 三处清理的**归属**各不相同，逐条按官方实现建模：
+   *
+   *  1. **`remote.$mount`** —— 清理挂在 `callerCtx.effect` 上（`:201-209`），即挂在本
+   *     插件的 fiber 上。故 namespace 随 fiber 卸载**自动**撤回，与本缺陷无关。
+   *     〔实测〕缺陷形态下 namespace **也会**撤——工单里「namespace 不撤」的表述与
+   *     真实现不符（详见用例内的标注）。但 namespace 仍须**装出来**：`apply` 在
+   *     `$mount` 之后调 `registerSoloipsCompanyPanel`，后者经
+   *     `ctx.get("remote.soloips")` 解析它（`register.js` 的 `servicesOf`，
+   *     fail-closed）。不发布该服务则注册路径直接抛错，面板条目与字典根本不会出现，
+   *     后续判据就在空集合上失去意义。
+   *  2. **`slots.inject`** —— `ui-renderer/src/client/registry.ts:172-232` 同样经
+   *     `ctx.effect` 挂在调用者 fiber 上，故 `inject` 的清理也自动发生；但**条目注册**
+   *     （`register`）的注销只经它返回的 disposer，而那个 disposer 由 `apply` 的
+   *     返回值链承载。本替身按此建模：`register` 返回的 disposer 是**唯一**注销路径。
+   *  3. **`locale.register`** —— `dsh-client-locale/src/client/index.ts:381-419` 是
+   *     纯 `Map` 操作，**不**挂 `ctx.effect`，清理只靠返回的 disposer。同上。
+   *
+   * 因此本夹具的判据是「**面板条目与字典在 fiber 卸载后被注销**」——那是缺陷形态下
+   * 真正泄漏、而修复后被正确撤回的部分（**实测**：改回 `export function apply(` 时
+   * 这两项保持存活，namespace 仍照撤）。
+   *
+   * 〔替身的能力边界〕它不是真 gateway/slots/locale：不模拟传输面、不模拟槽位声明
+   * 塌缩、不模拟 `RemoteNamespaceService` 的方法安装（真实现要 6 条严格 codec 描述符
+   * 才装得上）。判据只覆盖「卸载路径把哪些副作用撤回了」，不覆盖「运行期调用能不能通」
+   * ——后者由默认套件与 E2E 覆盖。
+   *
+   * @param bundle - 浏览器产物工厂物化后的导出面。
+   * @param options - `mountFails: true` 时 `$mount` 抛错（fail-closed 用例用）。
+   * @returns 真 cordis 根上下文、`fork` 与三处副作用的**可观察记录**。
+   */
+  const loadWithRealCordis = (
+    bundle: {
+      apply: (ctx: unknown) => unknown;
+      inject: string[];
+    },
+    options: { readonly mountFails?: boolean } = {},
+  ): {
+    readonly root: Context;
+    /**
+     * `ctx.plugin()` 的返回值形态：`Fiber & PromiseLike<Fiber>`。
+     *
+     * 〔约束〕必须逐字保留 `PromiseLike` 那一半：`await fiber` 正是本用例的判据
+     * 载体（fail-closed 那条靠它区分「拒绝」与「成功」）。收窄成 `Fiber` 会让
+     * `await` 被判成对非 thenable 取值（实测 oxlint `typescript/await-thenable` 报错）。
+     */
+    readonly fork: Fiber & PromiseLike<Fiber>;
+    readonly mounted: string[];
+    readonly slots: { readonly id: string; readonly alive: boolean }[];
+    readonly localeNamespaces: Set<string>;
+  } => {
+    const root = new Context();
+    const mounted: string[] = [];
+    const slots: { id: string; alive: boolean }[] = [];
+    const localeNamespaces = new Set<string>();
+
+    // 〔为什么 `remote` 用 `Service` 子类而不是 `root.provide` 普通对象〕见
+    // {@link StubRemoteService} 的注释：方法体内 `this.ctx` 必须解析成**调用者**的
+    // 上下文，否则 `callerCtx.effect` 会挂错 fiber，卸载语义就假了。
+    new StubRemoteService(root, mounted, options.mountFails === true);
+
+    root.provide("slots", {
+      // 〔按契约：注册的注销只经返回的 disposer〕见上方第 2 条读源结论。
+      inject: (_key: string, callback: () => () => void): (() => void) => {
+        const disposeEntry = callback();
+        return () => {
+          disposeEntry();
+        };
+      },
+      register: (options: { readonly id?: string; readonly key?: string }): (() => void) => {
+        const entry = { id: options.id ?? options.key ?? "(unnamed)", alive: true };
+        slots.push(entry);
+        return () => {
+          entry.alive = false;
+        };
+      },
+    });
+    root.provide("locale", {
+      // 〔按契约：纯 Map，不挂 ctx.effect〕见上方第 3 条读源结论。
+      register: (namespace: string): (() => void) => {
+        localeNamespaces.add(namespace);
+        return () => {
+          localeNamespaces.delete(namespace);
+        };
+      },
+      bind: () => (key: string) => key,
+    });
+
+    const fork = root.plugin({ apply: bundle.apply, inject: bundle.inject });
+    return { root, fork, mounted, slots, localeNamespaces };
+  };
+
+  /** 物化浏览器产物并取回其导出面（真 cordis 用例共用）。 */
+  const loadBundleExports = (): { apply: (ctx: unknown) => unknown; inject: string[] } => {
+    const { registrations } = loadClientBundle();
+    const registration = registrations[0];
+    expect(registration, "bundle 必须注册工厂").toBeDefined();
+    return registration?.factory(pageRequire([])) as {
+      apply: (ctx: unknown) => unknown;
+      inject: string[];
+    };
+  };
+
+  /**
+   * 让**被丢弃的 Promise 链**走完（缺陷形态下的必要一步）。
+   *
+   * 〔为什么需要〕缺陷形态下 `apply` 经 `new` 调用，fiber 在 `execute` 返回
+   * `undefined` 的那一刻就被判为「已加载」——而 `$mount(...).then(...)` 的后续
+   * （面板注册）还在微任务队列里。若不等待，断言会在**面板还没注册**时求值，
+   * 失败信息指向「前置事实不成立」而不是「卸载没注销」——诊断会指向错误方向。
+   * 等待若干轮宏任务后，两种形态的**前置事实一致**（都注册了），失败点因此落在
+   * 真正的判据上：卸载后有没有被注销。
+   *
+   * 〔边界〕这是夹具的**观测手段**，不是产品语义：真宿主不会「等一会儿再看」。
+   * 它只保证断言在等价前提下比较两种形态。
+   */
+  const settleDeferredWork = async (): Promise<void> => {
+    for (let round = 0; round < 5; round += 1) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    }
+  };
+
+  it("hands apply's disposer to cordis (卸载路径由框架驱动，FE-1a-FIX)", async () => {
+    // ── 本用例防的缺陷（FE-1a-FIX，真实缺陷）────────────────────────────────
+    //
+    // 旧形态是 `export function apply(...)`（**函数声明**）。cordis 的
+    // `Fiber._execute` 先做形态判别：
+    //
+    //   ```js
+    //   // @deepseek-ai/cordis@4.0.2 lib/index.js:1066-1070
+    //   if (isConstructor(runtime.callback)) {
+    //     const instance = new runtime.callback(this.ctx, this.config);
+    //     for (const hook of instance?.[symbols.initHooks] ?? []) hook();
+    //     return instance?.[symbols.init]?.();
+    //   } else return runtime.callback(this.ctx, this.config);
+    //   ```
+    //
+    // 而 `isConstructor` 的判据是 **`func.prototype` 存在**（`:57-62`）。函数声明
+    // 有 `prototype` → 走 `new` 分支 → `apply` 返回的 Promise **不是** `new` 的求值
+    // 结果 → 被整条丢弃 → cordis 收不到卸载钩子。副作用照常发生，所以**启动看起来
+    // 完全正常**；只有卸载路径静默失效。
+    //
+    // 〔为什么现有用例漏掉了它〕默认套件与旧产物用例都**手动调用** `apply` 并 await
+    // 其返回值（`client-mount.spec.ts` 与旧版「materializes …」用例）。手动路径下
+    // 返回值确实是 disposer，于是断言通过——**测试自己承担了框架的职责**，恰好绕开
+    // 了缺陷。本用例因此**不触碰返回值**：只 `root.plugin(...)` + `fork.dispose()`。
+    //
+    // 〔为什么鉴别判据是面板条目与字典，不是 namespace〕见夹具注释：`$mount` 的清理
+    // 挂在 `callerCtx.effect` 上，随 fiber 卸载自动发生，故 namespace 在缺陷形态下
+    // **也会**撤回（实测）。泄漏的是 `slots.register` / `locale.register` 返回的
+    // disposer 所承载的注销——那两条链只在 `apply` 的返回值里。
+    //
+    // 〔与工单描述的一处偏差（以实测为准）〕工单称缺陷后果是「namespace 不撤、面板
+    // 不注销」。实测：namespace **会**撤（`callerCtx.effect` 兜住），面板与字典不注销。
+    // 本用例按实测建模；把 namespace 也断言成「必须撤回」既准确又不削弱覆盖（见下方
+    // 该断言的标注）。
+    const bundle = loadBundleExports();
+    const world = loadWithRealCordis(bundle);
+    await world.fork;
+    // 〔必须先让被丢弃的 Promise 链走完〕见 {@link settleDeferredWork}：缺陷形态下面板
+    // 注册发生在 fiber 判活**之后**的微任务里。不等它，下面的前置断言会在面板尚未注册
+    // 时报错，失败点偏离真正的判据。
+    await settleDeferredWork();
+
+    // 前置事实：挂载与注册**都**发生了（否则后面的断言会在空集合上通过）。
+    expect(world.mounted, "$mount 必须被调用一次（真贡献包名）").toEqual([PACKAGE_ID]);
+    expect(
+      world.slots.map((entry) => entry.id),
+      "面板必须在两个槽位各注册一条（main 的 key 与 sidebar.panellist 的 id 同名）",
+    ).toEqual(["soloips-company", "soloips-company"]);
+    expect([...world.localeNamespaces], "本包字典命名空间必须已注册").toEqual(["soloips"]);
+    expect(
+      world.slots.every((entry) => entry.alive),
+      "前置：卸载前面板条目必须存活",
+    ).toBe(true);
+    // 〔顺序契约的可判定形态〕面板注册**读到了**本次 `$mount` 装出的 namespace 服务
+    // （`ctx.get("remote.soloips")`，`register.js` 的 `servicesOf`）。调换两步顺序时
+    // 该服务尚未发布、注册路径抛错——这里把「顺序正确」钉成事实。
+    expect(
+      world.root.get("remote.soloips"),
+      "面板注册必须在 $mount 之后：`ctx.get('remote.soloips')` 应解析到本次挂载装出的服务",
+    ).toBeDefined();
+
+    // 卸载由**框架**驱动：本用例从不调用 `apply` 的返回值。
+    await world.fork.dispose();
+    // 〔卸载同样是异步链〕disposer 先 `disposePanel()` 再 `await unmount()`；缺陷形态下
+    // 该 disposer 从未被登记，故这里等待也不会「等出」注销——等待只是给正确形态留出
+    // 结算窗口，不改变判据。
+    await settleDeferredWork();
+
+    expect(
+      world.slots.filter((entry) => entry.alive),
+      "卸载后面板注册必须被注销——apply 的返回值没被框架收下时，这条链会整条丢失" +
+        "（缺陷形态：`export function apply(` 被 cordis 以 `new` 调用、返回值被丢弃）",
+    ).toEqual([]);
+    expect(
+      [...world.localeNamespaces],
+      "卸载后字典命名空间必须被注销（同上：注销只经返回的 disposer）",
+    ).toEqual([]);
+    // 〔namespace 撤回：断言它成立，但**不**把它当本缺陷的鉴别判据〕
+    //
+    // 实测（两种形态各跑一遍）：`export function apply(` 与 `export async function
+    // apply(` 下 namespace **都被撤回**。原因是真 `$mount` 的清理挂在 `callerCtx.effect`
+    // 上（`api-gateway/src/client/index.ts:201-209`），随调用者 fiber 卸载自动发生，
+    // 不经过 `apply` 的返回值。
+    //
+    // 因此本断言的作用是「卸载路径整体成立」的**组成事实**，不是本缺陷的鉴别器——
+    // 删掉它不会让缺陷漏网（上面两条会红），但保留它使「卸载后世界确实回到挂载前」
+    // 成为一个被断言的事实，而不是靠推断。
+    expect(
+      world.root.get("remote.soloips"),
+      "卸载后 namespace 服务必须从服务表撤回（随调用者 fiber 卸载；由 $mount 的 callerCtx.effect 兜住）",
+    ).toBeUndefined();
+  });
+
+  it("surfaces a $mount failure to the framework (fail-closed，FE-1a-FIX)", async () => {
+    // ── 同一形态缺陷的第二条后果（实测）─────────────────────────────────────
+    //
+    // `async` 形态让 `$mount` 的失败以 **rejected promise** 交给框架：`await fiber`
+    // 拒绝、fiber 落到 FAILED（`Fiber._reload` 的 catch → `_error` + `_unload`）。
+    // 被丢弃的 Promise 形态则相反：`new` 分支返回实例，失败**逃出** cordis 的视野，
+    // `await fiber` **成功**、fiber 停在 ACTIVE，失败只以 unhandled rejection 呈现。
+    // 这是 fail-open——宿主会在「插件已激活」的假象下继续跑。
+    //
+    // 〔实测对照〕同一替身（`$mount` 抛错）下：
+    //   `export function apply(`      → await fork RESOLVED，fiber.state = 2 (ACTIVE)
+    //   `export async function apply(` → await fork REJECTED("测试替身：$mount 失败")，
+    //                                    fiber.state = 3 (FAILED)
+    //
+    // 〔为什么这条与上一条是**两条**用例〕它们判的是同一缺陷的两个不同后果
+    // （卸载静默失效 / 启动失败被吞），且各自可独立失效——合并成一条会让「修好了一半」
+    // 呈现为整条失败，掩盖另一条的回归。
+    const bundle = loadBundleExports();
+    const world = loadWithRealCordis(bundle, { mountFails: true });
+
+    // 〔必须吞掉 unhandled rejection〕缺陷形态下这个 rejection 没有任何观察者
+    // （那正是 fail-open 的表现）。不挂监听会让 vitest 把本用例判成「进程级未处理
+    // 拒绝」而红——红的理由会指向噪声而非判据。挂了监听后，判据仍是 `await fork`
+    // 的结算结果：形态正确时它拒绝，形态错误时它成功。
+    const swallowed: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      swallowed.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    // 〔为什么不写 `expect(world.fork).rejects.toThrow(...)`〕`world.fork` 是 cordis 的
+    // traceable Proxy：断言失败时 vitest 的 pretty-format 会去读它的属性，触发
+    // `cannot get property "$$typeof" without inject`（**实测**）——失败信息被这条
+    // 无关错误顶掉，诊断指向错误方向。故先把结算结果收敛成**字符串**，再断言字符串。
+    let settlement: string;
+    try {
+      await world.fork;
+      settlement = "resolved";
+    } catch (error) {
+      settlement = `rejected: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+
+    expect(
+      settlement,
+      "$mount 失败必须让 fiber 拒绝（fail-closed）——`resolved` 说明失败逃出了 cordis 的视野",
+    ).toBe("rejected: 测试替身：$mount 失败");
+
+    // 面板与字典都不得注册：失败发生在 `$mount` 之后，注册代码根本没跑到。
+    expect(world.slots, "挂载失败时不得注册任何面板条目").toEqual([]);
+    expect([...world.localeNamespaces], "挂载失败时不得注册字典命名空间").toEqual([]);
+    // 〔为什么不在这里断言 `swallowed` 为空〕缺陷形态下那条 rejection 必然逃逸，
+    // 「有逃逸」本身就是 fail-open 的证据；把它写成断言会让本用例在**修复后**仍依赖
+    // 监听器的时序（脆弱）。判据由上面的 `settlement` 承担，`swallowed` 只是噪声闸。
   });
 
   it("carries a strict codec that actually validates", async () => {
     const { registrations } = loadClientBundle();
-    const exports = registrations[0]?.factory(() => {
-      throw new Error("本 bundle 不应有外部 require");
-    }) as { apply: (ctx: unknown) => Promise<unknown> };
+    const exports = registrations[0]?.factory(pageRequire([])) as {
+      apply: (ctx: unknown) => Promise<unknown>;
+    };
 
-    let contribution:
-      | {
-          descriptors: {
-            id: string;
-            parameters: {
-              codec: {
-                mode: string;
-                create: () => { safeParse: (v: unknown) => { success: boolean } };
-              };
-            }[];
-            result: { create: () => { safeParse: (v: unknown) => { success: boolean } } };
-          }[];
-        }
-      | undefined;
-    await exports.apply({
-      remote: {
-        async $mount(c: typeof contribution) {
-          contribution = c;
-          return async () => undefined;
-        },
-      },
-    });
+    // 本用例只消费贡献的 **codec 形状**（真贡献的其余字段不参与断言）。
+    interface CodecContribution {
+      descriptors: {
+        id: string;
+        parameters: {
+          codec: {
+            mode: string;
+            create: () => { safeParse: (v: unknown) => { success: boolean } };
+          };
+        }[];
+        result: { create: () => { safeParse: (v: unknown) => { success: boolean } } };
+      }[];
+    }
+    // 〔替身同上一用例〕`apply` 需要 `ctx.get("remote.soloips")` 解析本包的
+    // namespace 服务（面板注册路径）；见 `../support/page-context.js` 的读源清单。
+    // 本用例的判据是**贡献内容**，故从替身的挂载记录里取回贡献。
+    const page = pageContext<CodecContribution>();
+    await exports.apply(page.ctx);
+    const contribution = page.mounts[0]?.contribution;
 
     // 〔按 id 选，不按下标〕BE-6a 起本贡献含 6 条描述符（getStatus + 业务面五项），
     // 顺序由生成器决定。按 `descriptors[0]` 取会让判据随数量与顺序漂移——本用例
@@ -185,11 +605,76 @@ describe("soloips-web artifact behavior (BE-0b-ii / F-03)", () => {
     ]) {
       expect(source, `浏览器产物不得含服务端实现/凭据标识 "${marker}"`).not.toContain(marker);
     }
-    // Node 内置模块（`node:` 前缀与裸名）都不得出现：本 bundle 在浏览器里执行。
-    const nodeRequires = [...source.matchAll(/require\(\s*["'](?:node:)?([a-z_]+)["']\s*\)/g)].map(
-      (match) => match[1],
+    // Node 内置模块都不得出现：本 bundle 在浏览器里执行。
+    //
+    // 〔判据口径（FE-1a 收紧）〕原判据是「任何裸 `require("<小写名>")` 都不允许」，
+    // 它把 `react` 这类**页面模块表行**也判成 Node 内置（正则只按「小写裸名」匹配）。
+    // 公司面板引入 React 后该口径直接误报（实测：`expected [ 'react' ] to deeply
+    // equal []`）。改为按**Node 内置清单**判定（`node:` 前缀 + 官方内置名），这才是
+    // 原判据真正想表达的性质；「模块表外的裸说明符」由上面的物化用例覆盖。
+    const requires = [...source.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map(
+      (match) => match[1] ?? "",
     );
-    expect(nodeRequires, "浏览器产物不得 require Node 内置模块").toEqual([]);
+    expect(
+      requires.filter((specifier) => specifier.startsWith("node:")),
+      "浏览器产物不得 require node: 前缀的内置模块",
+    ).toEqual([]);
+    const nodeBuiltins = new Set([
+      "assert",
+      "buffer",
+      "child_process",
+      "cluster",
+      "crypto",
+      "dgram",
+      "dns",
+      "events",
+      "fs",
+      "http",
+      "https",
+      "net",
+      "os",
+      "path",
+      "process",
+      "querystring",
+      "readline",
+      "stream",
+      "string_decoder",
+      "timers",
+      "tls",
+      "tty",
+      "url",
+      "util",
+      "v8",
+      "vm",
+      "worker_threads",
+      "zlib",
+    ]);
+    expect(
+      requires.filter((specifier) => nodeBuiltins.has(specifier)),
+      "浏览器产物不得 require Node 内置模块的裸名",
+    ).toEqual([]);
+  });
+
+  it("requests nothing outside the page module table (外部面 ⊆ 模块表)", () => {
+    // 〔为什么单列一条〕物化用例的判据是「能物化 + 请求面合法」，但它只在
+    // `apply` 被调用时观察一次；本用例把「请求面 ⊆ 模块表」这条性质**独立**钉住，
+    // 并额外断言请求面非空（否则该断言在「产物什么都不请求」时空洞通过）。
+    //
+    // 〔清单来源〕`PAGE_MODULE_TABLE_WORDS` 是**手写替身**；它与构建期
+    // `tsdown.config.ts` 的 `MODULE_TABLE_WORDS` 的同步由
+    // `../client-mount.spec.ts` 的 `pins the page module table` 用例钉住。
+    expect(PAGE_MODULE_TABLE_WORDS.length, "模块表替身不得为空").toBeGreaterThan(0);
+    const { registrations } = loadClientBundle();
+    const requests: ModuleTableRequest[] = [];
+    const exports = registrations[0]?.factory(pageRequire(requests)) as {
+      apply: (ctx: unknown) => Promise<unknown>;
+    };
+    expect(requests.length, "产物至少应请求 react 的 JSX 运行时").toBeGreaterThan(0);
+    expect(
+      requests.filter((request) => !request.inTable).map((request) => request.specifier),
+      "产物请求了页面模块表无法应答的说明符",
+    ).toEqual([]);
+    expect(typeof exports.apply).toBe("function");
   });
 
   it("inlines the generated contribution instead of leaving an external require", () => {

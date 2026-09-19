@@ -69,6 +69,14 @@ export const REQUIRED_CASES = [
   "carries a strict codec that actually validates",
   "keeps server-side implementation and credentials out of the artifact",
   "inlines the generated contribution instead of leaving an external require",
+  // FE-1a：产物引入 React 后新增的外部面判据——产物请求的每个说明符都必须在
+  // 页面模块表内（表外即页面 `require` 必然抛错）。
+  "requests nothing outside the page module table (外部面 ⊆ 模块表)",
+  // FE-1a-FIX：`apply` 形态缺陷（`export function apply(` 有 `prototype` → cordis
+  // 以 `new` 调用 → 返回值被丢弃）。这两条必须由**真 cordis** 驱动、且**不触碰**
+  // `apply` 的返回值——手动调用返回值会让断言恰好绕开缺陷。见该文件内的长注释。
+  "hands apply's disposer to cordis (卸载路径由框架驱动，FE-1a-FIX)",
+  "surfaces a $mount failure to the framework (fail-closed，FE-1a-FIX)",
   // Host 侧 Typert 产物行为（真 import + 运行时同判据）。
   "emits every declared artifact named by package.json exports (无部分生成)",
   // 运行期身份唯一（BE-6a 身份分裂修复）：两份 SoloipsWebHost 类定义会让

@@ -1,21 +1,21 @@
 {
-  "note": "M-A 装配层身份一致性（裁定六）证据绑定清单。任一字段对应的 SHA / 摘要变化即本证据 stale，必须在本机重跑真实消费者链路后更新。 本清单绑定**集成候选**（三条审查修复分支 + CI 顺序修复的合并结果）：reports[] 内的报告均由该候选在本机真实实例上产生。ablation-no-inject.json 是**历史对照**（绑定的是更早的候选 cf56b2c / 摘要 8eafb230），它证明「web 行 inject 与业务面可用性无因果」这一命题，**不是**本候选的证据，故登记在 additionalEvidence[] 而非 reports[]。",
-  "candidateSha": "2205d097d0815944bafe065847853aa9a426f558",
+  "note": "M-A 装配层身份一致性（裁定六）证据绑定清单。任一字段对应的 SHA / 摘要变化即本证据 stale，必须在本机重跑真实消费者链路后更新。 本清单绑定 **FE-1a 候选**（公司面板 + apply 形态修复 + no-root 文案修复，基于已验收的集成候选 5fe75e3）。ablation-no-inject.json 是**历史对照**（绑定更早候选 cf56b2c / 摘要 8eafb230），它证明「web 行 inject 与业务面可用性无因果」这一命题，**不是**本候选的证据，故登记在 additionalEvidence[] 而非 reports[]。",
+  "candidateSha": "7d2aba3eb36226ddea3d251b7513476dec65f19d",
   "artifactPath": "packages/web/lib/client.js",
-  "artifactSha256": "25059a0de99a7aa4d5dfec1da0db5a3a36d8beb779fd5c3f94ce85a2905d3df8",
+  "artifactSha256": "6c87d6beffd06d3c0d3e9d236cda7a6deded753eb638cc6c00605d1669386a0b",
   "runtimeFingerprint": {
     "harness": "deepseek-harness fork 0.1.6-alpha.1",
     "runtimePath": "D:/Source/workspace/deepseek-harness/apps/cli/lib/bin.js",
     "node": "v24.18.0",
     "instance": "isolated DSH_HOME D:/tmp/soloips-be6a/instance/home",
     "host": "127.0.0.1:55321",
-    "storageRoot": "D:/tmp/soloips-be6a/instance/storage-int3",
+    "storageRoot": "D:/tmp/soloips-be6a/instance/storage-fe1a-e2e",
     "planCode": "free"
   },
   "reports": [
     {
       "file": "e2e-company-final.json",
-      "sha256": "25cd735b49718dd4fdc73a4e93626941f5f00b5a01c252e876ad6112ea542a3a"
+      "sha256": "13f4e52435c92b6f459cc226696a4db4202cf879d8becaa39f19f044f8a1f531"
     }
   ],
   "additionalEvidence": [
