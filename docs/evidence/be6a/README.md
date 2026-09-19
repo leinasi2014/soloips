@@ -6,25 +6,32 @@
 
 | 元素 | 值 |
 |---|---|
-| candidate SHA | `cf56b2c44f50ede65ec490067e74f63d7b009243` |
-| 产物摘要（`packages/web/lib/client.js` sha256） | `8eafb230d7b2273f026e741b5aa6b3ef657b7430bab2e9765b9bafbaf15039b5` |
-| 页面实载产物 | `/plugins/??soloips-web/client.js&rev=70ff993dac79a093-51`（`embedded: true`——候选字节确实在页面加载的 bundle 内） |
-| DSH runtime | fork `deepseek-harness` 0.1.6-alpha.1（本机 `apps/cli/lib/bin.js`） |
-| 实例 | 隔离 DSH_HOME `D:/tmp/soloips-be6a/instance/home`；存储根 `…/storage-final2`；`127.0.0.1:55321` |
+| candidate SHA | `2205d097d0815944bafe065847853aa9a426f558` |
+| 产物摘要（`packages/web/lib/client.js` sha256） | `25059a0de99a7aa4d5dfec1da0db5a3a36d8beb779fd5c3f94ce85a2905d3df8` |
+| 页面实载产物 | `/plugins/??soloips-web/client.js&rev=ccc6bc94a28e0c4f-51`（`embedded: true`——候选字节确实在页面加载的 bundle 内） |
+| DSH runtime | fork `deepseek-harness` 0.1.6-alpha.1（`D:/Source/workspace/deepseek-harness/apps/cli/lib/bin.js`） |
+| 实例 | 隔离 DSH_HOME `D:/tmp/soloips-be6a/instance/home`；存储根 `…/storage-int3`；`127.0.0.1:55321` |
 | 计划码 | `free`（配额 1 公司 / 0 子公司） |
 
 **stale 规则**：上表任一元素对应的 SHA / 摘要变化 → 本目录证据自动失效，真实链路必须重跑。
+
+## 本候选覆盖什么（集成范围）
+
+本候选 = 三条审查修复分支（`fix/storage-p1` + `fix/audit-defects` + `fix/audit-defects2`）
+并入 `feat/BE-6a-host-wiring`，加 CI 顺序修复。故本轮 E2E 证明的是**集成后**的装配路径，
+而不是任何单条分支。
 
 ## 证据文件
 
 | 文件 | 内容 | 摘要 |
 |---|---|---|
-| `e2e-company-final.json` | 完整 E2E 报告（真实浏览器 CDP 驱动，页面上下文内调 Remote）——**9 步全绿，无 `failure` 字段** | sha256 `20246ba9391f0a078013cc31a2ad1fb22a81fd17551f020eca13f3dba037936f` |
-| `restart-readback.json` | **进程重启后**读回（裁定六第 3 条） | 见文件内 `matched: true` |
-| `restart-readback-pair.json` | **重启前后对照复现**：同一 fact 在重启前后各读回一次，两次 PID 不同（`43716` → `38336`），读回结果**逐字一致** | 见文件内 `identical: true` |
+| `e2e-company-final.json` | 完整 E2E 报告（真实浏览器 CDP 驱动，页面上下文内调 Remote）——**9 步全绿，无 `failure` 字段，console 零噪声** | sha256 `25cd735b49718dd4fdc73a4e93626941f5f00b5a01c252e876ad6112ea542a3a` |
+| `restart-readback.json` | **进程重启后**读回（裁定六第 3 条）——重启后那一轮 | 见文件内 `matched: true` |
+| `restart-readback-pair.json` | **重启前后对照复现**：同一 fact 在重启前后各读回一次，两次 PID 不同（`55404` → `43872`），读回结果**逐字一致**（`identical: true`） | 见文件内 `identical: true` |
+| `ablation-no-inject.json` | **历史对照**（绑定更早候选 `cf56b2c`）：摘除 web 行 `inject` 后业务面仍可用，证明该声明与业务面可用性**无因果**。**不是本候选的证据**，故列在 `additionalEvidence[]` | sha256 `4e49cecba7ede1d4e6e57ebf3695318971de7ca9eef8a9ff3d72152e376b50be` |
 | `CANDIDATE-MANIFEST.json` | 候选绑定清单（由 CI 门 `check:m-a-evidence` 强制比对） | — |
 
-> **独立验收的证据边界**：独立 QA（`soloips-tester`）无 DSH fork 运行时与隔离实例，故**重启读回未经其独立复现**——QA 能且仅能证明证据文件内部自洽（31/31 核对通过）。本目录的 `restart-readback-pair.json` 是**指挥**（持实例角色）为补此边界所做的带时间戳对照复现；该边界在放行记录中显式登记。
+> **独立验收的证据边界**：独立 QA（`soloips-tester`）无 DSH fork 运行时与隔离实例，故**重启读回未经其独立复现**——QA 能且仅能证明证据文件内部自洽。本目录的 `restart-readback-pair.json` 是**指挥**（持实例角色）为补此边界所做的对照复现；该边界在放行记录中显式登记。
 
 ## 实测结果（裁定六行为判据逐条）
 
@@ -39,7 +46,7 @@
 
 | 步骤 | 结果 |
 |---|---|
-| `create` | `committed`，`companyId: cmp_e463ab7e-fced-403e-869b-eef469044ef4` |
+| `create` | `committed`，`companyId: cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6` |
 | `read-back` | `ok`（id / name / type 与创建一致；**不含 `accountId`**） |
 | `tree` | `ok`（含该公司一条） |
 | `replay`（同 operationId） | `replayed`（幂等，返回**原** companyId，不新建） |
@@ -60,10 +67,22 @@
 - **安全性成立**：`accountId` 未被采纳（core 用部署注入账户），零业务写。
 - 处置（已落地）：断言改为 5 条——不得 `committed`/`replayed`、错误码不含 `ACCOUNT`、同 operationId 重放无 `result`、对照调用同态、树条目数不变。判别力由 10 组响应形状的仿真证明（见该切片报告）。
 
+### 本轮重启复现的环境事实（如实登记，勿读作产品能力）
+
+重启方式为**强制终止**（`Stop-Process -Force`——控制台应用无优雅关闭入口，`CloseMainWindow` 对无窗口进程无效）。
+终止后宿主残留 `.soloips-writer-lease.json.lock`（内容为已死 PID `55404`），新宿主因此 fail-closed 返回
+`unavailable`。按「锁主进程已死」判定清除该残留锁后重启，读回通过。
+
+- 该残留是**环境事实**，其清除是**人工判定**；
+- 本证据**不证明**产品具备「自动失效锁检测」能力——该能力的有无是独立议题（见 `docs/technical/state.md` 的租约章节），
+  不得由本文件推断；
+- 判别「锁主是否存活」的实测方法：`Get-Process -Id <锁内 PID>`（本次返回 0 个进程）。
+
 ## 不证明什么（边界声明）
 
 - 不证明模型工具面（本包不注册模型工具）；
 - 不证明**网关拒绝 `args.input` 内层未声明字段**（网关不检查内层——这是已实测的设计事实，非缺陷）；
 - 不**构造性**验证配额拒绝端到端（本轮 `refused/quota-exceeded` 是真实发生并被逐字段断言的，但场景由「free 计划已占满」自然产生，非为验证配额而构造；构造验证属 FE-1b 窗口）；
 - 不证明 UI 呈现（本片无界面改动）；
-- 不证明上游装配链无第二处身份分裂（如协议包被装成两份）——只证明本候选在**本实例**下经真实链路成立。
+- 不证明上游装配链无第二处身份分裂（如协议包被装成两份）——只证明本候选在**本实例**下经真实链路成立；
+- 不证明**崩溃恢复**（宿主被强制终止后的锁自动失效）——见上节环境事实。
