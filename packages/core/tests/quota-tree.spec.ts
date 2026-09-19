@@ -339,7 +339,14 @@ describe("B. 同根并发创建不超限（验收②）", () => {
     // 这是硬依赖（乙的提交排在甲的提交之后），故「等待后仍未结算」是确定性断言。
     const settled = await Promise.race([
       second.then(() => "settled" as const),
-      new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 10)),
+      // 〔为什么 setTimeout 回调带花括号〕`resolve(...)` 返回 void；简写形态把它当
+      // 返回值传给 `setTimeout`，读起来像「定时器产出这个值」。花括号让「调用是副作用」
+      // 显式可见，行为不变（定时器忽略回调返回值）。
+      new Promise<"pending">((resolve) =>
+        setTimeout(() => {
+          resolve("pending");
+        }, 10),
+      ),
     ]);
     expect(settled).toBe("pending");
 

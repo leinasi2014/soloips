@@ -222,7 +222,13 @@ function isSoloipsWebCoreSurface(value: unknown): value is SoloipsWebCoreSurface
  * @returns 已就绪的 core 服务面；未发布或形状不符时 `undefined`。
  */
 function coreOf(ctx: Context): SoloipsWebCoreSurface | undefined {
-  const candidate = ctx.get(SOLOIPS_CORE_SERVICE_NAME);
+  // 〔为什么显式标注 `unknown`〕cordis 的 `Context.get(name: string)` 声明为返回
+  // **`any`**（`cordis/lib/types/reflect.d.ts:122`；带类型的重载要求 name 是
+  // `keyof this`，而本包的 `Context` 增强（见下方 `declare module`）只在本文件被
+  // 编译时才可见——`coreOf` 是模块级函数，`ctx` 的静态类型来自官方 `Context`，
+  // 拿不到那个增强）。标注 `unknown` 是把宿主返回值**就地**收成未知值，随后交给
+  // `isSoloipsWebCoreSurface` 结构守卫收窄——守卫仍是唯一判据，不因标注而放宽。
+  const candidate: unknown = ctx.get(SOLOIPS_CORE_SERVICE_NAME);
   return isSoloipsWebCoreSurface(candidate) ? candidate : undefined;
 }
 
@@ -535,10 +541,17 @@ export class SoloipsWebHost extends TypertRemoteService {
   /**
    * 通路探针：回显入参并返回本半边的工具链标识。
    *
+   * 〔为什么是 async 而体内无 await〕返回类型是**跨线契约**：`@Remote` 生成器把
+   * 本方法登记为 `(input) => Promise<RemoteResult<SoloipsWebStatus>>`
+   * （`lib/typert.remote-client.d.ts` 的 `TypertRemoteMap['soloips/getStatus']`），
+   * 调用方按 thenable 等待。方法体是纯值构造（零 IO、零 await），但**不得**因此
+   * 去掉 `async`——那会改掉发布面的返回类型。
+   *
    * @param input - 具名必填单对象（Typert 严格分析要求；不得改为解构或多参数）。
    * @returns 服务键、入参回显与工具链标识。
    */
   @Remote("getStatus")
+  // oxlint-disable-next-line typescript/require-await -- @Remote 跨线契约要求 Promise 返回（生成物已固定）；实现是纯值构造
   async getStatus(input: SoloipsWebStatusInput): Promise<SoloipsWebStatus> {
     return {
       service: this.name,

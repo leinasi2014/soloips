@@ -37,7 +37,12 @@ describe("core host-context runtime contract", () => {
       logger: () => logger,
     };
     // enabled:false ⇒ 任何副作用之前早退：不调用 inject、不抛。
-    expect(() => soloipsCoreEntry(host, { enabled: false })).not.toThrow();
+    // 〔为什么带花括号〕`soloipsCoreEntry` 返回 void；简写形态把 void 表达式当返回值
+    // 传给 `expect(...)`（`no-confusing-void-expression`）。`expect(() => {...})` 的
+    // 契约是「传入一个会抛错的回调」，回调返回值不参与判定，故行为不变。
+    expect(() => {
+      soloipsCoreEntry(host, { enabled: false });
+    }).not.toThrow();
   });
 
   it("does not expose storageDomain on the declared host surface", () => {

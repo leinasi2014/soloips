@@ -363,6 +363,7 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
     },
 
     /** 用同一个 canonical root 构造 backend 与 facility（SEAM-11）。 */
+    // oxlint-disable-next-line typescript/require-await -- 契约返回 Promise（SoloipsStoragePort.createStack）；构造全同步，但校验失败必须是 rejection 而非同步抛出
     async createStack(options: SoloipsStorageStackOptions): Promise<SoloipsStorageStack> {
       const backend = options.backend ?? config.defaultBackend;
       if (!CONSTRUCTIBLE_BACKENDS.includes(backend as "json" | "sqlite")) {

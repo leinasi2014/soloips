@@ -52,7 +52,18 @@ class FakeHostContext {
     ...args: Parameters<SoloipsCoreHostContext["inject"]>
   ): ReturnType<SoloipsCoreHostContext["inject"]> {
     const [deps, callback] = args;
-    this.injectCalls.push(Array.isArray(deps) ? [...(deps as string[])] : [String(deps)]);
+    // 〔为什么逐元素 `String(...)`，而不是 `as string[]` + `String(deps)`〕
+    //  1. `Inject` 的元素类型是 `keyof Dict` = `string | number`，故数组分支需要一次
+    //     **真转换**；旧写法的 `as string[]` 是对联合类型下断言，把 number 元素谎报成
+    //     string（`injectCalls` 的声明是 `string[][]`）。
+    //  2. 对象分支（`{ 服务名: 拦截配置 }`）的**服务名就是键**，故取 `Object.keys`；
+    //     旧写法的 `String(deps)` 会产出 `"[object Object]"`——一个既不是服务名、
+    //     也不可用于比对的常量串（`no-base-to-string` 报的正是这一点）。本替身当前
+    //     只被数组形态调用（`injectCalls` 的两处断言均为此形态），对象分支是防御性的，
+    //     故这次修正无既有断言受影响。
+    this.injectCalls.push(
+      Array.isArray(deps) ? deps.map((name) => String(name)) : Object.keys(deps),
+    );
     void callback(this as never);
     return undefined as unknown as ReturnType<SoloipsCoreHostContext["inject"]>;
   }
@@ -64,7 +75,13 @@ class FakeHostContext {
   provide(
     ...args: Parameters<SoloipsCoreHostContext["provide"]>
   ): ReturnType<SoloipsCoreHostContext["provide"]> {
-    const [name, value] = args;
+    // 〔为什么用下标取值 + 显式标注，而不是 `const [name, value] = args`〕宿主签名是
+    // `provide(name: string, value?: any)`，元组第二项因此是 `any`；解构赋值会把 `any`
+    // 直接灌进局部变量（`no-unsafe-assignment` 的报点）。`this.provided` 的声明是
+    // `Map<string, unknown>`，所以标注 `unknown` 与消费面一致，且把「这个值未经校验」
+    // 显式写在类型上。
+    const name = args[0];
+    const value: unknown = args[1];
     this.provided.set(name, value);
     return (() => {
       this.provided.delete(name);
@@ -183,7 +200,15 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
     };
     ctx.setService("soloipsAdapter", broken);
     soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
-    await vi.waitFor(() => expect(ctx.warnings.length).toBe(1));
+    // 〔为什么是带花括号的回调，而不是简写 `() => expect(…).toBe(1)`〕
+    // `vi.waitFor` 的**重试驱动靠回调抛错**，返回值只被用来判 thenable
+    // （`vitest/dist/chunks/vi.bdSIJ99Y.js` 的 `checkCallback`：非 thenable 一律
+    // `onResolve(result)`）。`expect(...).toBe(...)` 返回 `void`，简写形态把 void
+    // 表达式当作返回值传给 waitFor——语义上无用，读起来却像「等待这个断言的值」。
+    // 花括号形态让「断言是副作用、重试由抛错驱动」在源码里显式可见；行为逐字不变。
+    await vi.waitFor(() => {
+      expect(ctx.warnings.length).toBe(1);
+    });
     expect(ctx.provided.size).toBe(0);
   });
 
@@ -191,7 +216,9 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
     const ctx = new FakeHostContext();
     ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
     soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
-    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await vi.waitFor(() => {
+      expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+    });
     const service = ctx.provided.get(SOLOIPS_CORE_SERVICE_NAME);
     expect(service).toBeDefined();
 
@@ -216,7 +243,9 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
     const first = new FakeHostContext();
     first.setService("soloipsAdapter", { storage: fakeStoragePort() });
     soloipsCoreEntry(first, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
-    await vi.waitFor(() => expect(first.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await vi.waitFor(() => {
+      expect(first.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+    });
     await first.unload();
 
     soloipsCoreEntry(ctx, {
@@ -224,7 +253,9 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
       storageRoot: ROOT,
       accountId: TEST_OTHER_ACCOUNT_ID,
     });
-    await vi.waitFor(() => expect(ctx.warnings.length).toBe(1));
+    await vi.waitFor(() => {
+      expect(ctx.warnings.length).toBe(1);
+    });
     expect(ctx.provided.size).toBe(0);
     expect(ctx.warnings.join("\n")).toContain("SOLOIPS_CORE_ACCOUNT_MISMATCH");
   });
@@ -247,7 +278,9 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
       accountId: TEST_ACCOUNT_ID,
       planCode: "pro",
     });
-    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await vi.waitFor(() => {
+      expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+    });
     const service = ctx.provided.get(SOLOIPS_CORE_SERVICE_NAME) as {
       createCompany(input: {
         operationId: string;
@@ -285,7 +318,9 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
       accountId: TEST_ACCOUNT_ID,
       planCode: "gold",
     });
-    await vi.waitFor(() => expect(ctx.warnings.length).toBe(1));
+    await vi.waitFor(() => {
+      expect(ctx.warnings.length).toBe(1);
+    });
     expect(ctx.provided.size).toBe(0);
     expect(ctx.warnings.join("\n")).toContain("SOLOIPS_CORE_CONFIG_INVALID");
   });
@@ -294,7 +329,9 @@ describe("soloips-core plugin entry (fail-closed publishing)", () => {
     const ctx = new FakeHostContext();
     ctx.setService("soloipsAdapter", { storage: fakeStoragePort() });
     soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
-    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await vi.waitFor(() => {
+      expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+    });
     const service = ctx.provided.get(SOLOIPS_CORE_SERVICE_NAME) as {
       createCompany(input: {
         operationId: string;

@@ -45,6 +45,20 @@ interface CoreStub {
 }
 
 /**
+ * 结构判别：从 `unknown` 失败对象上读稳定码（`web/src/index.ts` 的
+ * `coreErrorCodeOf` 同法——本包不 import core 的运行时，且跨包 `instanceof`
+ * 在重复安装时不成立，故判据取「对象上有字符串 `code`」）。
+ *
+ * 〔为什么断言侧需要它〕`catch` 到的是 `unknown`；直接 `as RemoteError` 再取
+ * `.code` 会在类型层伪造「这一定是 RemoteError」而运行期无依据。判别先于取值。
+ */
+function coreErrorCodeOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const code = (error as { readonly code: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
  * 建一个**已发布** core 服务的上下文；`published: false` 模拟未就绪。
  *
  * `ctx` 也一并返回：§8 的接收者身份用例需要走**真实的 cordis 服务解析路径**
@@ -478,7 +492,16 @@ describe("BE-6a core 失败翻译（稳定码过线）", () => {
     // 〔为什么码必须逐字保留〕网关对未归类异常折叠为 `gateway/internal`，而界面
     // 的 i18n 表以 `SoloipsCoreErrorCode` 为键（`soloips.error.validation` 等）。
     // 丢掉码会让「参数无效」与「服务器内部错误」在界面上变成同一条文案。
-    expect((caught as RemoteError).code).toBe("SOLOIPS_CORE_VALIDATION");
+    //
+    // 〔为什么经本地结构判别取值，而不是 `(caught as RemoteError).code`〕
+    // `caught` 是 `unknown`；断言里直接下 `as` 等于在类型层凭空断言「这一定是
+    // RemoteError」，取值本身没有任何运行期依据。判别先于取值：`codeOf` 走
+    // **结构判据**（对象上有字符串 `code`），与协议自身的判别口径一致
+    // （`remote-error.d.ts`：「Discrimination is always by `code`, never by
+    // instanceof」），也与本仓既有做法同法（`web/src/index.ts` 的
+    // `coreErrorCodeOf`、core 的 `soloipsAdapterErrorCodeOf`）。
+    // 类别断言仍由上一行的 `toBeInstanceOf(RemoteError)` 独立承担。
+    expect(coreErrorCodeOf(caught)).toBe("SOLOIPS_CORE_VALIDATION");
   });
 
   it("跨根/账户不符：ACCOUNT_MISMATCH 同样过线（不被折叠）", async () => {

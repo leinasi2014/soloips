@@ -198,8 +198,18 @@ export class SqliteStorageBackend implements StorageBackend {
     if (!Array.isArray(descriptor.tables)) {
       throw new Error(`invalid tables: ${descriptor.tables}`);
     }
+    // 〔为什么逐元素再判 `typeof`〕`descriptor.tables` 的声明类型是 `readonly string[]`，
+    // 但本函数是**防注入边界**：调用方可能未经类型检查（JS 调用方、`as` 断言）传入非字符串
+    // 元素。`RegExp.test` 会对其做 ToString 强制转换，于是 `{ toString: () => "evil" }`
+    // 能通过 `UNIT_NAME_RE` 并被当作表名使用——正是本函数要挡的注入面。逐元素判类型把
+    // 该路径改成 fail-closed。
+    //
+    // 〔为什么必须显式判 `typeof` 而不是只写 `Array.isArray`〕`Array.isArray(x)` 对
+    // `readonly string[]` 的窄化结果是 `any[]`（lib.es5 的签名 `arg is any[]`），
+    // 元素类型因此退化成 `any` 并触发 `typescript/no-unsafe-argument`（实测）。
+    // 加上 `typeof` 判据后元素类型仍是 `string`，无需断言。
     for (const table of descriptor.tables) {
-      if (!UNIT_NAME_RE.test(table)) {
+      if (typeof table !== "string" || !UNIT_NAME_RE.test(table)) {
         throw new Error(`invalid table name: ${table}`);
       }
     }
@@ -232,6 +242,20 @@ export class SqliteStorageBackend implements StorageBackend {
 /**
  * SQLite KV 单元实现
  * 对应一个 domain 的所有表（每个单元一个独立 `${name}.db` 文件）
+ *
+ * 〔为什么这些方法都是 `async` 而体内无 `await`〕本类把 better-sqlite3 的**同步**
+ * API（`Database#prepare/run/close`、Drizzle 的同步 driver）包装成 `KvUnit` 的
+ * **异步契约**（`loadAll`/`putRecord`/`deleteRecord`/`setGlobal`/`close` 在
+ * `@deepseek-ai/dsh-storage` 的 `backend.d.ts` 里逐条声明为 `Promise<…>`）。
+ * `async` 在这里**不是**装饰：
+ *  1. 返回值必须是 Promise——契约声明如此，调用方（core 经 domain 层）按 thenable 等待；
+ *  2. 同步抛错必须呈现为 **rejection** 而不是同步抛出（实测：非 async 版本同步抛出，
+ *     async 版本返回已 rejected 的 Promise）。本类里 `JSON.parse`（loadAll）、
+ *     `JSON.stringify`（putRecord/setGlobal）、`new Database`/DDL（initialize）、
+ *     `client.close()`（close）都可能抛——契约的失败通道是 rejection。
+ * 故保留 `async` 并用 `oxlint-disable-next-line typescript/require-await` 标注：
+ * 该规则按「有无 await」判据，无法表达「契约要求 Promise + 同步实现」这一正当形态。
+ * **不得**为消警告塞 `await Promise.resolve()`——那是为工具制造的噪声语句。
  */
 class SqliteKvUnit implements KvUnit {
   private readonly descriptor: KvUnitDescriptor;
@@ -256,6 +280,7 @@ class SqliteKvUnit implements KvUnit {
   }
 
   /** 初始化数据库、表对象与表结构 */
+  // oxlint-disable-next-line typescript/require-await -- KvUnit 契约；better-sqlite3 同步 API（见类头注）
   async initialize(): Promise<void> {
     // 创建/连接数据库
     this.client = new Database(this.dbPath);
@@ -304,6 +329,7 @@ class SqliteKvUnit implements KvUnit {
    * 对 descriptor 声明但 0 行的表仍写入空对象 `{}`（表集合保持完整）；未声明 global 时
    * `global` 为 `null`（domain 层以 null 作为「从未写入」哨兵）。
    */
+  // oxlint-disable-next-line typescript/require-await -- KvUnit 契约；better-sqlite3 同步 API（见类头注）
   async loadAll(): Promise<{ tables: Record<string, Record<string, unknown>>; global: unknown }> {
     const tables: Record<string, Record<string, unknown>> = {};
 
@@ -342,6 +368,7 @@ class SqliteKvUnit implements KvUnit {
    * 用 `.onConflictDoUpdate({ target: key, set: value })` 表达覆盖语义：与
    * `INSERT OR REPLACE` 等价，但走标准 upsert 语法（跨方言可移植；PG 侧同一构造器）。
    */
+  // oxlint-disable-next-line typescript/require-await -- KvUnit 契约；better-sqlite3 同步 API（见类头注）
   async putRecord(table: string, key: string, value: unknown): Promise<void> {
     const recordTable = this.ensureTableExists(table);
     const serialized = JSON.stringify(value);
@@ -356,6 +383,7 @@ class SqliteKvUnit implements KvUnit {
   /**
    * 删除一条记录（幂等：key 不存在即空操作）
    */
+  // oxlint-disable-next-line typescript/require-await -- KvUnit 契约；better-sqlite3 同步 API（见类头注）
   async deleteRecord(table: string, key: string): Promise<void> {
     const recordTable = this.ensureTableExists(table);
 
@@ -365,6 +393,7 @@ class SqliteKvUnit implements KvUnit {
   /**
    * 写入全局单例（单行表 id = 1，覆盖写）
    */
+  // oxlint-disable-next-line typescript/require-await -- KvUnit 契约；better-sqlite3 同步 API（见类头注）
   async setGlobal(value: unknown): Promise<void> {
     const globalTable = this.requireGlobalTable();
     const serialized = JSON.stringify(value);
@@ -379,6 +408,7 @@ class SqliteKvUnit implements KvUnit {
   /**
    * 关闭单元
    */
+  // oxlint-disable-next-line typescript/require-await -- KvUnit 契约；better-sqlite3 同步 API（见类头注）
   async close(): Promise<void> {
     if (this.client) {
       // WAL PASSIVE checkpoint（不删除 WAL 文件，防止数据丢失）

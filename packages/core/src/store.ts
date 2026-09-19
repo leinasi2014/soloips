@@ -1740,11 +1740,18 @@ class SoloipsCompanyStore implements SoloipsCoreService {
     // 且 `scope.kind === 'department'` → `#assertNoActiveDepartmentLead(scope.departmentId)`）。
     // 本片刻意**不**实现：它会把既有「后写者胜」的可见行为改为拒绝，属需要单独
     // 验收的行为变更；且 §2.4.4 明确「本裁定不重开 BE-2」。
+    // 〔为什么写成带花括号的箭头而不是简写 `() => this.#assert…()`〕两个断言的返回
+    // 类型是 `void`，简写形态会把 void 表达式**当作返回值**，读者会以为它们产出值；
+    // `precondition` 的契约只消费 `Verdict | void`，返回值语义在这里是噪声。
     const uniqueness =
       role === "general_assistant" && scope.kind === "company"
-        ? () => this.#assertNoActiveGeneralAssistant(scope.companyId)
+        ? () => {
+            this.#assertNoActiveGeneralAssistant(scope.companyId);
+          }
         : role === "team_lead" && scope.kind === "team"
-          ? () => this.#assertNoSecondTeamLead(scope.teamId)
+          ? () => {
+              this.#assertNoSecondTeamLead(scope.teamId);
+            }
           : undefined;
 
     return this.#gate.commit(
@@ -2268,6 +2275,13 @@ class SoloipsCompanyStore implements SoloipsCoreService {
           return { ok: true };
         },
       },
+      // 〔为什么是 async 而体内无 await〕`SoloipsCommitGate.commit` 的 `mutate` 形参
+      // 声明为 `(publish) => Promise<T>`（`commit-gate.ts:276/:280`），本路径不写任何
+      // 表（准入事实由 precondition 产出，落盘由门自己完成），故没有可等待的 Promise。
+      // 保留 `async` 的两个理由：① 返回类型必须是 Promise（契约）；② 下面那条
+      // `SOLOIPS_CORE_RECORD_INVALID` 必须以 **rejection** 抵达调用方——非 async 版本会
+      // 在 `mutate(publish)` 调用点同步抛出（`commit-gate.ts:345`），而门只 `await` 它。
+      // oxlint-disable-next-line typescript/require-await -- 契约要求 Promise<T> 返回；本路径零写、无可等待对象
       async () => {
         // 〔为什么显式判空而不是断言〕`admitted` 的类型仍含 `undefined`（编译器不跨
         // 回调传递收窄，与 `activateTeam` 同款）。断言（`as`）会让「precondition 忘

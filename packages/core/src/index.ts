@@ -152,14 +152,22 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
 
   ctx.inject([SOLOIPS_ADAPTER_SERVICE_NAME], (ctx2) => {
     // adapter 可能 disabled：服务值缺失时本 fiber 保持无发布状态。
-    const adapter = ctx2.get(SOLOIPS_ADAPTER_SERVICE_NAME);
+    //
+    // 〔为什么显式标注 `unknown`〕cordis 的 `Context.get(name: string)` 声明为返回
+    // **`any`**（`cordis/lib/types/reflect.d.ts:122`；带类型的那个重载要求 name 是
+    // `keyof this`，而 adapter 的 `Context` 增强只在其 `src/index.ts` 里，core 经
+    // `soloips-adapter-dsh/contracts` 消费时看不到，故落到 `any` 重载）。直接把 `any`
+    // 赋给局部变量会让 `any` 静默扩散到后续判断（`typescript/no-unsafe-assignment` 正是
+    // 在报这一点）。标注 `unknown` 是把宿主边界**就地**收成「未知值」，再交给下面的
+    // 结构守卫收窄——判据仍是运行期校验，不因标注而放宽。
+    const adapter: unknown = ctx2.get(SOLOIPS_ADAPTER_SERVICE_NAME);
     if (adapter === undefined) {
       logger?.warn(
         `soloipsCore 未发布：${SOLOIPS_ADAPTER_SERVICE_NAME} 服务不可用（adapter disabled 或未激活）`,
       );
       return;
     }
-    // `ctx.get` 返回 unknown（宿主约定）；先按契约的 SoloipsAdapter 收窄，
+    // 先按契约的 SoloipsAdapter 收窄，
     // 再校验 storage 端口——不用 `as Record<string, unknown>` 把契约类型折成字典
     // （那会丢掉索引签名之外的类型信息，也让「端口形状」的校验失去类型依据）。
     const candidate: SoloipsAdapter | undefined = isSoloipsAdapter(adapter) ? adapter : undefined;

@@ -168,7 +168,15 @@ function readinessOf(
  * SEAM-07：`enabled === false` 在**任何**副作用之前返回。副作用的判定边界：
  * settings 注册、端口构造、`ctx.provide`、`ctx.effect`、`ctx.on`、任何宿主
  * 服务读取（含 `ctx.get`）都算；此 return 之前只允许纯值计算与读 config 键。
+ *
+ * 〔为什么是 async 而体内无 await〕返回类型 `Promise<void>` 是**契约**（`data-contract.md`
+ * §3 的入口样例即 `export async function apply(...): Promise<void>`），不是实现细节：
+ * 宿主按 thenable 等待装配完成，且本体的同步抛错必须呈现为 **rejection** 而不是同步
+ * 抛出（装配失败的处置方是宿主 fiber，不是 loader 调用栈）。装配步骤本身（settings
+ * 注册、端口构造、effect/provide 挂载）全是同步调用，故没有可等待的 Promise；
+ * 塞一个 `await Promise.resolve()` 只是为消警告而制造噪声。
  */
+// oxlint-disable-next-line typescript/require-await -- 契约要求 Promise<void> 返回与 rejection 失败语义；装配全同步，无可等待对象
 export async function apply(ctx: Context, config: SoloipsAdapterConfig): Promise<void> {
   // 1. 早退（副作用零）：不注册 settings、不构造端口、不发布、不订阅。
   if (config.enabled === false) return;
