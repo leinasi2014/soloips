@@ -87,10 +87,13 @@ function CompanyList({
   );
   switch (list.kind) {
     case "no-root":
+      // 〔文案不得复用 `list.empty`〕`no-root` 是「本会话没有树根，故**没查**」，
+      // `empty` 是「查了、确无数据」。复用会让刷新页面后的用户看到
+      // 「尚未创建任何公司」——那是假陈述（公司确实在，只是本会话不知道它的 id）。
       return (
         <section className="soloips-company-list" data-soloips-list-state="no-root">
           {heading}
-          <p className="soloips-company-list-empty">{t("soloips.company.list.empty")}</p>
+          <p className="soloips-company-list-empty">{t("soloips.company.list.noRoot")}</p>
         </section>
       );
     case "loading":

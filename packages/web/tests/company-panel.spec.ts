@@ -623,9 +623,19 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
     expect(stub.treeCalls.length).toBe(0);
     const html = render(panel);
     expect(html).toContain('data-soloips-list-state="no-root"');
-    expect(html, "必须显示「尚未创建任何公司」而不是「编号错了」").toContain(
-      translate("soloips.company.list.empty"),
-    );
+    // 〔本断言在 FE-1a 收尾时订正过一次〕原文断言 `no-root` 显示
+    // `list.empty`（「尚未创建任何公司」）——那是**把缺陷固化成契约**：一个已创建
+    // 过公司、随后刷新页面的用户会看到「尚未创建任何公司」，而公司确实在（只是本
+    // 会话不知道它的 id）。`no-root` 与 `empty` 的语义不同（「没查」vs「查了、确无
+    // 数据」），文案必须可分。
+    expect(
+      html,
+      "no-root 必须显示「本会话还没建，所以不知道查哪棵树」而不是「确无公司」",
+    ).toContain(translate("soloips.company.list.noRoot"));
+    expect(
+      html,
+      "no-root **不得**复用 list.empty——那是假陈述（公司可能存在，只是本会话不知道 id）",
+    ).not.toContain(translate("soloips.company.list.empty"));
   });
 
   it("`ok` 非空时逐条渲染公司，且类型/状态经字典映射（四类型穷举可渲染）", async () => {

@@ -157,6 +157,8 @@ export const en = {
 
   "soloips.company.list.heading": "Companies",
   "soloips.company.list.empty": "No company has been created yet.",
+  "soloips.company.list.noRoot":
+    "No company has been created in this session, so there is no company tree to show yet. Create one and it will be listed here; companies created earlier are unaffected — this page just does not remember them across sessions.",
   "soloips.company.list.unavailable":
     "The business service is not ready yet, so the company list cannot be read. This does not mean there are no companies — refresh later.",
   "soloips.company.list.rootNotFound":
