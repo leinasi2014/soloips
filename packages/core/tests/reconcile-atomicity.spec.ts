@@ -240,7 +240,11 @@ function mediumProbe(): MediumProbe {
       arm: () => {
         armed = true;
       },
-      release: () => releaseBarrier(),
+      // 〔为什么带花括号〕`releaseBarrier()` 返回 void；简写形态把它当返回值。
+      // `barrier.release` 的消费面只调用、不取值，故行为不变。
+      release: () => {
+        releaseBarrier();
+      },
       hit: () => hitFlag,
     },
   };

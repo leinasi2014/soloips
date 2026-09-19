@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/adapter-dsh" },
     { "path": "packages/core" },
-    { "path": "packages/web" }
+    { "path": "packages/web" },
+    { "path": "packages/web/tsconfig.client.json" }
   ]
 }

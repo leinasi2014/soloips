@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # M-A 证据门用 `git diff <base>...HEAD` 判定是否触及 M-A 写面，
+          # 需要 base ref 的提交对象——浅克隆（默认 fetch-depth: 1）取不到。
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -41,11 +45,35 @@ jobs:
       - name: Format check
         run: pnpm run format:check
 
-      - name: Lint
-        run: pnpm run lint
-
+      # 〔约束〕Typecheck **必须**排在 Lint 之前，顺序不得调换。
+      #
+      # `pnpm run lint` 是 `oxlint --type-aware`，其类型感知规则（no-unsafe-* 等）
+      # 依赖 **跨包类型解析**：`soloips-core/contracts`、`soloips-adapter-dsh/contracts`
+      # 等裸说明符经各包 `exports.types` 指向 `lib/*.d.ts`，而这些文件由 `tsc -b`
+      # 生成（`lib/` 与 `*.tsbuildinfo` 均在 .gitignore 中，CI 检出时不存在）。
+      #
+      # 若 Lint 先跑，oxlint 解析不到这些模块，把每个导入值判为 `error` 类型，
+      # 于是报出成百上千条「Unsafe assignment of an error typed value」等
+      # **伪错误**（实测 f90cc99：863 条，横跨 core/store.ts、commit-gate.ts、
+      # web/src/index.ts、i18n 等），真实违规被淹没、门禁变成噪声。
+      #
+      # 〔实测，2026-09-19 单变量对照〕真清（删 `packages/*/lib` 与
+      # `packages/*/tsconfig.tsbuildinfo`）后：
+      #   - Lint 先跑 → 863 errors（复现 CI 红）
+      #   - Typecheck 先跑 → Lint 0 warnings / 0 errors（34 rules，66 files）
+      #
+      # 〔该数字是观测值，不是常量〕上面 863 条是 **f90cc99 当时的实测值**；它随
+      # 「新增/改动了多少文件」而变（QA 独立复现：同一顺序下 5fe75e3 为 913 条，
+      # 因三条修复分支新增了测试文件、`--type-aware` 的解析失败面随之扩大）。
+      # 故本注释的数字**只用于说明量级与机制**，不得当作断言去比对。
+      # 恒定的判据只有一条：**Typecheck 先跑 → Lint 0 errors**。
+      # 注意本地「绿灯」可能是**假绿**：残留的 `lib/` 或包根部的 stale
+      # `tsconfig.tsbuildinfo` 会让 `tsc -b` 跳过重建，从而掩盖本顺序缺陷。
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
 
       - name: Test
         run: pnpm run test
@@ -83,6 +111,25 @@ jobs:
       - name: Delivery load check
         run: pnpm run check:delivery-load
 
+      # M-A 真实消费者证据门（P0-2，裁定六）：**fail-closed**。
+      #
+      # 为什么不是「在 CI 上跑 E2E」：真实链路需要 DSH fork 运行时，它只存在于
+      # 开发机的实例目录（本仓 node_modules 只有 typert-generator/protocol，
+      # 根 package.json 无 fork 依赖，无内网源 .npmrc）。在 hosted runner 上跑
+      # E2E 不可能——写成 CI 步骤只会得到跳过或假绿。
+      #
+      # 本步骤检查的是「**证据是否与候选绑定**」：改动触及 M-A 写面
+      # （packages/web/src、web 装配行、构建入口、bundle、adapter 端口）时，
+      # docs/evidence/be6a/CANDIDATE-MANIFEST.json 必须存在、candidateSha 与
+      # HEAD 相等、artifactSha256 与 packages/web/lib/client.js 实际摘要相等，
+      # 且报告内 artifactIdentity.embedded === true、无 failure 字段。
+      # 找不到 → **红**（不是跳过）——「证据缺失即显性失败」。
+      #
+      # 必须放在 Build 之后：本步骤要读 packages/web/lib/client.js 算摘要。
+      # 需要 base ref 的提交对象：本 job 的 checkout 已配 fetch-depth: 0。
+      - name: M-A evidence gate
+        run: pnpm run check:m-a-evidence -- --base "origin/${{ github.base_ref || 'main' }}"
+
   # Windows 辅助检查（不阻塞合并）
   windows:
     name: windows-verify
@@ -113,11 +160,13 @@ jobs:
       - name: Format check
         run: pnpm run format:check
 
-      - name: Lint
-        run: pnpm run lint
-
+      # 与主检查同一理由（见 verify job 内该步骤的长注释）：Typecheck 必须先于
+      # Lint，否则类型感知规则解析不到跨包 `lib/*.d.ts`，产出成百上千条伪错误。
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
 
       - name: Test
         run: pnpm run test

@@ -60,7 +60,13 @@ function createStubContext(settingsReady: boolean): ContextStub {
       // 真实 `Context.effect` 的返回是 `AsyncDisposable<Promise<void>>`：
       // disposer 本身要返回 Promise。`satisfies` 检查把这一点抓了出来。
       const dispose = execute();
-      effectDisposers.push(() => void dispose());
+      // 〔为什么带花括号〕`dispose()` 的返回类型是 void；简写 `() => void dispose()`
+      // 把 void 表达式塞进另一表达式（`no-confusing-void-expression` 报的正是这一形态）。
+      // 花括号形态表达「调用是副作用、不产出值」，与 `effectDisposers` 的元素类型
+      // （`() => void`）逐字一致。
+      effectDisposers.push(() => {
+        dispose();
+      });
       return (async () => undefined) as unknown as ReturnType<Context["effect"]>;
     },
     provide(name: string, value: unknown) {

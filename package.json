@@ -23,6 +23,7 @@
     "check:delivery-load": "node scripts/development/check-delivery-load.mjs",
     "verify": "node scripts/development/verify-s0.mjs",
     "check:build-repro": "node scripts/development/check-build-reproducibility.mjs",
+    "check:m-a-evidence": "node scripts/development/check-m-a-evidence.mjs",
     "check:i18n": "node scripts/development/verify-client-ui-i18n.mjs"
   },
   "devDependencies": {

@@ -8,8 +8,8 @@ import { defineConfig, type TsdownPlugin, type UserConfig } from "tsdown";
 /**
  * SOLOIPS-BUILD-TSDOWN
  *
- * 构建管线：把各包 `lib/types` 的 tsc 产物打成 `lib/` 的产物，并由 Typert 插件
- * 生成 `lib/typert.host.*` 与 `lib/typert.remote-client.*`。
+ * 构建管线：把各包 `src/` 的源码打成 `lib/` 的产物，并由 Typert 插件生成
+ * `lib/typert.host.*` 与 `lib/typert.remote-client.*`。
  *
  * 为什么必须是**根**配置（而不是各包一个）：
  * 生成器的 workspace 模式在**工作区根**读 `tsconfig.host.json` 与
@@ -17,17 +17,36 @@ import { defineConfig, type TsdownPlugin, type UserConfig } from "tsdown";
  * 并用 workspaceRoot 向上找 `tsconfig.host.json` 定根
  * （`tsdown-plugin.ts:workspaceRoot`）。故根配置是**必需**的，不是风格选择。
  *
- * 构建顺序契约：`tsc -b`（产 `lib/types`）→ `tsdown`（产 `lib/*.js` 与 Typert 产物）。
- * 顺序不可交换：生成器消费的是 tsc 产物
+ * 构建顺序契约：`tsc -b`（产 `lib/types` 的声明面）→ `tsdown`（产 `lib/*.js` 与
+ * Typert 产物）。顺序不可交换：生成器消费的是 tsc 产物
  * （`tsdown-plugin.ts` 的 `TSC_VERIFIED_INPUT = { checkDiagnostics: false }`）。
  * 两者由根 `package.json` 的 `build` 脚本串起来。
  *
- * `entry` 用 `lib/types/index.js`：`sourcePathForExport` 把包的 exports 目标
- * 反推回 `src/` 去读源码，`lib/types/**` 是该反推可识别的唯一形状。
+ * ── BE-6a 修复：entry 取**源码**，不取 tsc 的 JS 中间产物 ────────────────────
+ *
+ * 旧形状是 `entry: ["lib/types/index.js"]`（tsc 的 JS 中间产物）。它与「Host 工程
+ * 只产声明」互斥：一旦 Host 工程开 `emitDeclarationOnly`，该入口就不存在。更根本
+ * 的是，旧形状**必然**产出两份 `SoloipsWebHost` 类定义（tsc 的
+ * `lib/types/index.js` + 本配置的 `lib/index.js`），运行期 `A === B` 为 false，
+ * `instanceof` 判别在装配路径上失败（E2E：`gateway/internal` /
+ * `"Receiver must be an instance of class SoloipsWebHost"`）。
+ *
+ * 〔为什么不改用「entry 仍指 lib/types 但加 emitDeclarationOnly:false」〕那正是
+ * 缺陷本身：任何留在 `lib/types/` 下的 `.js` 都会被 `check-delivery-load` 的
+ * `checkDeclaredDependencies` 扫到、被 `files` 的 `lib/` 全量 glob 打进 tarball。
+ *
+ * 〔为什么 rolldown 能吃 `.ts` 源码〕Typert 的 tsdown 插件自带 `transform` 钩子：
+ * 对匹配装饰器语法的 `.ts` 文件跑 `ts.transpileModule` 做**标准装饰器降级**
+ * （`dsh-typert-generator/lib/types/tsdown-plugin.js` 的 `DECORATOR_SYNTAX` 分支）。
+ * 该钩子的存在正说明「entry 直接吃源码」是该插件的既有形态，不是本仓新发明的路径。
+ *
+ * 〔为什么不影响 Typert 反推〕生成器读的是 **exports 字符串**（`sourcePathForExport`
+ * 把 `./lib/types/index.d.ts` 映射回 `src/index.ts`），与 rolldown 的 entry 无关。
+ * 故本项改动不改变任何生成物内容。
  *
  * ── BE-0b-i：client face 接线 ──────────────────────────────────────────────
  * 本配置同时产出两个半边（两个 config 对象，见 {@link clientBundleConfig}）：
- *  - **Node 半边**（原样保留）：`lib/index.js` + Typert 生成物；
+ *  - **Node 半边**：`lib/index.js` + Typert 生成物；
  *  - **浏览器半边**（新增）：`lib/client.js`——DSH `client-modules` 按
  *    package.json 的 `dsh.client` + `exports["./client"]` 找到并下发给页面的
  *    那个闭包工厂产物。
@@ -338,7 +357,11 @@ export default defineConfig(() => {
   return [
     {
       workspace: ["packages/web"],
-      entry: ["lib/types/index.js"],
+      // 〔BE-6a〕入口取**源码**：tsc 现在只产声明（`packages/web/tsconfig.json` 的
+      // `emitDeclarationOnly`），`lib/types/index.js` 不存在；且只要它存在，运行期
+      // 就会有两份 `SoloipsWebHost`（见文件头「BE-6a 修复」一节）。装饰器由
+      // Typert 插件的 `transform` 钩子降级，Typert 反推走 exports 字符串、与此无关。
+      entry: ["src/index.ts"],
       outDir: "lib",
       format: ["esm"],
       platform: "node",

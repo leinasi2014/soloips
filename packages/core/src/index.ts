@@ -89,6 +89,20 @@ export interface SoloipsCoreConfig {
    * 计划码缺失有**安全缺省**。
    */
   readonly planCode?: SoloipsPlanCode;
+  /**
+   * 存储后端名（`json` / `sqlite`；非可构造的名字由 adapter 在 `createStack` 以
+   * `SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE` 拒绝，core 侧不做词表校验）。
+   *
+   * 〔这是**对 adapter 缺省的显式覆写**，不是「缺省声明」〕有值时按原样透传给
+   * `storage.createStack`；无值时**不透传该键**，由 adapter 的 `defaultBackend`
+   * 决定（`SOLOIPS_ADAPTER_CONFIG_DEFAULTS`，当前 `sqlite`；消费点见
+   * `packages/adapter-dsh/src/ports/storage.ts` 的
+   * `options.backend ?? config.defaultBackend`）。两个键是**同一件事的两层**：
+   * core 的 `backend` 胜出，adapter 的 `defaultBackend` 是它缺席时的兜底。
+   *
+   * 〔与 `planCode` 的差别〕本键**无**词表校验也无缺省：`""` 与「不写本键」语义
+   * 不同——前者会被透传并在 adapter 侧拒绝（不可构造），后者走 adapter 缺省。
+   */
   readonly backend?: string;
 }
 
@@ -152,14 +166,22 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
 
   ctx.inject([SOLOIPS_ADAPTER_SERVICE_NAME], (ctx2) => {
     // adapter 可能 disabled：服务值缺失时本 fiber 保持无发布状态。
-    const adapter = ctx2.get(SOLOIPS_ADAPTER_SERVICE_NAME);
+    //
+    // 〔为什么显式标注 `unknown`〕cordis 的 `Context.get(name: string)` 声明为返回
+    // **`any`**（`cordis/lib/types/reflect.d.ts:122`；带类型的那个重载要求 name 是
+    // `keyof this`，而 adapter 的 `Context` 增强只在其 `src/index.ts` 里，core 经
+    // `soloips-adapter-dsh/contracts` 消费时看不到，故落到 `any` 重载）。直接把 `any`
+    // 赋给局部变量会让 `any` 静默扩散到后续判断（`typescript/no-unsafe-assignment` 正是
+    // 在报这一点）。标注 `unknown` 是把宿主边界**就地**收成「未知值」，再交给下面的
+    // 结构守卫收窄——判据仍是运行期校验，不因标注而放宽。
+    const adapter: unknown = ctx2.get(SOLOIPS_ADAPTER_SERVICE_NAME);
     if (adapter === undefined) {
       logger?.warn(
         `soloipsCore 未发布：${SOLOIPS_ADAPTER_SERVICE_NAME} 服务不可用（adapter disabled 或未激活）`,
       );
       return;
     }
-    // `ctx.get` 返回 unknown（宿主约定）；先按契约的 SoloipsAdapter 收窄，
+    // 先按契约的 SoloipsAdapter 收窄，
     // 再校验 storage 端口——不用 `as Record<string, unknown>` 把契约类型折成字典
     // （那会丢掉索引签名之外的类型信息，也让「端口形状」的校验失去类型依据）。
     const candidate: SoloipsAdapter | undefined = isSoloipsAdapter(adapter) ? adapter : undefined;
@@ -188,7 +210,20 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
     let opened: SoloipsCoreService | undefined;
     ctx2.effect(() => () => {
       unloaded = true;
-      void opened?.close();
+      // 〔STORAGE-01〕卸载必须**等待**关闭完成，且关闭失败必须**可见**：
+      //  - cordis 4.0.2 `src/fiber.ts:675-682` 的 `_unload()` 对每个 disposer 执行
+      //    `await runDisposable(dispose)`，而 `runDisposable`（同文件 L114-117）直接
+      //    返回回调的返回值——故**返回该 Promise** 才让宿主等到 domain/stack/lease
+      //    释放完毕；先前 `void opened?.close()` 让关闭成为 fire-and-forget，
+      //    宿主可在 sqlite 连接与 lease 锁释放前退出。
+      //  - 失败在此记录后**不再抛出**：卸载失败升级为崩溃会让宿主丢失其余清理步骤，
+      //    与「失败必须可见、但不自动重试」的纪律一致（SEAM-14 的释放链自身已保证
+      //    「一步失败也走完逆序释放」）。
+      const closing = opened?.close();
+      if (closing === undefined) return; // 未打开：无事可做，静默返回。
+      return closing.catch((error: unknown) => {
+        logger?.warn(`soloipsCore 关闭失败：${summarizeError(error)}`);
+      });
     });
 
     void (async () => {
@@ -200,6 +235,9 @@ function entry(ctx: SoloipsCoreHostContext, rawConfig: unknown): void {
           // planCode 缺省由 store 取 `free`（最严格计划）；此处只在显式配置时透传，
           // 词表校验在 store 的 validatePlanCode（唯一落点）。
           ...(config.planCode === undefined ? {} : { planCode: config.planCode }),
+          // backend 同理：只在显式配置时透传。**不给**就由 adapter 的
+          // `defaultBackend` 决定——`backend: ""` 与「不写本键」语义不同（前者会被
+          // 透传并在 adapter 侧以「不可构造的 backend」fail-closed）。
           ...(config.backend === undefined ? {} : { backend: config.backend }),
         });
         if (unloaded) {

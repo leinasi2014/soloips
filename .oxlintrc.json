@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [],
+  "plugins": ["typescript"],
   "categories": {
     "correctness": "off"
   },
@@ -65,6 +65,32 @@
         "typescript/require-await": "error",
         "typescript/restrict-plus-operands": "error",
         "typescript/use-unknown-in-catch-callback-variable": "error"
+      }
+    },
+    {
+      // ── 测试侧对 `typescript/require-await` 的**窄口径**豁免 ──────────────────
+      //
+      // 〔为什么关〕测试替身（stub / fake）的正当形态是「**按契约返回 Promise，实现
+      // 同步**」：被测对象依赖的接口（`SoloipsCoreService`、`KvUnit`、`Context` 的
+      // `effect`/`inject` 等）逐条声明返回 `Promise<…>`，替身只需产出**已敲定的值**，
+      // 没有任何真实 IO 可等待。`async () => ({ status: "unknown" })` 正是这一形态的
+      // 最简写法，而 `require-await` 的判据是「体内有无 await」，无法表达它。
+      //
+      // 该规则在测试侧的**语义价值为零**：它防的是「源码里忘了 await 的异步函数」
+      // （那会让错误逃出 try/catch、让调用方拿不到 rejection），而替身不是异步边界，
+      // 它的返回值本来就已经是终值。逐个加 `oxlint-disable-next-line` 会让 62 处
+      // 出现同一句噪声注释（且注释内容逐字相同，不携带任何逐处信息），污染测试可读性。
+      //
+      // 〔约束〕只关**这一条**，且只在**测试目录**内。源码侧（`packages/*/src/**`）
+      // 的 `require-await` 保持 error——那里每一处都已按「契约要求 Promise」逐处论证
+      // 并就地标注（见各 `oxlint-disable-next-line` 的理由行）。
+      //
+      // 〔同目录其余规则不放宽〕测试侧命中的 `no-confusing-void-expression`、
+      // `no-unsafe-*`、`no-base-to-string` 都是**真问题**（void 简写返回、
+      // `any` 泄漏、默认字符串化），已逐处真修，不在此处豁免。
+      "files": ["packages/*/tests/**/*.{ts,tsx}"],
+      "rules": {
+        "typescript/require-await": "off"
       }
     },
     {
@@ -167,6 +193,38 @@
                   "!@deepseek-ai/cordis/**",
                   "!@deepseek-ai/dsh-typert-protocol",
                   "!@deepseek-ai/dsh-typert-protocol/**",
+                  // ── FE-1a 新增：公司面板的两个**类型面**依赖 ────────────────────
+                  //
+                  // 工程配置改动，按 `system-assistant-backend-design-v0.1.md` §3.2
+                  // 第 3 条登记在改动清单里。
+                  //
+                  // 〔`@deepseek-ai/dsh-client-ui-slots`〕公司面板要注册进官方槽位
+                  // （`sidebar.panellist`）。该包的 `SlotMap`/`LocaleNamespaceMap` 是
+                  // **声明合并**的落点：`ui-sidebar` 把 `sidebar.panellist` 的
+                  // kind/scope/owner 声明合并进 `SlotMap`，而本仓若不引入该包的类型，
+                  // `ctx.slots.register({ name: 'sidebar.panellist', … })` 里的槽位名
+                  // 就无从校验（拼错只会在运行时抛 `slot "…" is not declared`）。
+                  // 因此放行面限定为**类型消费**：本包只 `import type`，运行期经
+                  // `ctx.slots` 服务协作（该服务的提供者是官方 `dsh-client-ui-renderer`）。
+                  //
+                  // 〔为什么**不**放行 `@deepseek-ai/dsh-client-ui-sidebar`〕槽位声明
+                  // 随 `ui-sidebar` 的 client 半边合并进 `SlotMap`；但那需要 import
+                  // `dsh-client-ui-sidebar/client`（一个**官方 UI 能力包**）。本仓的
+                  // 取舍是：**不放行**，改由本包就地声明 `sidebar.panellist` 的
+                  // SlotMap 条目（见 `src/client/company/register.ts` 的
+                  // `declare module`）。理由两条：① 放行面越窄越好（DEV-04）；
+                  // ② 就地声明的条目形状与官方一致时**声明合并**是幂等的
+                  // （同名同形），不一致时 TS 报错——比静默依赖官方包更安全。
+                  //
+                  // 〔为什么 `react` 也要放行〕面板是 React 组件。`react` 是**页面
+                  // 模块表的行**（`MODULE_TABLE_WORDS` 的第一项），不是「官方 DSH
+                  // 能力包」——DEV-04 的收敛职责针对的是 `@deepseek-ai/*` 能力包。
+                  // 它是本包的 devDependency（类型面）与页面的运行时依赖。
+                  "!@deepseek-ai/dsh-client-ui-slots",
+                  "!@deepseek-ai/dsh-client-ui-slots/**",
+                  "!react",
+                  "!react/jsx-runtime",
+                  "!react/**",
                   "@deepseek-ai/**/src",
                   "@deepseek-ai/**/src/**",
                   "@deepseek-ai/**/internal",
@@ -198,7 +256,7 @@
                   "**/packages/*/src/**",
                   "soloips-*/src/**"
                 ],
-                "message": "web 层依赖面：Host 半边只有 @deepseek-ai/cordis、@deepseek-ai/dsh-typert-protocol 与 soloips-core/contracts（类型）；浏览器半边另有本包自我引用的 soloips-web/remote（生成的 Remote 贡献）；不得经包名或相对路径依赖其他包实现（DEV-04）。"
+                "message": "web 层依赖面：Host 半边只有 @deepseek-ai/cordis、@deepseek-ai/dsh-typert-protocol 与 soloips-core/contracts（类型）；浏览器半边另有本包自我引用的 soloips-web/remote（生成的 Remote 贡献）、@deepseek-ai/dsh-client-ui-slots（槽位契约类型）与 react（页面模块表行）；不得经包名或相对路径依赖其他包实现（DEV-04）。"
               }
             ]
           }

@@ -69,7 +69,8 @@ SoloIPs 支持两种存储后端：
 ## 并发保证
 
 - **同实例**：DomainFacility 内的 `already-open` 拦截同名 open
-- **跨进程**：需要 fence（文件锁或等价机制）
+- **跨进程**：由 writer lease 承担——`dsh-atomic-write` 的 `withFileLock` 以 `wx` 独占创建
+  `<lease>.lock`，锁窗口横跨整个租约生命周期；每次持久发布前复核（`assertHeld`）
 - **禁止**：假设跨 domain 事务
 
 ## 写入检查点
@@ -79,7 +80,7 @@ SoloIPs 支持两种存储后端：
   → 身份验证
   → 权限检查
   → 状态检查（旧 revision）
-  → 写锁/fence（如需）
+  → 写权复核（租约 assertHeld）
   → 持久化
   → 返回结果
 ```
@@ -89,7 +90,7 @@ SoloIPs 支持两种存储后端：
 | 规则 | 说明 |
 |---|---|
 | 同实例每个 domain 只有一个 opener | 重复 open 抛出 `already-open` |
-| 跨实例独占另需 fence | 默认 JSON backend 无跨进程锁 |
+| 跨实例独占由 writer lease 承担 | `withFileLock` 文件锁提供真实跨进程互斥（锁窗口横跨整个租约生命周期），与 backend 选择无关——缺省 backend 为 `sqlite`（`contracts.ts` 的 `SOLOIPS_ADAPTER_CONFIG_DEFAULTS`），`json` 可选。租约的 `generation` 只作诊断，**不是** fencing token |
 | 跨 domain 不用事务 | 用"单一权威侧 + 重读 + fail-closed" |
 
 ## 失败场景
@@ -98,10 +99,11 @@ SoloIPs 支持两种存储后端：
 |---|---|
 | 两包打开同名 domain | 第二次 open 抛出异常 |
 | 非 opener 包打开已打开 domain | 抛出异常 |
-| 跨进程写同一数据 | 需 fence 保护 |
+| 跨进程写同一数据 | 第二写者取权被拒（`SOLOIPS_ADAPTER_LEASE_NOT_HELD`，fail-closed，不接管他人锁） |
 
 ## 变更历史
 
 | 日期 | 变更 |
 |---|---|
 | 2026-09-17 | 从技术架构拆分 |
+| 2026-09-19 | 订正跨进程写权表述（缺陷 D-8）：① 缺省后端已是 `sqlite`（`packages/adapter-dsh/src/contracts.ts` 的 `SOLOIPS_ADAPTER_CONFIG_DEFAULTS.defaultBackend`，`7c80cd9` 由 `json` 改为 `sqlite`），不再是 JSON；② 跨实例独占**已有**实现——`withFileLock`（`dsh-atomic-write`）以 `wx` 创建 `<lease>.lock` 提供真实跨进程互斥，锁窗口横跨整个租约生命周期，故删去「默认 JSON backend 无跨进程锁」（该表述与事实相反）；③ 「另需 fence」收紧为「由 writer lease 承担」——`generation` 只作诊断、**不是** fencing token，真互斥由锁提供（STORAGE-03 已核实的契约注释见 `packages/adapter-dsh/src/ports/storage.ts` 与 `contracts.ts` 的 `SoloipsWriterLease`）。同步订正「并发保证」「写入检查点」「失败场景」中的同源表述 |

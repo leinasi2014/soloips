@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { SOLOIPS_WEB_TOOLCHAIN } from "../src/index.js";
+import {
+  SOLOIPS_WEB_REMOTE_NAMESPACE,
+  SOLOIPS_WEB_SERVICE_NAME,
+  SOLOIPS_WEB_TOOLCHAIN,
+} from "../src/index.js";
 
 const pkgRoot = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(pkgRoot, "..");
@@ -22,6 +26,15 @@ const EXPECTED_WEB_IMPORT_ALLOWLIST = [
   "@deepseek-ai/cordis/**",
   "@deepseek-ai/dsh-typert-protocol",
   "@deepseek-ai/dsh-typert-protocol/**",
+  // FE-1a：公司面板的槽位契约**类型**面（`SlotMap`/`LocaleNamespaceMap` 的声明
+  // 合并落点）。放行面限定为类型消费，运行期经 `ctx.slots` 服务协作。
+  "@deepseek-ai/dsh-client-ui-slots",
+  "@deepseek-ai/dsh-client-ui-slots/**",
+  // FE-1a：React。它是**页面模块表的行**（`MODULE_TABLE_WORDS` 首项），不是
+  // 「官方 DSH 能力包」——DEV-04 的收敛职责针对 `@deepseek-ai/*` 能力包。
+  "react",
+  "react/jsx-runtime",
+  "react/**",
   "soloips-core/contracts",
   "soloips-web/contracts",
   // BE-0b-i：浏览器半边以运行时值导入**本包生成的** `/remote` 贡献并自行
@@ -85,7 +98,29 @@ describe("soloips-web package contract", () => {
     // 生成的 .d.ts 无法解析。
     const contracts = manifest.exports["./contracts"] as ExportTarget;
     expect(contracts.types).toBe("./lib/types/contracts.d.ts");
-    expect(contracts.default).toBe("./lib/types/contracts.js");
+    // ── type-only（BE-6a 身份分裂修复）───────────────────────────────────────
+    //
+    // 〔为什么没有 `default`〕`src/contracts.ts` **零运行期导出**（全文只有类型
+    // 与 `export {}`），旧的 `default: "./lib/types/contracts.js"` 指向的是一个
+    // 只含 `export {}` 的空模块——它从来不是可用的运行期入口，只是「exports 全部
+    // 解析到存在的文件」这条检查的形式满足。
+    //
+    // 〔为什么必须去掉〕该 `default` 与 Host 入口的 JS 中间产物是**同一个机制**的
+    // 两处：都要求 tsc 在 `lib/types/` 下产 `.js`。BE-6a 起 Host 工程开
+    // `emitDeclarationOnly`（否则 `lib/types/index.js` 与 tsdown 的 `lib/index.js`
+    // 会构成两份 `SoloipsWebHost` 类定义，`instanceof` 判别在装配路径上失败），
+    // 该文件随之消失。故这里收敛为 **type-only**——与 `src/contracts.ts` 的实际
+    // 形态一致，且不再要求任何 tsc 的 JS 产物。
+    //
+    // 〔生成器侧不受影响〕`sourcePathForExport` 只读 exports 的**字符串目标**，
+    // 且按 `types` → `import` → `default` 顺序取第一个；去掉 `default` 后仍解析到
+    // `./lib/types/contracts.d.ts` → `src/contracts.ts`（实测：生成的
+    // `typert.remote-client.d.ts` 仍写 `from 'soloips-web/contracts'`）。
+    expect(contracts.default).toBeUndefined();
+    expect(
+      Object.keys(contracts),
+      "只留 types 条件——多一个运行期条件就要求 tsc 产 JS 中间产物（那正是身份分裂的来源）",
+    ).toEqual(["types"]);
   });
 
   it("declares ./typert and ./remote with the generator's exact expected shape", () => {
@@ -256,5 +291,44 @@ describe("soloips-web package contract", () => {
       allowlisted.filter((entry) => entry.startsWith("soloips-") && !entry.includes("/")),
       "不得放行裸包名形式的 soloips-* 通配",
     ).toEqual([]);
+  });
+
+  it("pins the browser wire namespace to the frozen contract value (BE-6a)", () => {
+    // 〔为什么必须由测试钉，而不是靠源码里写常量〕
+    //
+    // Typert 分析器**只从字面量**读服务键与 namespace，传常量标识符即构建失败
+    // （实测两条：`Gateway service key must be a string literal` 与
+    // `Gateway namespace must be a string literal`）。因此
+    // `src/index.ts` 的 `super(ctx, "soloipsWeb", { namespace: "soloips" })`
+    // 里**必须**逐字写字符串；编译器与分析器都无法把那里的字面量与下面这两个
+    // 导出常量联系起来。若只留字面量，「有人把 namespace 改成别的值」不会有
+    // 任何门禁响应——而它是 `data-contract.md` §2.5 调用面矩阵的冻结项。
+    //
+    // 本用例把三者固定成一处可判定的事实：
+    //   ① 源码里的字面量与服务键常量一致（`"soloipsWeb"`）；
+    //   ② 源码里的 namespace 字面量与 `SOLOIPS_WEB_REMOTE_NAMESPACE` 一致；
+    //   ③ namespace 与服务键**不同值**（防止两者被「顺手统一」而静默改变
+    //      已冻结的浏览器调用面）。
+    const source = readFileSync(join(packageDir, "src", "index.ts"), "utf8");
+    const call = /super\(ctx,\s*"([^"]+)",\s*\{\s*namespace:\s*"([^"]+)"\s*\}\s*\)/.exec(source);
+    expect(
+      call,
+      'src/index.ts 必须以字面量形态调用 super(ctx, "…", { namespace: "…" })' +
+        "（分析器不接受常量标识符）",
+    ).not.toBeNull();
+
+    const serviceKey = call?.[1];
+    const namespace = call?.[2];
+    expect(serviceKey, "服务键字面量必须等于 SOLOIPS_WEB_SERVICE_NAME").toBe(
+      SOLOIPS_WEB_SERVICE_NAME,
+    );
+    expect(namespace, "wire namespace 字面量必须等于 SOLOIPS_WEB_REMOTE_NAMESPACE").toBe(
+      SOLOIPS_WEB_REMOTE_NAMESPACE,
+    );
+    // 契约值本身：`data-contract.md` §2.5 / §2.5.1 逐行写作 `ctx.remote.soloips.<method>`。
+    expect(namespace, "契约冻结的浏览器 namespace 是 soloips（§2.5 调用面矩阵）").toBe("soloips");
+    expect(namespace, "服务键与 wire namespace 必须分离——合并会静默改变已冻结的调用面").not.toBe(
+      serviceKey,
+    );
   });
 });

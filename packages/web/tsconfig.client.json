@@ -22,14 +22,43 @@
   // `src/client/remote-artifact.d.ts` 的**环境模块声明**提供（该文件头注释记录了
   // 「paths 会被 rolldown 一并读走、导致它把类型替身当运行时模块」的实测结论）。
   // 环境声明不经路径映射，因此不影响 rolldown 按 package.json `exports` 解析真产物。
+  //
+  // ── FE-1a：JSX 与 `src/contracts.ts` 的接入（两条各自独立的改动）─────────
+  //
+  // 1. **`jsx: "react-jsx"`**：公司面板是 React 组件（`src/client/company/
+  //    CompanyPanel.tsx`），需要 JSX 编译面。取 `react-jsx`（自动运行时）而非
+  //    `react`（经典运行时）：前者不要求每个文件 import React，且与 fork 的
+  //    `tsconfig.base.client.json` 同值（该文件给全部官方 UI 包用的就是这个）。
+  //
+  // 2. **`references: [{ path: "./tsconfig.json" }]`（引用 Host 工程）**：本工程
+  //    经 `soloips-web/contracts`（包自我引用）消费 Host 半边的边界类型。该说明符
+  //    按 package.json 的 `exports["./contracts"].types` 解析到
+  //    `lib/types/contracts.d.ts`，而该文件由 **Host 工程**产出。没有这条引用时
+  //    tsc 报 `TS6307: File '…/src/contracts.ts' is not listed within the file list
+  //    of project '…/tsconfig.client.json'`（**实测**：`include` 里加
+  //    `src/contracts.ts` 只能消掉报错、代价是两个工程争写同一份 `.d.ts`；
+  //    引用形态才是「声明依赖，由被引用工程产出」的正确表达）。
+  //
+  //    〔方向为什么是 client → host，而不是 host → client（实测）〕反向会构成
+  //    **环**：Host 工程的 `references` 若指向本文件，而本文件又引用 Host 工程，
+  //    tsc 报 `TS6202: Project references may not form a circular graph`。
+  //    因此 Host 工程**不再**引用本工程，改由根 `tsconfig.json` 同时引用两者
+  //    （见该文件的 `references`）——`tsc -b` 按引用的拓扑序构建，Host 工程先完成，
+  //    本工程随后解析到它的 `lib/types/contracts.d.ts`。
+  //
+  //    〔冷构建已验证〕`rm -rf packages/*/lib packages/*/tsconfig.tsbuildinfo` 后
+  //    `tsc -b` 退出码 0；`packages/web/lib/types/contracts.d.ts` 由 Host 工程产出，
+  //    本工程只读它。
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": [],
+    "jsx": "react-jsx",
     "emitDeclarationOnly": true,
     "rootDir": "src",
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
-  "include": ["src/client/**/*.ts"]
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"],
+  "references": [{ "path": "./tsconfig.json" }]
 }

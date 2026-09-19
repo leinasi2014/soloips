@@ -1,11 +1,16 @@
 /**
- * storage 端口的机制测试：跨进程写权租约与 storage stack。
+ * storage 端口的机制测试：storage stack 与域打开经 spec 桥。
  *
- * 全部用真实文件系统（临时目录）与真实 dsh 工件（withFileLock /
- * JsonStorageBackend / DomainFacility），不启动任何服务。验证的是适配层自己的
- * 机制承诺：锁互斥、代际递增、逆序释放、SEAM-X1 的显式 facility。
+ * 全部用真实文件系统（临时目录）与真实 dsh 工件（JsonStorageBackend /
+ * DomainFacility），不启动任何服务。验证的是适配层自己的机制承诺：逆序释放、
+ * SEAM-X1 的显式 facility、结构化 schema 的窄化。
+ *
+ * 〔租约用例去哪了〕写权租约（互斥载体 / 代际语义 / 释放语义 / 介质损坏）已
+ * 迁至 `writer-lease.spec.ts`——那是独立的一类机制（跨进程 fence），且本文件
+ * 的用例需要宿主桩而租约不需要。原 describe「storage port · writer lease」的
+ * 断言在那边逐条保留并补齐。
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -80,19 +85,6 @@ function stubContextWithHub(): { context: Context; registered: string[]; unregis
   };
 }
 
-/** 无宿主服务的桩（lease 不触达 ctx，故 lease 用例不受影响）。 */
-function bareContext(): Context {
-  const stub = {
-    get() {
-      return undefined;
-    },
-    emit() {
-      /* noop */
-    },
-  } satisfies Pick<Context, "get" | "emit">;
-  return stub as unknown as Context;
-}
-
 const tempRoots: string[] = [];
 
 async function newTempRoot(): Promise<string> {
@@ -135,55 +127,6 @@ const thingKey = (key: string): ThingKey => key as ThingKey;
 function adapterCode(error: unknown): string | undefined {
   return error instanceof SoloipsAdapterError ? error.code : undefined;
 }
-
-describe("storage port · writer lease（跨进程 fence，SEAM-X2）", () => {
-  it("取得租约：generation 从 1 起，storageId 规范化，assertHeld 通过", async () => {
-    const root = await newTempRoot();
-    const port = createStoragePort(bareContext(), { defaultBackend: "json", leaseWaitMs: 200 });
-    const lease = await port.acquireWriterLease({ root });
-    expect(lease.generation).toBe(1);
-    expect(lease.storageId).toBe(`json:${root}`);
-    await expect(lease.assertHeld()).resolves.toBeUndefined();
-    await lease.dispose();
-  });
-
-  it("租约互斥：持有期间第二个获取以 LEASE_NOT_HELD 拒绝；释放后可再取且代际递增", async () => {
-    const root = await newTempRoot();
-    const port = createStoragePort(bareContext(), { defaultBackend: "json", leaseWaitMs: 150 });
-
-    const first = await port.acquireWriterLease({ root });
-    await expect(port.acquireWriterLease({ root })).rejects.toMatchObject({
-      code: "SOLOIPS_ADAPTER_LEASE_NOT_HELD",
-    });
-    await first.dispose();
-
-    const second = await port.acquireWriterLease({ root });
-    expect(second.generation).toBe(2);
-    const medium = JSON.parse(await readFile(join(root, ".soloips-writer-lease.json"), "utf8")) as {
-      generation?: unknown;
-    };
-    expect(medium.generation).toBe(2);
-    await second.dispose();
-  });
-
-  it("dispose 幂等；失权后 assertHeld 以 LEASE_NOT_HELD 拒绝", async () => {
-    const root = await newTempRoot();
-    const port = createStoragePort(bareContext(), { defaultBackend: "json", leaseWaitMs: 200 });
-    const lease = await port.acquireWriterLease({ root });
-    await lease.dispose();
-    await expect(lease.dispose()).resolves.toBeUndefined();
-    await expect(lease.assertHeld()).rejects.toMatchObject({
-      code: "SOLOIPS_ADAPTER_LEASE_NOT_HELD",
-    });
-  });
-
-  it("相对根以 INVALID_CONFIG 拒绝（不做 home 解析）", async () => {
-    const port = createStoragePort(bareContext(), { defaultBackend: "json", leaseWaitMs: 200 });
-    await expect(port.acquireWriterLease({ root: "relative/root" })).rejects.toMatchObject({
-      code: "SOLOIPS_ADAPTER_INVALID_CONFIG",
-    });
-  });
-});
 
 describe("storage port · createStack / facility（SEAM-11/14、SEAM-X1）", () => {
   it("同一 canonical root 注册派生名 backend；释放时注销并关闭", async () => {

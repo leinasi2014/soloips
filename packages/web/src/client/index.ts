@@ -33,15 +33,42 @@
  *    `typert(client): soloips-web must export ./client/typert as …`）。
  *    消费方在无提供者声明可导入时（DEV-04 禁止依赖官方能力包）用下面的
  *    局部结构类型 + 显式读取，而不是重新声明服务。
- *  - `apply` 必须把 `$mount` 返回的 disposer 交回 cordis：`$mount` 的返回值是
- *    卸载函数，cordis 以 `apply()` 的返回值作为卸载钩子；丢弃它会让重载泄漏
- *    namespace（`$mount` 契约：最后一个方法撤回即卸载该 namespace）。
+ *  - `apply` 必须是 **`async function` 声明**，并把组合 disposer 交回 cordis。
+ *    两条都是硬约束，且第一条不是风格偏好——它是 cordis 的**形态判据**：
+ *
+ *    ```js
+ *    // @deepseek-ai/cordis@4.0.2 的 lib/index.js:1066-1070（Fiber 的 runner.execute）
+ *    if (isConstructor(runtime.callback)) {
+ *      const instance = new runtime.callback(this.ctx, this.config);
+ *      for (const hook of instance?.[symbols.initHooks] ?? []) hook();
+ *      return instance?.[symbols.init]?.();
+ *    } else return runtime.callback(this.ctx, this.config);
+ *    ```
+ *
+ *    而 `isConstructor` 的判据就是「`func.prototype` 存在」（同文件 `:57-62`）。
+ *    **函数声明有 `prototype`**，故 `export function apply(...)` 会走 `new` 分支：
+ *    `apply` 返回的 Promise 不是 `new` 的求值结果，被**整条丢弃**，cordis 收不到
+ *    任何卸载钩子（副作用照常发生，所以启动看起来完全正常、卸载静默失效）。
+ *    `async function` 声明**没有** `prototype`，走 else 分支，返回的 Promise 被
+ *    `Fiber._execute` 以 `then` 收下（同文件 `:1144`），resolve 值即被登记为
+ *    卸载钩子。官方同形先例：`packages/api/remotes/src/client/index.ts:156` 的
+ *    `export async function apply(...): Promise<() => Promise<void>>`。
+ *
+ *    〔同一形态还决定启动失败的**可见性**（实测）〕`$mount` 拒绝时，`async` 形态
+ *    让 `await fiber` 拒绝、fiber 落到 FAILED；被丢弃的 Promise 形态则让 fiber 停在
+ *    ACTIVE，失败只以 unhandled rejection 呈现——**fail-open**。
+ *
+ *    两条后果都有回归用例（`tests/artifacts/artifact-behavior.artifact.ts` 的
+ *    「hands apply's disposer to cordis」与「surfaces a $mount failure to the
+ *    framework」），判据由**真 cordis** 驱动、全程不触碰 `apply` 的返回值。
  */
 
 import type { Context } from "@deepseek-ai/cordis";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
 import { TYPERT_REMOTE } from "soloips-web/remote";
+
+import { registerSoloipsCompanyPanel } from "./company/register.js";
 
 /**
  * 浏览器侧 Remote 挂载面的**最小**结构声明。
@@ -66,16 +93,48 @@ export interface SoloipsWebClientRemote {
 /**
  * 本插件在浏览器内需要的 cordis 服务键。
  *
- * 〔约束〕`inject` 声明为 `string[]` 而非 `keyof Context` 收窄：`remote` 由官方
- * 包提供，其声明合并不在本包依赖面内（DEV-04），写成键字面量会在缺少合并时
- * 报错。代价是失去「服务键存在性」的编译期校验，故由运行时读取兜底（见
- * {@link apply}）。`@deepseek-ai/dsh-client-connection` 的 client 半边同样用
- * `string[]` 形态声明 inject。
+ * 〔约束〕`inject` 声明为 `string[]` 而非 `keyof Context` 收窄：`remote`、`slots`
+ * 与 `locale` 都由官方包提供，其声明合并不在本包依赖面内（DEV-04），写成键字面量
+ * 会在缺少合并时报错。代价是失去「服务键存在性」的编译期校验，故由运行时读取兜底
+ * （见 {@link remoteOf} 与 `./company/register.js` 的 `servicesOf`）。
+ * `@deepseek-ai/dsh-client-connection` 的 client 半边同样用 `string[]` 形态声明
+ * inject。
  *
- * `remote` 未就绪时 cordis 让本插件保持 pending，因此 `apply` 不会在服务缺失时
- * 被调用——fail-closed，不静默跳过。
+ * 〔FE-1a 新增 `slots` 与 `locale`〕公司面板要注册进官方槽位（槽位服务）并按字典
+ * 渲染文案（字典服务）。两者都是**官方提供的服务**，本包只消费——`slots` 的提供者
+ * 是 `dsh-client-ui-renderer`（其 `Context` 增强声明 `slots: SlotRegistry`），
+ * `locale` 的提供者是 `dsh-client-locale`。声明它们使「本插件在两者就绪前不激活」
+ * 成为 cordis 的机械保证，而不是靠加载顺序。
+ *
+ * 〔FE-1a 新增 `remote.soloips`（**点分服务键**）〕这是本片最重要的一条接线事实，
+ * 由实测纠正：`$mount(TYPERT_REMOTE)` 把本包的 namespace 装成 **`remote.soloips`**
+ * 服务（`api-gateway/client` 的 `remoteServiceKey(namespace)` 返回
+ * `` `remote.${namespace}` ``），而 cordis 的 `Context` get trap 对**未声明的
+ * 服务键**直接抛 `cannot get property "remote.soloips" without inject`
+ * （`@deepseek-ai/cordis/lib/index.js:675-705`）。**实测**：不声明它时面板的提交
+ * 走不到网络——`#executeCreate` 在 `ctx.remote.soloips.createCompany` 取值处抛错，
+ * 被折叠成 `failed` 相位（页面控制台原文：`cannot get property "remote.soloips"
+ * without inject`）。
+ *
+ * 官方先例同形：`ui-goal` 的 `inject` 逐字含 `'remote.goals'`
+ * （`packages/client/ui-goal/src/client/index.ts:52`），`ui-agent-preset` 含
+ * `'remote.agentPresets'` 等。故本包也声明它——这是**服务就绪的机械等待**，
+ * 不是「约定式依赖」。
+ *
+ * 〔为什么 `$mount` 本身仍能工作（`remote` 单独一项不够）〕`remote` 只是**容器**
+ * 服务（`$mount`/`$on`/`$host`）；namespace 是 `$mount` 之后才注册的**子服务**。
+ * 因此 `inject: ['remote']` 只保证「容器在」，不保证「本包的 namespace 已挂载」。
+ * 声明 `remote.soloips` 后，cordis 会让本插件等到 `$mount` 完成才激活——但那与
+ * 「本插件自己负责 `$mount`」构成先后矛盾（`apply` 不跑就没人挂载）。
+ *
+ * 〔故本插件的做法：**先挂载、再注册面板**，并让面板侧按调用解析〕
+ * `apply` 内先 `await $mount`，再调用 `registerSoloipsCompanyPanel`——此时
+ * `remote.soloips` 已在 store 里，面板的注入面读得到它。因此 `inject` **不**声明
+ * `remote.soloips`（声明它会造成自锁：等一个只有自己会创建的服务）。该键由
+ * `./company/register.js` 的 `servicesOf` 在 `apply` 之后按调用读取，未就绪即
+ * fail-closed 抛错——与 `./index.js` 的 `remoteOf` 同款判据。
  */
-export const inject: string[] = ["remote"];
+export const inject: string[] = ["remote", "slots", "locale"];
 
 /**
  * 读取浏览器侧 Remote 服务。
@@ -100,11 +159,41 @@ function remoteOf(ctx: Context): SoloipsWebClientRemote {
 }
 
 /**
- * 挂载本包的 Remote 贡献。
+ * 挂载本包的 Remote 贡献，并把公司面板注册进侧栏槽位。
+ *
+ * 〔为什么两件事在同一个 `apply` 里、且有顺序〕面板的确认按钮会调
+ * `ctx.remote.soloips.createCompany`——那是**本包 Host 半边生成的** namespace，
+ * 由 `$mount` 安装。先 `$mount` 再注册面板，保证面板第一次渲染时该 namespace
+ * 已就绪（`$mount` 的契约是「解析完成即方法可用」，见
+ * `packages/api/gateway/src/client/index.ts` 的 `mountContribution`）。
+ * 反过来（先注册面板）会让用户在一个短暂窗口内点到尚未挂载的 namespace，
+ * 得到 `gateway/internal` 而不是业务结果。
+ *
+ * 〔为什么是 `async function` 声明（FE-1a-FIX 订正）〕**这是形态契约，不是风格**。
+ * 本函数此前写作 `export function apply(...)` 并用 `.then` 串接，理由曾是「避免多
+ * 一个微任务跳变、保持字面形态与源码面断言一致」——该理由的**前提不成立**：
+ * 函数声明有 `prototype`，会被 cordis 的 `isConstructor` 判成构造器并以 `new`
+ * 调用，于是本函数的返回值（卸载钩子）被**丢弃**，而 `$mount` 的副作用照常发生
+ * （启动看起来正常、卸载静默失效）。这正是本文件头 `apply` 不变量所记的缺陷，
+ * 实测证据与判据见 `tests/artifacts/artifact-behavior.artifact.ts` 的两条回归用例。
+ *
+ * 改成 `async function` 后：① `prototype` 不存在 → 走普通调用分支，返回的 Promise
+ * 被 `Fiber._execute` 收下，resolve 值即卸载钩子；② `$mount` 失败以 **rejected
+ * promise** 呈现给框架（fiber → FAILED），而不是被折叠成 unhandled rejection 的
+ * fail-open。微任务跳变的存在与否不改变任何可观察语义——它是这条修复的**代价**，
+ * 不是反方理由。
+ *
+ * 〔卸载顺序与安装顺序相反〕面板先注销、贡献后卸载：面板的进行中调用需要
+ * namespace 存活到它结算为止。
  *
  * @param ctx - 浏览器侧 cordis 根上下文。
- * @returns `$mount` 的 disposer，交回 cordis 作为卸载钩子。
+ * @returns 注销函数，交回 cordis 作为卸载钩子。
  */
-export function apply(ctx: Context): Promise<() => Promise<void>> {
-  return remoteOf(ctx).$mount(TYPERT_REMOTE);
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
+  const unmount = await remoteOf(ctx).$mount(TYPERT_REMOTE);
+  const disposePanel = registerSoloipsCompanyPanel(ctx);
+  return async () => {
+    disposePanel();
+    await unmount();
+  };
 }

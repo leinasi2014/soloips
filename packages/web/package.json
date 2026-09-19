@@ -10,8 +10,7 @@
       "default": "./lib/index.js"
     },
     "./contracts": {
-      "types": "./lib/types/contracts.d.ts",
-      "default": "./lib/types/contracts.js"
+      "types": "./lib/types/contracts.d.ts"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
@@ -55,5 +54,12 @@
     "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.2",
     "soloips-core": "workspace:*",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.1",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }

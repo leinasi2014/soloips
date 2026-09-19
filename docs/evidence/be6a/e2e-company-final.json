@@ -1,0 +1,474 @@
+{
+  "url": "http://127.0.0.1:55321/?token=<REDACTED>",
+  "runId": "be6a-1789806627945",
+  "steps": [
+    {
+      "name": "create",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+        "rpcId": "be6a-create-b5gy7nzfdef",
+        "status": 200,
+        "elapsedMs": 21,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-create-b5gy7nzfdef",
+          "method": "soloips/createCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "operationId": "be6a-1789806627945-create",
+                "name": "BE-6a 验证公司 be6a-1789806627945",
+                "type": "enterprise"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-create-b5gy7nzfdef\",\"result\":{\"ok\":true,\"value\":{\"status\":\"committed\",\"result\":{\"companyId\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\"}}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "committed",
+          "result": {
+            "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8"
+          }
+        }
+      }
+    },
+    {
+      "name": "read-back",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/getCompany",
+        "rpcId": "be6a-read-wiqq8u7kt6k",
+        "status": 200,
+        "elapsedMs": 7,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-read-wiqq8u7kt6k",
+          "method": "soloips/getCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-read-wiqq8u7kt6k\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"company\":{\"id\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"status\":\"active\",\"createdAt\":\"2026-09-19T08:30:29.108Z\"}}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "ok",
+          "company": {
+            "id": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
+            "type": "enterprise",
+            "name": "BE-6a 验证公司 be6a-1789806627945",
+            "status": "active",
+            "createdAt": "2026-09-19T08:30:29.108Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "tree",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/getCompanyTree",
+        "rpcId": "be6a-tree-hc4c8u70i7",
+        "status": 200,
+        "elapsedMs": 7,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-tree-hc4c8u70i7",
+          "method": "soloips/getCompanyTree",
+          "payload": {
+            "args": {
+              "input": {
+                "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-tree-hc4c8u70i7\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"companies\":[{\"id\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"status\":\"active\",\"createdAt\":\"2026-09-19T08:30:29.108Z\"}]}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "ok",
+          "companies": [
+            {
+              "id": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
+              "type": "enterprise",
+              "name": "BE-6a 验证公司 be6a-1789806627945",
+              "status": "active",
+              "createdAt": "2026-09-19T08:30:29.108Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "replay",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+        "rpcId": "be6a-replay-vvld8lrvjx",
+        "status": 200,
+        "elapsedMs": 6,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-replay-vvld8lrvjx",
+          "method": "soloips/createCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "operationId": "be6a-1789806627945-create",
+                "name": "BE-6a 验证公司 be6a-1789806627945",
+                "type": "enterprise"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-replay-vvld8lrvjx\",\"result\":{\"ok\":true,\"value\":{\"status\":\"replayed\",\"result\":{\"companyId\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\"}}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "replayed",
+          "result": {
+            "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8"
+          }
+        }
+      }
+    },
+    {
+      "name": "accountId-not-honored",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+        "rpcId": "be6a-tampered-nojnz21hff9",
+        "status": 200,
+        "elapsedMs": 6,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-tampered-nojnz21hff9",
+          "method": "soloips/createCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "operationId": "be6a-1789806627945-tampered",
+                "name": "BE-6a 验证公司 be6a-1789806627945 篡改",
+                "type": "enterprise",
+                "accountId": "acct-attacker"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-tampered-nojnz21hff9\",\"result\":{\"ok\":true,\"value\":{\"status\":\"refused\",\"reason\":\"quota-exceeded\",\"resourceType\":\"companyLimit\",\"planCode\":\"free\",\"current\":1,\"limit\":1}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "refused",
+          "reason": "quota-exceeded",
+          "resourceType": "companyLimit",
+          "planCode": "free",
+          "current": 1,
+          "limit": 1
+        }
+      }
+    },
+    {
+      "name": "tampered-replay",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+        "rpcId": "be6a-tampered-replay-m7ozsz56z6",
+        "status": 200,
+        "elapsedMs": 6,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-tampered-replay-m7ozsz56z6",
+          "method": "soloips/createCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "operationId": "be6a-1789806627945-tampered",
+                "name": "BE-6a 验证公司 be6a-1789806627945 篡改",
+                "type": "enterprise",
+                "accountId": "acct-attacker"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-tampered-replay-m7ozsz56z6\",\"result\":{\"ok\":true,\"value\":{\"status\":\"refused\",\"reason\":\"quota-exceeded\",\"resourceType\":\"companyLimit\",\"planCode\":\"free\",\"current\":1,\"limit\":1}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "refused",
+          "reason": "quota-exceeded",
+          "resourceType": "companyLimit",
+          "planCode": "free",
+          "current": 1,
+          "limit": 1
+        }
+      }
+    },
+    {
+      "name": "accountId-stripped-control",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+        "rpcId": "be6a-control-25xkcclzwd7h",
+        "status": 200,
+        "elapsedMs": 5,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-control-25xkcclzwd7h",
+          "method": "soloips/createCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "operationId": "be6a-1789806627945-control",
+                "name": "BE-6a 验证公司 be6a-1789806627945 对照",
+                "type": "enterprise"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-control-25xkcclzwd7h\",\"result\":{\"ok\":true,\"value\":{\"status\":\"refused\",\"reason\":\"quota-exceeded\",\"resourceType\":\"companyLimit\",\"planCode\":\"free\",\"current\":1,\"limit\":1}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "refused",
+          "reason": "quota-exceeded",
+          "resourceType": "companyLimit",
+          "planCode": "free",
+          "current": 1,
+          "limit": 1
+        }
+      }
+    },
+    {
+      "name": "after-tamper",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/getCompanyTree",
+        "rpcId": "be6a-after-tamper-3mqp7dd0f08",
+        "status": 200,
+        "elapsedMs": 6,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-after-tamper-3mqp7dd0f08",
+          "method": "soloips/getCompanyTree",
+          "payload": {
+            "args": {
+              "input": {
+                "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-after-tamper-3mqp7dd0f08\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"companies\":[{\"id\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"status\":\"active\",\"createdAt\":\"2026-09-19T08:30:29.108Z\"}]}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "ok",
+          "companies": [
+            {
+              "id": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
+              "type": "enterprise",
+              "name": "BE-6a 验证公司 be6a-1789806627945",
+              "status": "active",
+              "createdAt": "2026-09-19T08:30:29.108Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "reload-read-back",
+      "call": {
+        "url": "http://127.0.0.1:55321/api/soloips/getCompany",
+        "rpcId": "be6a-reload-read-tgcqoro2l6m",
+        "status": 200,
+        "elapsedMs": 5,
+        "requestBody": {
+          "type": "client-request",
+          "rpcId": "be6a-reload-read-tgcqoro2l6m",
+          "method": "soloips/getCompany",
+          "payload": {
+            "args": {
+              "input": {
+                "companyId": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8"
+              }
+            }
+          }
+        },
+        "responseText": "{\"type\":\"server-response\",\"rpcId\":\"be6a-reload-read-tgcqoro2l6m\",\"result\":{\"ok\":true,\"value\":{\"status\":\"ok\",\"company\":{\"id\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\",\"type\":\"enterprise\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"status\":\"active\",\"createdAt\":\"2026-09-19T08:30:29.108Z\"}}}}"
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "status": "ok",
+          "company": {
+            "id": "cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8",
+            "type": "enterprise",
+            "name": "BE-6a 验证公司 be6a-1789806627945",
+            "status": "active",
+            "createdAt": "2026-09-19T08:30:29.108Z"
+          }
+        }
+      }
+    }
+  ],
+  "assembly": {
+    "loaderType": "object",
+    "loaderMode": "live",
+    "entryCount": 57,
+    "soloipsRow": {
+      "id": "soloips-web",
+      "url": "/plugins/??soloips-web/client.js&rev=7dac10bc367684ac-51",
+      "rev": "7dac10bc367684ac-51",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    },
+    "domLength": 94
+  },
+  "artifactIdentity": {
+    "url": "/plugins/??soloips-web/client.js&rev=7dac10bc367684ac-51",
+    "servedBytes": 254459,
+    "candidateBytes": 272517,
+    "candidateSha256": "6c87d6beffd06d3c0d3e9d236cda7a6deded753eb638cc6c00605d1669386a0b",
+    "embedded": true
+  },
+  "pass1Network": [
+    {
+      "kind": "request",
+      "requestId": "31208.103",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-create-b5gy7nzfdef\",\"method\":\"soloips/createCompany\",\"payload\":{\"args\":{\"input\":{\"operationId\":\"be6a-1789806627945-create\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"type\":\"enterprise\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.103",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.104",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/getCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-read-wiqq8u7kt6k\",\"method\":\"soloips/getCompany\",\"payload\":{\"args\":{\"input\":{\"companyId\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.104",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/getCompany"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.105",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/getCompanyTree",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-tree-hc4c8u70i7\",\"method\":\"soloips/getCompanyTree\",\"payload\":{\"args\":{\"input\":{\"companyId\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.105",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/getCompanyTree"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.106",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-replay-vvld8lrvjx\",\"method\":\"soloips/createCompany\",\"payload\":{\"args\":{\"input\":{\"operationId\":\"be6a-1789806627945-create\",\"name\":\"BE-6a 验证公司 be6a-1789806627945\",\"type\":\"enterprise\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.106",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.107",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-tampered-nojnz21hff9\",\"method\":\"soloips/createCompany\",\"payload\":{\"args\":{\"input\":{\"operationId\":\"be6a-1789806627945-tampered\",\"name\":\"BE-6a 验证公司 be6a-1789806627945 篡改\",\"type\":\"enterprise\",\"accountId\":\"acct-attacker\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.107",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.108",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-tampered-replay-m7ozsz56z6\",\"method\":\"soloips/createCompany\",\"payload\":{\"args\":{\"input\":{\"operationId\":\"be6a-1789806627945-tampered\",\"name\":\"BE-6a 验证公司 be6a-1789806627945 篡改\",\"type\":\"enterprise\",\"accountId\":\"acct-attacker\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.108",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.109",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-control-25xkcclzwd7h\",\"method\":\"soloips/createCompany\",\"payload\":{\"args\":{\"input\":{\"operationId\":\"be6a-1789806627945-control\",\"name\":\"BE-6a 验证公司 be6a-1789806627945 对照\",\"type\":\"enterprise\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.109",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/createCompany"
+    },
+    {
+      "kind": "request",
+      "requestId": "31208.110",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/getCompanyTree",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-after-tamper-3mqp7dd0f08\",\"method\":\"soloips/getCompanyTree\",\"payload\":{\"args\":{\"input\":{\"companyId\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.110",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/getCompanyTree"
+    }
+  ],
+  "pass1Console": [],
+  "artifactIdentityAfterReload": {
+    "url": "/plugins/??soloips-web/client.js&rev=7dac10bc367684ac-51",
+    "servedBytes": 254459,
+    "candidateBytes": 272517,
+    "candidateSha256": "6c87d6beffd06d3c0d3e9d236cda7a6deded753eb638cc6c00605d1669386a0b",
+    "embedded": true
+  },
+  "pass2Network": [
+    {
+      "kind": "request",
+      "requestId": "31208.213",
+      "httpMethod": "POST",
+      "url": "http://127.0.0.1:55321/api/soloips/getCompany",
+      "postData": "{\"type\":\"client-request\",\"rpcId\":\"be6a-reload-read-tgcqoro2l6m\",\"method\":\"soloips/getCompany\",\"payload\":{\"args\":{\"input\":{\"companyId\":\"cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8\"}}}}"
+    },
+    {
+      "kind": "response",
+      "requestId": "31208.213",
+      "status": 200,
+      "url": "http://127.0.0.1:55321/api/soloips/getCompany"
+    }
+  ],
+  "pass2Console": []
+}

@@ -253,20 +253,45 @@ export type SoloipsDomainChanged =
  * 这是 ORG-06 / SOLO-FENCE-01 在 adapter 侧的机制面。core 负责**策略**：
  * 在装载任何可写 domain/缓存之前取得租约，并在每个持久发布点前复核。
  *
+ * 〔互斥由谁保证〕`acquireWriterLease` 底层是 `dsh-atomic-write` 的
+ * `withFileLock`：`wx` 独占创建 `<lease>.lock` 兄弟文件，且持锁窗口**横跨整个
+ * 租约生命周期**——acquire 时建立、`dispose()` 时才删除。同一 root 上的第二个
+ * 取权者在等待上限内重试，超时即以 `SOLOIPS_ADAPTER_LEASE_NOT_HELD` 失败；
+ * 持有者不受干扰（失败方不接管、不回收他人的锁）。
+ *
+ * 〔`generation` 不是 fencing token〕它只是**诊断**信息：本 root 的第几次取权，
+ * 用于日志/排查与 `SoloipsCoreBinding.leaseGeneration` 的取值。实现**没有**
+ * 「按代际判定失权」的路径。这不是省略，而是刻意的边界：
+ *  - 无需判定：锁窗口本身覆盖了写权全生命周期。锁还在手即写权还在手；锁一旦
+ *    被别人取走，本 lease 的 `dispose()` 之外的写路径已不成立。
+ *  - 判不了：要「按代际判定」就得在每次复核时重读租约文件，而重读只会读到
+ *    自己写下的值（锁在手，别人改不了）——它不能比锁本身更早知道失权。
+ *  - 代价真实：写路径上每个发布点一次文件读 + 新的失败模式（介质瞬时不可读即
+ *    误判失权），换不到互斥强度。
+ * 因此 `assertHeld()` 只回答「本 lease 是否已被释放」（同进程内重复使用已释放
+ * 的 lease 是真实场景，`disposed` 布尔覆盖它）。
+ *
  * 〔禁止〕不得用进程内 `Map`、`already-open` 或单次原子 rename 代替本租约
  * （SEAM-X2、MECH-05）。
  */
 export interface SoloipsWriterLease {
-  /** 本次取得的代际计数；接管方递增，失权旧 writer 据此被拒。 */
+  /**
+   * 本次取得的代际计数；**诊断用**（本 root 第几次取权，写入租约文件）。
+   * 不参与失权判定——失权检测见接口说明；不得据本字段推断写权归属。
+   */
   readonly generation: number;
   /** 规范化后的存储身份（backend + 解析后根），用于日志与绑定核对。 */
   readonly storageId: string;
   /**
-   * 复核写权仍在手；失权时以 `SOLOIPS_ADAPTER_LEASE_NOT_HELD` 抛出。
+   * 复核写权仍在手；已释放（或本 lease 未取得）时以
+   * `SOLOIPS_ADAPTER_LEASE_NOT_HELD` 抛出。
    * 调用方必须在**每次持久发布之前**调用，而不是只在启动时调用一次。
+   *
+   * 〔语义边界〕它证明的是「本 lease 未被释放」；跨进程互斥由锁窗口保证
+   * （见接口说明），不由本方法的返回值承载。
    */
   assertHeld(): Promise<void>;
-  /** 释放租约。幂等；重复调用无副作用。 */
+  /** 释放租约（含锁文件）。幂等；重复调用无副作用。 */
   dispose(): Promise<void>;
 }
 
@@ -650,7 +675,13 @@ export interface SoloipsStorageBinding {
 export interface SoloipsStorageStackOptions {
   /** 存储根。必须是已解析的绝对路径；adapter 不做 home 解析。 */
   readonly root: string;
-  /** backend 名；缺省 `json`。 */
+  /**
+   * backend 名；**省略时取 adapter 配置的 `defaultBackend`**
+   * （{@link SOLOIPS_ADAPTER_CONFIG_DEFAULTS.defaultBackend}，当前为 `sqlite`），
+   * 见 `packages/adapter-dsh/src/ports/storage.ts` 的
+   * `options.backend ?? config.defaultBackend`。非本适配层可构造的名字（当前仅
+   * `json` / `sqlite`）以 `SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE` 拒绝。
+   */
   readonly backend?: string;
 }
 
@@ -753,7 +784,7 @@ export interface SoloipsAdapterConfig {
    * `soloipsAdapter` 服务不被发布。
    */
   enabled?: boolean;
-  /** domain 缺省 backend 名；缺省 `json`。 */
+  /** domain 缺省 backend 名；缺省值见 {@link SOLOIPS_ADAPTER_CONFIG_DEFAULTS}（当前 `sqlite`）。 */
   defaultBackend?: string;
   /** 写权租约等待上限（毫秒）。 */
   leaseWaitMs?: number;

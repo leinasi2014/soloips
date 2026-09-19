@@ -10,10 +10,12 @@
  * 也不 open 任何业务 domain（禁止项 #1）——`SoloipsStorageStack` 只暴露 facility。
  *
  * 跨进程写权（禁止项 #3/#6/#10）：
- *  - 写权**只**经 `acquireWriterLease`，其底层是 `dsh-atomic-write` 的
- *    `withFileLock`（`wx` 创建的 `<file>.lock` 兄弟文件，跨进程串行）+ 租约文件
- *    上的代际计数（`writeFileAtomic` 原子提交）；
- *  - 全程**不使用**进程内 `Map` 承担正确性；
+ *  - 写权**只**经 `acquireWriterLease`。**互斥**由 `dsh-atomic-write` 的
+ *    `withFileLock` 承担：`wx` 独占创建 `<file>.lock` 兄弟文件，且持锁窗口
+ *    **横跨整个租约生命周期**（acquire 时建立，`dispose()` 时才删除）；
+ *  - 租约文件上的代际计数（`writeFileAtomic` 原子提交）**只作诊断**，不参与
+ *    失权判定——理由与边界见 `contracts.ts` 的 `SoloipsWriterLease` 注释；
+ *  - 全程**不使用**进程内 `Map` 承担正确性（锁是文件系统事实，不是进程内表）；
  *  - `already-open`（facility 同实例保证）与进程内 session 写所有权都不当作
  *    跨进程保护。
  */
@@ -223,6 +225,16 @@ class SoloipsDomainFacilityWrapper implements SoloipsDomainFacility {
 }
 
 // ── 写权租约（跨进程 fence） ──────────────────────────────────────────────────
+//
+// 〔互斥的唯一承担者〕`withFileLock`（见文件头）。它持锁到 `dispose()`，且上游
+// 实现**从不**移除已存在的锁文件（`dsh-atomic-write` 的 withFileLock：`finally`
+// 里 `rm(lockPath)` 只删自己刚创建的那把；争用者超时即失败，不做孤儿回收）。
+// 因此「同一 root 同时只有一个持权者」是文件系统层的事实，不依赖本文件的任何
+// 布尔量。
+//
+// 〔代际计数的真实用途〕诊断。它让「本次 acquire 是该 root 的第几次取权」可读
+// （日志/排查，并作为 core `binding.leaseGeneration` 的取值来源）。它**不是**
+// fencing token：没有「按代际判定失权」的路径（判据与代价见 contracts.ts）。
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
@@ -235,7 +247,12 @@ function corruptLease(leasePath: string, detail: string): SoloipsAdapterError {
   );
 }
 
-/** 读取租约文件中的上一代计数；缺失视为 0；结构不合法即拒绝（fail-closed）。 */
+/** 读取租约文件中的上一代计数；缺失视为 0；结构不合法即拒绝（fail-closed）。
+ *
+ * 〔为什么坏值必须拒绝而不是重置为 0〕该计数是诊断事实（「本根第几次取权」）；
+ * 静默归零会让日志/排查读到错误的代际。拒绝的代价有界：介质可修，修好后
+ * acquire 照常（锁已在失败路径上被 `withFileLock` 的 `finally` 释放）。
+ */
 function readPreviousGeneration(raw: string, leasePath: string): number {
   let parsed: unknown;
   try {
@@ -254,7 +271,13 @@ function readPreviousGeneration(raw: string, leasePath: string): number {
   return generation;
 }
 
-/** 在**已持锁**窗口内自增并原子提交代际计数，返回新代际。 */
+/**
+ * 在**已持锁**窗口内自增并原子提交代际计数，返回新代际。
+ *
+ * 〔约束〕只在 `withFileLock` 的回调内调用：读-改-写必须落在那把跨进程锁的
+ * 窗口里，否则两次并发 acquire 可能读到同一 previous。这里不做二次校验——
+ * 调用点是唯一的（acquire 的锁回调），加了也只是重复锁的保证。
+ */
 async function bumpGeneration(leasePath: string): Promise<number> {
   let previous = 0;
   try {
@@ -289,6 +312,10 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
     /**
      * 取得跨进程写权租约（机制面；core 负责策略：装载可写 domain/缓存之前取，
      * 每个持久发布点之前 `assertHeld()`）。
+     *
+     * 互斥语义：锁窗口横跨整个租约生命周期（acquire 建立 → `dispose()` 删除）。
+     * 争用者在 `leaseWaitMs` 内重试；超时即 `SOLOIPS_ADAPTER_LEASE_NOT_HELD`
+     * （fail-closed，不接管、不回收他人的锁）。
      */
     acquireWriterLease(options: { readonly root: string }): Promise<SoloipsWriterLease> {
       // 全路径（含入参校验）都在 async 体内：失败以 rejected promise 呈现，
@@ -298,7 +325,20 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
         const leasePath = join(root, LEASE_FILE_NAME);
         const storageId = storageIdOf(config.defaultBackend, root);
         // withFileLock 要求父目录存在；数据根本身由 backend/租约共同使用。
-        await mkdir(root, { recursive: true });
+        //
+        // 〔D-5〕失败必须收敛为契约码：core 的启动序是 lease → createStack
+        // （`packages/core/src/store.ts` 的 openSoloipsCompanyStore），故对
+        // 「root 不可创建」**首个失败点就是这里**。裸 `mkdir` 的 ErrnoException
+        // （ENOTDIR/EACCES…）会让调用方拿到与 backend 侧不同的错误形态；本端口
+        // 已在 `acquireWriterLease` 的其余失败路径上统一用契约码（见
+        // `mapLeaseAcquireError`），此处与之一致。码取 SERVICE_UNAVAILABLE：
+        // root 的值形状已由 `canonicalRoot` 校验（INVALID_CONFIG 只用于那一层），
+        // 环境层失败沿用本端口对「不可用」的既有口径。
+        try {
+          await mkdir(root, { recursive: true });
+        } catch (error: unknown) {
+          throw mapHostError(`storage.lease.acquire('${root}')`, error);
+        }
         let signalAcquired!: (generation: number) => void;
         const acquired = new Promise<number>((resolveAcquired) => {
           signalAcquired = resolveAcquired;
@@ -336,6 +376,17 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
         return {
           generation,
           storageId,
+          /**
+           * 〔不变量〕只要锁在手，写权就还在手——互斥由 `withFileLock` 的
+           * 锁窗口保证（它横跨到 dispose），本方法因此只需回答「本 lease 是否
+           * 已被释放」。
+           *
+           * 〔为什么**不**重读租约文件比对 generation〕那是把代际当 fencing
+           * token 的路线，本实现不采用（理由见 contracts.ts 的
+           * `SoloipsWriterLease` 注释）：在本锁窗口内重读只会读到自己的值，
+           * 而一旦锁被别人取走，本 lease 早已不可写。代价（写路径上每个发布点
+           * 一次文件读 + 新的失败模式）换不到任何互斥强度。
+           */
           assertHeld(): Promise<void> {
             if (disposed) {
               return Promise.reject(
@@ -348,8 +399,11 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
             return Promise.resolve();
           },
           dispose: async () => {
+            // 幂等早返：重复调用无副作用（唯一的「不抛错」例外，见代码规范）。
             if (disposed) return;
             disposed = true;
+            // 释放锁 → withFileLock 的 finally 删除 `.lock` 兄弟文件；
+            // 此后本 root 可被任何进程重新 acquire（代际 +1）。
             releaseLock();
             try {
               await lockHeld;
@@ -363,6 +417,7 @@ export function createStoragePort(ctx: Context, config: StoragePortConfig): Solo
     },
 
     /** 用同一个 canonical root 构造 backend 与 facility（SEAM-11）。 */
+    // oxlint-disable-next-line typescript/require-await -- 契约返回 Promise（SoloipsStoragePort.createStack）；构造全同步，但校验失败必须是 rejection 而非同步抛出
     async createStack(options: SoloipsStorageStackOptions): Promise<SoloipsStorageStack> {
       const backend = options.backend ?? config.defaultBackend;
       if (!CONSTRUCTIBLE_BACKENDS.includes(backend as "json" | "sqlite")) {
