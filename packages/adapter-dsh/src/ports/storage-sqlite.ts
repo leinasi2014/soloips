@@ -51,6 +51,10 @@ import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 
 import type { StorageBackend, KvFacet, KvUnit, KvUnitDescriptor } from "@deepseek-ai/dsh-storage";
 
+// ── 同包导入 ─────────────────────────────────────────────────────────
+
+import { mapHostError } from "./shared.js";
+
 // ── 常量 ───────────────────────────────────────────────────────────────
 
 /** 单元名和表名的正则验证（与 DSH 保持一致） */
@@ -138,8 +142,22 @@ export class SqliteStorageBackend implements StorageBackend {
     }
 
     // 确保目录存在
+    //
+    // 〔D-5〕构造期 `mkdirSync` 是**介质前置条件**（better-sqlite3 打开 `${name}.db`
+    // 要求父目录存在），故不能像 json 后端那样把 mkdir 推迟到 open；但失败形态必须
+    // 与 json 侧一致：经 `mapHostError` 收敛为契约码（`SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE`），
+    // 而不是抛裸 Node ErrnoException（`ENOTDIR`/`EACCES`…）——调用方只 switch 契约码，
+    // 不解析 message，裸 errno 会让「root 不可创建」在两个后端下不可统一处理。
+    // 选 `SERVICE_UNAVAILABLE` 而非 `INVALID_CONFIG`：root 的**值形状**已在
+    // `canonicalRoot` 校验（INVALID_CONFIG 只用于那一层），此处失败是环境事实。
+    // 非绝对路径的裸 `Error` 保持原样：那是编程错误护栏（契约路径已先经
+    // `canonicalRoot` 拒绝），文案与既有测试逐字一致。
     if (!existsSync(this.root)) {
-      mkdirSync(this.root, { recursive: true, mode: 0o700 });
+      try {
+        mkdirSync(this.root, { recursive: true, mode: 0o700 });
+      } catch (error: unknown) {
+        throw mapHostError(`storage.createStack: creating sqlite root '${this.root}'`, error);
+      }
     }
   }
 
