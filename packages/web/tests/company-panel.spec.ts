@@ -12,6 +12,24 @@
  * | 9. 表单校验、确认前不写、按钮 disable/enable | 「表单与确认步骤」一组 |
  * | 〔补盲〕无树根时 `refresh()` 不得发读请求 | 「无树根时 `refresh()`…」 |
  * | 〔补盲〕读面 `ok:false` 两臂落 `failed`（不是 `unavailable`） | 「读根/读树返回 `ok:false`…」 |
+ * | 〔补盲 2〕诊断 `message` 不得上屏（**视图渲染路径**） | 「诊断文本…不得出现在渲染结果里」 |
+ * | 〔补盲 2〕无树根时 `refresh()` 不注册定时器、推进定时器后仍无请求 | 「时间无关判据…」 |
+ *
+ * ── 〔补盲 FE-1a-GUARD2〕第二轮变异测试报出的两个盲区（本片新增）─────────────
+ *
+ * 第一轮（下节）补的是「**状态/调用面**没人观察」。第二轮补的是「**渲染结果**与
+ * **延迟副作用**没人观察」——产品行为同样正确，但改坏它仍能让整仓保持全绿：
+ *
+ *  1. **诊断文本（`message`）上屏无人守**：`i18n-assets.spec.ts` 只断言
+ *     `soloipsErrorCopyOf` 的**返回对象**不含 message（纯函数层）。而 I18N-1
+ *     （`data-contract.md` §2.7）管的是**渲染结果**：在 `CompanyPanel.tsx` 的
+ *     failed 臂额外渲染 `list.error.message` 曾让全套 666 条保持全绿。守卫见
+ *     「诊断文本（`message`）**不得**出现在渲染结果里」两条用例（读面两臂 + 提交两臂）。
+ *  2. **延迟伪造请求逃出观察窗口**：第一轮的守卫用 `settle()`（一个宏任务窗口）
+ *     观察「无树根时不发请求」。把早退分支改成 `setTimeout(() => 发请求, 25)` 曾让
+ *     45 条全绿——25ms 落在窗口之外。守卫见「时间无关判据」用例：用
+ *     `vi.useFakeTimers()` + `vi.runAllTimersAsync()` 把「不猜 id」变成**不依赖
+ *     时间**的性质（同时钉「不注册任何定时器」），不再靠等待。
  *
  * ── 〔补盲 FE-1a-GUARD〕两条由独立 QA 变异测试发现的守卫 ────────────────────
  *
@@ -47,7 +65,7 @@
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
 import type { SoloipsCompanyId, SoloipsOperationId } from "soloips-core/contracts";
@@ -67,6 +85,7 @@ import {
 } from "../src/client/company/register.js";
 import { SoloipsCompanyPanelView } from "../src/client/company/CompanyPanel.js";
 import { SoloipsCompanyPanel, type SoloipsRemoteSurface } from "../src/client/company/surface.js";
+import { SOLOIPS_ERROR_CODE_UNKNOWN } from "../src/client/i18n/error-codes.js";
 import {
   newSoloipsClientOperationId,
   soloipsCompanyCreateInput,
@@ -179,11 +198,30 @@ interface StubRemoteFailure {
 }
 
 /**
+ * 替身失败对象携带的**诊断文本**（`message`）。
+ *
+ * 〔契约〕core/adapter 的 `message` 是面向开发者与运维的中文诊断，**不得上屏**
+ * （`data-contract.md` §2.7 I18N-1）：界面只按稳定 `code` 取字典文案。本常量是
+ * 「这句话不得出现在渲染结果里」的**唯一真源**——替身与断言引用同一常量，避免
+ * 两处字面量各自漂移后守卫静默失效（一处改了、另一处没改，断言仍在但已空转）。
+ */
+const STUB_DIAGNOSTIC_TEXT = "替身：网关层失败（诊断文本不上屏）";
+
+/**
  * 造一个**网关层失败**（`ok:false`）的替身。
  *
  * 〔为什么 `message` 刻意写成中文诊断〕它**不得上屏**（`data-contract.md`
  * §2.7 I18N-1）：界面只按 `code` 取文案。写成一句可识别的诊断文本，使「有人把
- * `message` 渲染出来」在断言里显形（下方用例断言的是**字典文案**，不是这句话）。
+ * `message` 渲染出来」在断言里显形——该显形由 {@link STUB_DIAGNOSTIC_TEXT} 的
+ * `not.toContain` 断言承担，见「诊断文本（`message`）**不得**出现在渲染结果里」
+ * 两条用例（读根/读树两臂、提交 failed 臂）。
+ *
+ * 〔补盲 FE-1a-GUARD2 订正〕本注释首版声称「使『有人把 `message` 渲染出来』在
+ * 断言里显形」，但当时**没有任何用例断言这句话不出现**（既有的
+ * `i18n-assets.spec.ts` 只断言 `soloipsErrorCopyOf` 的返回对象不含 message，是
+ * **纯函数层**；渲染路径无人观察）。该声称当时**不成立**，现已由上述两条渲染
+ * 断言落地——把 `list.error.message` / `phase.error.message` 渲染进视图会立即
+ * 让它们变红（实测）。
  *
  * @param code - 失败码；`gateway/internal` 是「载体/派发/未归类 Host 失败」。
  * @returns 可放进 `RemoteResult` 错误臂的对象（用点处按本文件既有写法转 `never`，
@@ -192,7 +230,7 @@ interface StubRemoteFailure {
 function gatewayFailure(code: string): StubRemoteFailure {
   return {
     code,
-    message: "替身：网关层失败（诊断文本不上屏）",
+    message: STUB_DIAGNOSTIC_TEXT,
     details: {},
     name: "RemoteError",
   };
@@ -569,6 +607,67 @@ describe("提交结果穷举渲染（验收条款 3）", () => {
     expect(panel.getSnapshot().phase.kind, "gateway 失败不是业务结果").toBe("failed");
   });
 
+  // ── 〔补盲 FE-1a-GUARD2 ①〕提交 failed 臂的诊断文本不得上屏 ──────────────────
+  //
+  // 〔为什么读面那两条之外还要这一条〕`SubmissionStatus` 的 `failed` 臂是**另一个**
+  // 渲染点（`CompanyPanel.tsx:314-334`，经 `soloipsErrorCopyOf(phase.error)` 取
+  // 文案），其 `error` 来自 `#executeCreate` 而非读面——两条路径的 error 对象互不
+  // 相同，读面守卫覆盖不到这里。把 `phase.error.message` 渲染进该臂曾同样全绿。
+  //
+  // 〔两条失败来源都覆盖〕`#executeCreate` 的失败有两路（`surface.ts:325-341`）：
+  //  `RemoteResult` 的 `ok:false` 错误臂，以及调用本身**抛错**。前者携带 `message`
+  // （替身形状），后者是真实 `Error`（其 `message` 同样不得上屏）。两路都进同一个
+  // `failed` 臂，故两路都断言。
+  it("提交 failed 臂：诊断文本（`message`）**不得**出现在渲染结果里（I18N-1）", async () => {
+    // 〔两路的「码上屏」形态不同，故逐路给出期望码文本〕`ok:false` 臂带
+    // `gateway/internal`（替身形状），抛错臂是真实 `Error`、**没有 `code`**，故
+    // `soloipsErrorCopyOf` 回退到 `SOLOIPS_ERROR_CODE_UNKNOWN` 占位符
+    // （`error-codes.ts:147`）——界面显示的码文本因此不同。这不是缺陷：抛错臂
+    // 本就没有稳定码可给，占位符正是「不得留空、不得把 message 当码」的落地。
+    for (const [source, codeText] of [
+      ["gateway-ok-false", "gateway/internal"],
+      ["thrown", SOLOIPS_ERROR_CODE_UNKNOWN],
+    ] as const) {
+      const stub = remoteStub();
+      if (source === "gateway-ok-false") {
+        stub.nextCreate = () =>
+          Promise.resolve({
+            ok: false,
+            error: gatewayFailure("gateway/internal") as never,
+          });
+      } else {
+        stub.nextCreate = () => Promise.reject(new Error(STUB_DIAGNOSTIC_TEXT));
+      }
+      const panel = new SoloipsCompanyPanel(stub.remote);
+      toConfirming(panel);
+      panel.actions.confirm(FIXED_OPERATION_ID);
+      await settle();
+
+      // 前置：确实落到了提交 failed 相位（否则断言的是「没渲染那条臂」）。
+      const phase = panel.getSnapshot().phase;
+      expect(phase.kind, `${source}：必须落 failed 相位（前置）`).toBe("failed");
+      if (phase.kind !== "failed") return;
+      expect(
+        stub.createCalls.length,
+        `${source}：前置——create 确实被调用过（否则失败无从发生）`,
+      ).toBe(1);
+
+      const html = render(panel);
+      expect(html, `${source}：必须带提交 failed 的数据属性（前置）`).toContain(
+        'data-soloips-submission="failed"',
+      );
+      expect(
+        html,
+        `${source}：诊断 \`message\` **不得上屏**（I18N-1）——提交失败臂只按稳定 \`code\` 取字典文案`,
+      ).not.toContain(STUB_DIAGNOSTIC_TEXT);
+      // 否定断言不得靠「什么都不渲染」通过：操作编号与码必须仍上屏。
+      expect(html, `${source}：仍必须显示操作编号（可行动指引）`).toContain(FIXED_OPERATION_ID);
+      expect(html, `${source}：仍必须把稳定码作为可复制诊断上屏`).toContain(
+        translate("soloips.error.unknown", { code: codeText }),
+      );
+    }
+  });
+
   it("`unavailable` 与 `failed` 的重试都**复用同一编号**", async () => {
     for (const [label, respond] of [
       [
@@ -706,6 +805,12 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
   // 全绿：构造路径不经过 `#refresh()`，而唯一调用 `refresh()` 的用例都先经
   // `rootedPanel()` 确定了树根。下面的用例把「调用之后**仍然**没有任何读请求」钉住
   // ——它同时覆盖状态面（`no-root` 保持）与调用面（`readCalls`/`treeCalls` 仍为空）。
+  //
+  // 〔观察窗口口径（补盲 FE-1a-GUARD2 ①）〕本用例的判据是 `settle()`（一个宏任务
+  // 窗口）：**覆盖同步发出与 ≤1 个宏任务内发出的请求；更长的延迟（如
+  // `setTimeout(发请求, 25)`）不在本用例口径内**。该形态由下方「时间无关判据」用例
+  // 承担——那里用假定时器把「不猜 id」变成不依赖时间的性质。此处保留 `settle()` 是
+  // 因为它同时验证「真实定时器下同样成立」（假定时器会接管 `setTimeout`，两者互补）。
   it("无树根时调用 `refresh()`：**不得发出任何读请求**，状态仍是 `no-root`", async () => {
     const stub = remoteStub();
     const panel = new SoloipsCompanyPanel(stub.remote);
@@ -755,6 +860,78 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
     expect(stub.readCalls.length, "三次 `refresh()` 后仍不得有 `getCompany`").toBe(0);
     expect(stub.treeCalls.length, "三次 `refresh()` 后仍不得有 `getCompanyTree`").toBe(0);
     expect(panel.getSnapshot().list.kind).toBe("no-root");
+  });
+
+  // ── 〔补盲 FE-1a-GUARD2 ②〕「无树根不发请求」的时间无关判据 ──────────────────
+  //
+  // 〔盲区在哪〕上面两条守卫的观察窗口是 `settle()`——**一个宏任务**。把早退分支
+  // 改成 `setTimeout(() => { 发请求 }, 25)` 曾让 45 条全绿（QA 实测：0ms / 1ms 延迟
+  // 会被杀，25ms 不会被杀）。这**不是**「窗口太短」的问题：把窗口拉长到 25ms 只是
+  // 把赌注押在「变异体延迟多少」上，是脆弱的 sleep 式等待（本仓明确反对）。
+  //
+  // 〔判据为什么能时间无关〕把观察窗口从「等了多久」换成「**有没有待处理的定时器**」
+  // + 「推进**所有**定时器之后的状态」：
+  //  1. `vi.getTimerCount()`：`#refresh()` 的早退分支是**同步完成**的——它既不注册
+  //     定时器、也不产生微任务副作用（只 `#set` 一次状态）。任何「延迟发请求」的
+  //     变异体都**必须**先注册一个定时器，故计数 > 0 即被抓住，**与延迟多少无关**；
+  //  2. `vi.runAllTimersAsync()`：即便变异体把请求藏在定时器里，推进**全部**定时器
+  //     后它必然已执行——随后断言仍无请求。这条**不依赖**「延迟 ≤ N ms」这个前提。
+  // 两条并用：计数判据抓「注册了定时器」，推进判据抓「定时器里的副作用」。
+  //
+  // 〔为什么不是 sleep 式等待〕`vi.useFakeTimers()` 下时间不流逝，`runAllTimersAsync`
+  // 是**穷尽**定时器队列而非「等一段真实时间」——用例时长与「变异体延迟多久」无关。
+  //
+  // 〔为什么微任务形态也被覆盖〕`runAllTimersAsync` 会先结算微任务队列（实测），
+  // 故「`Promise.resolve().then(发请求)`」这类无定时器的延迟形态同样在推进后显形；
+  // 而本用例的前置计数断言（0 个定时器）与随后的请求数断言共同把它钉住。
+  it("无树根时 `refresh()`：**不注册任何定时器**，且推进所有定时器后仍不发请求（时间无关）", async () => {
+    const stub = remoteStub();
+    const panel = new SoloipsCompanyPanel(stub.remote);
+
+    // 假定时器只在**本用例**内启用；`settle()` 依赖真实 `setTimeout`，故下方
+    // 不用它（本用例的判据是「推进定时器」，不是「等一个宏任务」）。
+    vi.useFakeTimers();
+    try {
+      // 前置：构造路径自身不得留下待处理定时器（把「构造」与「刷新」分开观察）。
+      expect(
+        vi.getTimerCount(),
+        "前置：构造 `no-root` 面板不得注册任何定时器（构造是纯同步的）",
+      ).toBe(0);
+
+      panel.actions.refresh();
+
+      // 判据 1（时间无关）：早退分支是同步完成的，不得注册任何定时器。
+      // 任何「延迟 N ms 后伪造 id 发请求」的变异体都必然先注册一个定时器。
+      expect(
+        vi.getTimerCount(),
+        "无树根时 `refresh()` 不得注册任何定时器——早退分支是同步完成的；「延迟若干毫秒再发请求」的形态会在这里显形（与延迟多少无关）",
+      ).toBe(0);
+
+      // 判据 2（穷尽，不是等待）：推进**全部**定时器 + 结算微任务队列。
+      await vi.runAllTimersAsync();
+
+      expect(
+        stub.readCalls.length,
+        "推进所有定时器后仍不得有 `getCompany`——判据不依赖「延迟 ≤ N ms」这个前提",
+      ).toBe(0);
+      expect(
+        stub.treeCalls.length,
+        "推进所有定时器后仍不得有 `getCompanyTree`——不猜 id 是**时间无关**的性质",
+      ).toBe(0);
+      expect(panel.getSnapshot().list.kind, "推进定时器后仍是 `no-root`（不是 `loading`）").toBe(
+        "no-root",
+      );
+
+      const html = render(panel);
+      expect(html, "界面仍是 no-root 呈现").toContain('data-soloips-list-state="no-root"');
+      expect(html, "**不得**落到 loading——延迟变异体的可观察形态").not.toContain(
+        'data-soloips-list-state="loading"',
+      );
+    } finally {
+      // 〔约束〕假定时器必须还原：`settle()` 与后续用例依赖真实定时器，
+      // 泄漏会让同文件其它用例挂起（vitest 不自动还原）。
+      vi.useRealTimers();
+    }
   });
 
   // ── 〔补盲 FE-1a-GUARD ②〕读面 `ok:false` 两条错误臂的守卫 ──────────────────
@@ -849,6 +1026,63 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
       expect(render(panel), `${arm} 臂必须把失败码上屏（可复制诊断）`).toContain(
         translate("soloips.error.unknown", { code: "gateway/internal" }),
       );
+    }
+  });
+
+  // ── 〔补盲 FE-1a-GUARD2 ①〕诊断文本（`message`）不得上屏的守卫 ───────────────
+  //
+  // 〔盲区在哪〕`i18n-assets.spec.ts:284-298` 只断言 `soloipsErrorCopyOf` 的**返回
+  // 对象**不含 message——那是**纯函数层**。I18N-1（`data-contract.md` §2.7）管的是
+  // **渲染结果**：视图在 failed 臂额外渲染 `list.error.message` 曾让整仓 666 条
+  // 保持全绿（QA 实测变异体）。
+  //
+  // 〔为什么必须两条（读根 + 读树）〕`loadSoloipsCompanyList` 有两个独立的
+  // `failed` 落点（`surface.ts:198` 的读根、`:203` 的读树），两者的 `error` 是
+  // **不同对象**。只覆盖一条会留下另一条无守卫——与上方「读面 `ok:false` 两条错误
+  // 臂」同一条纪律：每个独立落点各自可被改坏，各自需要断言。
+  //
+  // 〔判据为什么是「不含这句话」而不是「含某句话」〕上屏素材是**字典文案**，其
+  // 内容随文案迭代而变；而「诊断文本不得出现」是**不变量**，与文案怎么写无关。
+  // 故断言取否定形态，且引用替身里的同一常量（`STUB_DIAGNOSTIC_TEXT`）——两处
+  // 字面量各自漂移会让守卫静默空转（断言仍在、却再也匹配不到任何东西）。
+  it("读根 / 读树失败时，诊断文本（`message`）**不得**出现在渲染结果里（I18N-1）", async () => {
+    for (const arm of ["getCompany", "getCompanyTree"] as const) {
+      const stub = remoteStub();
+      const panel = await rootedPanel(stub);
+      const failure = gatewayFailure("gateway/internal");
+      if (arm === "getCompany") {
+        stub.nextRead = () => Promise.resolve({ ok: false, error: failure as never });
+      } else {
+        stub.nextTree = () => Promise.resolve({ ok: false, error: failure as never });
+      }
+      panel.actions.refresh();
+      await settle();
+
+      // 前置：确实落到了 failed 臂（否则本用例断言的是「没渲染那条臂」而非「渲染了且没泄漏」）。
+      const list = panel.getSnapshot().list;
+      expect(list.kind, `${arm} 臂必须落 failed（前置）`).toBe("failed");
+      if (list.kind !== "failed") return;
+      // 前置：渲染素材里**确实**带着那句诊断——若替身没把它带进来，本断言会因
+      // 「无从泄漏」而空转成假绿（这正是原盲区的成因）。
+      expect(list.error, `${arm} 臂的失败对象必须真的携带诊断文本（否则本用例无鉴别力）`).toBe(
+        failure,
+      );
+      expect(
+        (list.error as StubRemoteFailure).message,
+        `${arm} 臂的替身诊断文本必须是断言引用的那一句`,
+      ).toBe(STUB_DIAGNOSTIC_TEXT);
+
+      const html = render(panel);
+      expect(
+        html,
+        `${arm} 臂：core/网关的 \`message\` 是面向开发者的中文诊断，**不得上屏**（I18N-1）——界面只按稳定 \`code\` 取字典文案`,
+      ).not.toContain(STUB_DIAGNOSTIC_TEXT);
+      // 〔为什么还要断言「码确实上屏了」〕防止用「整条 failed 臂什么都不渲染」这种
+      // 退化实现骗过上面的否定断言——那会同时失去可复制诊断。
+      expect(
+        html,
+        `${arm} 臂：仍必须把稳定码作为可复制诊断上屏（否定断言不得靠「什么都不渲染」通过）`,
+      ).toContain(translate("soloips.error.unknown", { code: "gateway/internal" }));
     }
   });
 
