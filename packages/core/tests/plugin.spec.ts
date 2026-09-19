@@ -462,7 +462,9 @@ function releaseProbe(mode: "hold" | "fail", error?: Error): ReleaseProbe {
     },
     steps,
     waitForRelease: () => reached,
-    release: () => releaseGate(),
+    release: () => {
+      releaseGate();
+    },
   };
 }
 
@@ -473,7 +475,9 @@ async function bootPublished(
   const ctx = new FakeHostContext();
   ctx.setService("soloipsAdapter", { storage: port });
   soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
-  await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+  await vi.waitFor(() => {
+    expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+  });
   const [dispose] = ctx.takeDisposers();
   if (dispose === undefined) throw new Error("前置失败：未登记卸载回调");
   return { ctx, dispose };
@@ -537,7 +541,9 @@ describe("soloips-core plugin unload (STORAGE-01)", () => {
 
     // 打开随后完成，但宿主已卸载：立即逆序释放，不发布。
     releaseStack();
-    await vi.waitFor(() => expect(fakeAdapterEvents()).toContain(`lease-dispose:${ROOT}`));
+    await vi.waitFor(() => {
+      expect(fakeAdapterEvents()).toContain(`lease-dispose:${ROOT}`);
+    });
     expect(ctx.provided.size).toBe(0);
     expect(ctx.warnings).toHaveLength(0);
   });

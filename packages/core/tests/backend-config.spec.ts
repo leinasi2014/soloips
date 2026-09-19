@@ -148,7 +148,13 @@ class FakeHostContext {
   provide(
     ...args: Parameters<SoloipsCoreHostContext["provide"]>
   ): ReturnType<SoloipsCoreHostContext["provide"]> {
-    const [name, value] = args;
+    // 〔为什么用下标取值 + 显式标注，而不是 `const [name, value] = args`〕宿主签名是
+    // `provide(name: string, value?: any)`，元组第二项因此是 `any`；解构赋值会把 `any`
+    // 直接灌进局部变量（`no-unsafe-assignment` 的报点）。`this.provided` 的声明是
+    // `Map<string, unknown>`，所以标注 `unknown` 与消费面一致，且把「这个值未经校验」
+    // 显式写在类型上。（与 `plugin.spec.ts` 的同名替身逐字同形。）
+    const name = args[0];
+    const value: unknown = args[1];
     this.provided.set(name, value);
     return (() => {
       this.provided.delete(name);
@@ -205,7 +211,9 @@ describe("插件层 config.backend 的键名与透传（parseCoreConfig → entr
       accountId: TEST_ACCOUNT_ID,
       backend: "sqlite",
     });
-    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await vi.waitFor(() => {
+      expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+    });
     expect(firstStackRequest(created).backend).toBe("sqlite");
     await ctx.unload();
   });
@@ -215,7 +223,9 @@ describe("插件层 config.backend 的键名与透传（parseCoreConfig → entr
     const ctx = new FakeHostContext();
     ctx.setService(SOLOIPS_ADAPTER_SERVICE_NAME, { storage: port });
     soloipsCoreEntry(ctx, { enabled: true, storageRoot: ROOT, accountId: TEST_ACCOUNT_ID });
-    await vi.waitFor(() => expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true));
+    await vi.waitFor(() => {
+      expect(ctx.provided.has(SOLOIPS_CORE_SERVICE_NAME)).toBe(true);
+    });
     expect(Object.hasOwn(firstStackRequest(created), "backend")).toBe(false);
     expect(ctx.warnings).toEqual([]);
     await ctx.unload();

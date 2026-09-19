@@ -1270,6 +1270,13 @@ describe("withHostErrors（shared.ts:354-361；await 包装）", () => {
   });
 
   it("非 Error 拒绝 → 占位文本 + cause 保留原值", async () => {
+    // 〔为什么豁免 prefer-promise-reject-errors〕本用例的**被测对象就是「非 Error
+    // 拒绝」这一形态**：`mapHostError` 必须把任意 rejection 值收敛为稳定码错误并
+    // 把原值放进 `cause`。改传 `new Error("boom")` 会让 `cause` 断言与
+    // `non-error host failure` 占位文本同时失去意义——即用规则要求的形态替换掉
+    // 用例存在的理由。规则防的是「源码里误传非 Error 导致调用方拿不到堆栈」，
+    // 而此处非 Error 是**被断言的事实**，故就地豁免并说明。
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- 用例语义即「非 Error 拒绝」（见上）
     await expect(withHostErrors("scope", () => Promise.reject("boom"))).rejects.toMatchObject({
       code: "SOLOIPS_ADAPTER_SERVICE_UNAVAILABLE",
       message: "scope: non-error host failure",
