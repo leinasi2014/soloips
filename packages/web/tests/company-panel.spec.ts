@@ -13,7 +13,8 @@
  * | 〔补盲〕无树根时 `refresh()` 不得发读请求 | 「无树根时 `refresh()`…」 |
  * | 〔补盲〕读面 `ok:false` 两臂落 `failed`（不是 `unavailable`） | 「读根/读树返回 `ok:false`…」 |
  * | 〔补盲 2〕诊断 `message` 不得上屏（**视图渲染路径**） | 「诊断文本…不得出现在渲染结果里」 |
- * | 〔补盲 2〕无树根时 `refresh()` 不注册定时器、推进定时器后仍无请求 | 「时间无关判据…」 |
+ * | 〔补盲 2〕无树根时 `refresh()` 不注册定时器、推进定时器后仍无请求 | 「假时钟判据…」 |
+ * | 〔补盲 3〕无树根时 `refresh()` 不新建**任何**异步资源（覆盖原生定时器） | 「异步资源判据…」 |
  *
  * ── 〔补盲 FE-1a-GUARD2〕第二轮变异测试报出的两个盲区（本片新增）─────────────
  *
@@ -27,9 +28,27 @@
  *     「诊断文本（`message`）**不得**出现在渲染结果里」两条用例（读面两臂 + 提交两臂）。
  *  2. **延迟伪造请求逃出观察窗口**：第一轮的守卫用 `settle()`（一个宏任务窗口）
  *     观察「无树根时不发请求」。把早退分支改成 `setTimeout(() => 发请求, 25)` 曾让
- *     45 条全绿——25ms 落在窗口之外。守卫见「时间无关判据」用例：用
+ *     45 条全绿——25ms 落在窗口之外。守卫见「假时钟判据」用例：用
  *     `vi.useFakeTimers()` + `vi.runAllTimersAsync()` 把「不猜 id」变成**不依赖
- *     时间**的性质（同时钉「不注册任何定时器」），不再靠等待。
+ *     延迟数值**的性质（同时钉「不注册任何假定时器」），不再靠等待。
+ *
+ * ── 〔补盲 FE-1a-GUARD3〕收窄上一轮的判据表述，并补覆盖原生定时器的判据 ───────
+ *
+ * 〔订正〕GUARD2 的注释与断言消息曾声称「**任何**『延迟 N ms 后伪造 id 发请求』的
+ * 变异体都必然先注册一个定时器」，并把用例称为「**时间无关**」。该全称命题**不成立**
+ * ——独立 QA 与本次实测都复现：`vi.useFakeTimers()` 只替换**全局绑定**，只有
+ * `globalThis.setTimeout` / `setImmediate` / `setInterval` 会计入 `vi.getTimerCount()`
+ * （逐原语实测增量：`{baseline:0, global.setTimeout:1, setImmediate:1, setInterval:1,
+ * "timers/promises":0, AbortSignal.timeout:0, MessageChannel:0, queueMicrotask:0}`）。
+ * 故「假时钟判据」的准确口径是「**用 `global.setTimeout`/`setImmediate` 家族延迟的
+ * 形态，与延迟数值无关地被抓住**」，不是「任何延迟形态」。三个绕过形态已在该用例
+ * 注释里显式登记。
+ *
+ * 〔补覆盖原生定时器的判据〕`node:async_hooks` 的 `init` 钩子观察**运行时新建的 async 资源**，
+ * 不经过全局绑定——因此能看到 `timers/promises`（`Timeout`）、`AbortSignal.timeout`
+ * （`Timeout`）、模块级捕获的定时器引用（`Timeout`）这三条假时钟的盲区。见「异步资源
+ * 判据」用例。它的边界同样**已登记**：只看**窗口内新建**的资源，复用窗口外已存在的
+ * 定时器（如模块加载期起的轮询）不在口径内。
  *
  * ── 〔补盲 FE-1a-GUARD〕两条由独立 QA 变异测试发现的守卫 ────────────────────
  *
@@ -62,6 +81,8 @@
  * 因此断言的是「界面确实显示了那条文案」，而不是「代码里引用了那个键」。后者
  * 无法区分「键对了但渲染错位」。
  */
+
+import { createHook } from "node:async_hooks";
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -258,6 +279,45 @@ function render(panel: SoloipsCompanyPanel, t = translate): string {
 
 /** 等待微任务队列清空（Remote 替身的 promise 链结算）。 */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * 在**同步窗口**内记录运行时新建的全部 async 资源类型（`node:async_hooks`）。
+ *
+ * 〔为什么需要它（FE-1a-GUARD3）〕假时钟（`vi.useFakeTimers()`）只替换**全局绑定**，
+ * 因此看不见原生定时器：`node:timers/promises` 的 `setTimeout`、`AbortSignal.timeout`、
+ * 模块加载期捕获的 `globalThis.setTimeout` 引用都不计入 `vi.getTimerCount()`。
+ * `async_hooks` 的 `init` 钩子挂在**运行时资源创建**这一层，不经全局绑定，故能看见
+ * 上述三者（逐原语实测：均产出 `Timeout` 类型资源）。
+ *
+ * 〔边界（判据必须如实登记）〕
+ *  - 只看**窗口内新建**的资源：复用窗口外已存在的定时器（如模块加载期起的轮询、
+ *    在 `collectAsyncResources` 之外创建后传入）**不可见**；
+ *  - 不区分「定时器」与「普通 promise 链」：本文件用它断言的是「**零**新建资源」，
+ *    故正例下为空即可判定；若要断言「建了且是定时器」，须再按类型过滤；
+ *  - Node 专有 API：本套件在 Node 下跑（`vitest.config.ts` 的 `environment: "node"`），
+ *    浏览器运行时没有该模块——本文件是**测试**，不构成浏览器侧依赖。
+ *
+ * 〔为什么不是 sleep 式等待〕它是**同步**观察：`body` 返回后即得结果，用例时长
+ * 与「变异体延迟多久」无关（这正是本片要补的性质）。
+ *
+ * @param body - 同步执行的被测动作（须是同步的：`async_hooks` 只覆盖调用栈内的创建）。
+ * @returns 窗口内新建的 async 资源类型名（如 `"Timeout"`、`"PROMISE"`）。
+ */
+function collectAsyncResources(body: () => void): string[] {
+  const seen: string[] = [];
+  const hook = createHook({
+    init: (_id, type) => {
+      seen.push(type);
+    },
+  });
+  hook.enable();
+  try {
+    body();
+  } finally {
+    hook.disable();
+  }
+  return seen;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ① 表单校验与确认步骤（验收条款 9）
@@ -808,8 +868,8 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
   //
   // 〔观察窗口口径（补盲 FE-1a-GUARD2 ①）〕本用例的判据是 `settle()`（一个宏任务
   // 窗口）：**覆盖同步发出与 ≤1 个宏任务内发出的请求；更长的延迟（如
-  // `setTimeout(发请求, 25)`）不在本用例口径内**。该形态由下方「时间无关判据」用例
-  // 承担——那里用假定时器把「不猜 id」变成不依赖时间的性质。此处保留 `settle()` 是
+  // `setTimeout(发请求, 25)`）不在本用例口径内**。该形态由下方「假时钟判据」用例
+  // 承担——那里把「不猜 id」变成不依赖延迟数值的性质。此处保留 `settle()` 是
   // 因为它同时验证「真实定时器下同样成立」（假定时器会接管 `setTimeout`，两者互补）。
   it("无树根时调用 `refresh()`：**不得发出任何读请求**，状态仍是 `no-root`", async () => {
     const stub = remoteStub();
@@ -862,29 +922,42 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
     expect(panel.getSnapshot().list.kind).toBe("no-root");
   });
 
-  // ── 〔补盲 FE-1a-GUARD2 ②〕「无树根不发请求」的时间无关判据 ──────────────────
+  // ── 〔补盲 FE-1a-GUARD2 ②〕「无树根不发请求」的**假时钟**判据 ────────────────
   //
   // 〔盲区在哪〕上面两条守卫的观察窗口是 `settle()`——**一个宏任务**。把早退分支
   // 改成 `setTimeout(() => { 发请求 }, 25)` 曾让 45 条全绿（QA 实测：0ms / 1ms 延迟
   // 会被杀，25ms 不会被杀）。这**不是**「窗口太短」的问题：把窗口拉长到 25ms 只是
   // 把赌注押在「变异体延迟多少」上，是脆弱的 sleep 式等待（本仓明确反对）。
   //
-  // 〔判据为什么能时间无关〕把观察窗口从「等了多久」换成「**有没有待处理的定时器**」
-  // + 「推进**所有**定时器之后的状态」：
+  // 〔判据的准确口径（FE-1a-GUARD3 订正）〕把观察窗口从「等了多久」换成
+  // 「**有没有待处理的假定时器**」+「推进**所有**假定时器之后的状态」：
   //  1. `vi.getTimerCount()`：`#refresh()` 的早退分支是**同步完成**的——它既不注册
-  //     定时器、也不产生微任务副作用（只 `#set` 一次状态）。任何「延迟发请求」的
-  //     变异体都**必须**先注册一个定时器，故计数 > 0 即被抓住，**与延迟多少无关**；
-  //  2. `vi.runAllTimersAsync()`：即便变异体把请求藏在定时器里，推进**全部**定时器
-  //     后它必然已执行——随后断言仍无请求。这条**不依赖**「延迟 ≤ N ms」这个前提。
-  // 两条并用：计数判据抓「注册了定时器」，推进判据抓「定时器里的副作用」。
+  //     定时器、也不产生微任务副作用（只 `#set` 一次状态）。**用
+  //     `global.setTimeout`/`setImmediate` 家族延迟**的变异体必然先注册一个假定时器，
+  //     故计数 > 0 即被抓住，**与延迟数值无关**；
+  //  2. `vi.runAllTimersAsync()`：即便变异体把请求藏在这些定时器里，推进**全部**
+  //     定时器后它必然已执行——随后断言仍无请求。这条**不依赖**「延迟 ≤ N ms」。
+  // 两条并用：计数判据抓「注册了假定时器」，推进判据抓「假定时器里的副作用」。
+  //
+  // 〔本判据的边界（必读，勿再写成全称）〕**不是**「任何延迟形态」。本判据只在
+  // 「变异体用被假时钟接管的全局绑定」时成立。以下三个形态**确定性存活**（QA 与
+  // 本片均实测 48/48 全绿），且都**真的会发请求**——它们不是等价变异体，是本判据
+  // 的真实盲区：
+  //  a. `const { setTimeout: delay } = await import("node:timers/promises"); await delay(25)`
+  //     ——原生实现不读全局绑定，`getTimerCount()` 不计数、`runAllTimersAsync()` 不推进；
+  //  b. `AbortSignal.timeout(25).addEventListener("abort", 发请求)`——同源：原生定时器；
+  //  c. 模块加载期捕获 `const realSetTimeout = globalThis.setTimeout`，早退分支用
+  //     该捕获引用——假时钟替换的是**全局绑定**，已被捕获的函数对象仍是原生的。
+  //  这三者由下方「异步资源判据」用例（`node:async_hooks`）承担，**不**由本用例承担。
+  //  本用例的价值因此是「假时钟家族内与延迟数值无关」——一个**窄但确定**的命题。
   //
   // 〔为什么不是 sleep 式等待〕`vi.useFakeTimers()` 下时间不流逝，`runAllTimersAsync`
-  // 是**穷尽**定时器队列而非「等一段真实时间」——用例时长与「变异体延迟多久」无关。
+  // 是**穷尽假定时器队列**而非「等一段真实时间」——用例时长与「变异体延迟多久」无关。
   //
   // 〔为什么微任务形态也被覆盖〕`runAllTimersAsync` 会先结算微任务队列（实测），
   // 故「`Promise.resolve().then(发请求)`」这类无定时器的延迟形态同样在推进后显形；
   // 而本用例的前置计数断言（0 个定时器）与随后的请求数断言共同把它钉住。
-  it("无树根时 `refresh()`：**不注册任何定时器**，且推进所有定时器后仍不发请求（时间无关）", async () => {
+  it("无树根时 `refresh()`：**不注册任何假定时器**，且推进所有假定时器后仍不发请求（限 `global.setTimeout`/`setImmediate` 家族）", async () => {
     const stub = remoteStub();
     const panel = new SoloipsCompanyPanel(stub.remote);
 
@@ -895,28 +968,29 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
       // 前置：构造路径自身不得留下待处理定时器（把「构造」与「刷新」分开观察）。
       expect(
         vi.getTimerCount(),
-        "前置：构造 `no-root` 面板不得注册任何定时器（构造是纯同步的）",
+        "前置：构造 `no-root` 面板不得注册任何假定时器（构造是纯同步的）",
       ).toBe(0);
 
       panel.actions.refresh();
 
-      // 判据 1（时间无关）：早退分支是同步完成的，不得注册任何定时器。
-      // 任何「延迟 N ms 后伪造 id 发请求」的变异体都必然先注册一个定时器。
+      // 判据 1（与延迟数值无关，但限假时钟接管的全局绑定）：早退分支是同步完成的。
+      // **用 `global.setTimeout`/`setImmediate` 家族延迟**的变异体必然先注册一个
+      // 假定时器；其余原生定时器形态见本用例上方「边界」段（由 async_hooks 用例承担）。
       expect(
         vi.getTimerCount(),
-        "无树根时 `refresh()` 不得注册任何定时器——早退分支是同步完成的；「延迟若干毫秒再发请求」的形态会在这里显形（与延迟多少无关）",
+        "无树根时 `refresh()` 不得注册任何假定时器——早退分支是同步完成的；「用 `global.setTimeout`/`setImmediate` 延迟若干毫秒再发请求」的形态会在这里显形（与延迟数值无关）",
       ).toBe(0);
 
-      // 判据 2（穷尽，不是等待）：推进**全部**定时器 + 结算微任务队列。
+      // 判据 2（穷尽**假**定时器队列，不是等待）：推进全部假定时器 + 结算微任务队列。
       await vi.runAllTimersAsync();
 
       expect(
         stub.readCalls.length,
-        "推进所有定时器后仍不得有 `getCompany`——判据不依赖「延迟 ≤ N ms」这个前提",
+        "推进所有假定时器后仍不得有 `getCompany`——本判据不依赖「延迟 ≤ N ms」，但只覆盖假时钟接管的定时器家族",
       ).toBe(0);
       expect(
         stub.treeCalls.length,
-        "推进所有定时器后仍不得有 `getCompanyTree`——不猜 id 是**时间无关**的性质",
+        "推进所有假定时器后仍不得有 `getCompanyTree`——不猜 id 在假时钟家族内与延迟数值无关",
       ).toBe(0);
       expect(panel.getSnapshot().list.kind, "推进定时器后仍是 `no-root`（不是 `loading`）").toBe(
         "no-root",
@@ -932,6 +1006,58 @@ describe("读面状态：`unavailable` 与「空数据」可区分（验收条�
       // 泄漏会让同文件其它用例挂起（vitest 不自动还原）。
       vi.useRealTimers();
     }
+  });
+
+  // ── 〔补盲 FE-1a-GUARD3〕覆盖原生定时器路径的判据（`node:async_hooks`）──────
+  //
+  // 〔为什么还要一条〕上一条用例的假时钟只接管全局绑定，三个原生定时器形态确定性
+  // 存活（本片实测：三者均 48/48 全绿，且都真的发出了 `getCompany`）：
+  //   a. `node:timers/promises` 的 `setTimeout`；
+  //   b. `AbortSignal.timeout`；
+  //   c. 模块加载期捕获的 `globalThis.setTimeout` 引用。
+  // 这三条不是「等价变异体」——它们的可观察行为（延迟后发请求）与正确实现**不同**，
+  // 是真实的判据盲区。
+  //
+  // 〔本判据为什么能覆盖它们〕`async_hooks` 的 `init` 钩子在**运行时资源创建**层观察，
+  // 不经全局绑定：上述三者都会在窗口内新建一个 `Timeout` 类型的 async 资源（逐原语
+  // 实测），而正确实现的早退分支是**纯同步**的——它只 `#set` 一次状态，**不新建任何
+  // async 资源**（实测：200 次重复 + 穿插异步活动，窗口内均为空集）。
+  // 故判据是「窗口内新建资源集合为空」——与延迟**数值**、**原语**均无关。
+  //
+  // 〔本判据的边界（同样必须如实登记）〕
+  //  - **只看窗口内新建**：若变异体复用窗口外已存在的定时器（例如模块加载期就起一个
+  //    轮询，早退分支只挂一个闭包给它），窗口内不新建资源，**本判据看不见**。本片
+  //    实测：该形态单独跑本用例时**存活**（1 passed）；全量跑时它被上方 `settle()`
+  //    用例杀死（模块加载期的定时器在后续用例窗口内触发，属**跨用例泄漏**，
+  //    不是本判据的功劳）。这是**已知残余盲区**，本判据不声称穷尽；
+  //  - 只断言「集合为空」：不做「建的是定时器」这类正向分类（本用例不需要）。
+  it("无树根时 `refresh()`：同步窗口内**不新建任何异步资源**（覆盖假时钟看不见的原生定时器）", () => {
+    const stub = remoteStub();
+    const panel = new SoloipsCompanyPanel(stub.remote);
+
+    // 前置：构造路径自身不得新建异步资源（把「构造」与「刷新」分开观察）。
+    expect(
+      collectAsyncResources(() => {
+        new SoloipsCompanyPanel(stub.remote);
+      }),
+      "前置：构造 `no-root` 面板不得新建任何异步资源（构造是纯同步的）",
+    ).toEqual([]);
+
+    const created = collectAsyncResources(() => {
+      panel.actions.refresh();
+    });
+
+    expect(
+      created,
+      "无树根时 `refresh()` 的早退分支不得新建任何异步资源——`node:timers/promises`、`AbortSignal.timeout`、模块级捕获的定时器引用都会在这里显形（与延迟数值、原语无关）",
+    ).toEqual([]);
+    expect(stub.readCalls.length, "且不得发出 `getCompany`").toBe(0);
+    expect(stub.treeCalls.length, "且不得发出 `getCompanyTree`").toBe(0);
+    expect(panel.getSnapshot().list.kind, "状态仍是 `no-root`").toBe("no-root");
+
+    const html = render(panel);
+    expect(html, "界面仍是 no-root 呈现").toContain('data-soloips-list-state="no-root"');
+    expect(html, "**不得**落到 loading").not.toContain('data-soloips-list-state="loading"');
   });
 
   // ── 〔补盲 FE-1a-GUARD ②〕读面 `ok:false` 两条错误臂的守卫 ──────────────────
