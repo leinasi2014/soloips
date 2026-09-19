@@ -1857,7 +1857,7 @@ export const SOLOIPS_COMPANY_DOMAIN_SPEC = {
 
 > **⚠️〔约束〕本节的 API 形状是<u>待核验参考结构</u>，不得作为 BE-6 的 API 依据**（2026-09-18 codex 终审裁定）。
 >
-> 理由：① 本节示例是**按 DSH 官方文档整理的参考结构**，**未**在目标版本上做实际类型/运行时核对；② `soloips-web` 的 V1 路线已改为**复制官方 Web 插件 fork 改造**（[`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)），客户端扩展点应以**fork 内实际源码**为准，而非本节示例；③ BE-6 的 Host 半边与工具注册的权威依据是 `system-assistant-backend-design-v0.1.md` §3.2（`@Remote` 事实清单）。
+> 理由：① 本节示例是**按 DSH 官方文档整理的参考结构**，**未**在目标版本上做实际类型/运行时核对；② `soloips-web` 的 V1 路线 = **本仓自建最小插件**（不 fork 官方 Web，[`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)），客户端扩展点应以**官方 DSH fork 的实际源码**为准（本包不改动官方源码），而非本节示例；③ BE-6 的 Host 半边与工具注册的权威依据是 `system-assistant-backend-design-v0.1.md` §3.2（`@Remote` 事实清单）。
 >
 > 本节保留**仅作反例说明**：它指出两个不存在的方法名，避免后来者照抄旧设计。
 

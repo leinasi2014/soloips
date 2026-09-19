@@ -660,7 +660,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型）
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口）
 ├── bundle/                  # soloips-bundle：装配声明（patch 顺序）
-├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件 fork 改造版；本节其余表述为历史稿）
+├── web/                     # soloips-web：界面层（V1 = 本仓自建最小插件，不 fork 官方 Web；本节其余表述为历史稿）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
@@ -782,7 +782,7 @@ S0-T03: soloips-bundle 装配配置
 
 #### A4: S0-T04 - soloips-web 界面层〔历史，方案已变〕
 
-> **〔已取代〕2026-09-17**：下述「自研 React + Zustand 界面」派工方案**推迟**；V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**。任务拆分须按决策文档重写后方可派工，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+> **〔已取代〕**：下述「自研 React + Zustand 界面」派工方案**推迟**；V1 界面 = **本仓自建最小插件 `soloips-web`**（2026-09-19 用户裁定）。任务拆分须按决策文档重写后方可派工，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
 **Agent 配置**: A4 | 模型: claude-fable-5-1 | 思考: medium | 包: packages/web/
 

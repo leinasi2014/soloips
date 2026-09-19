@@ -13,7 +13,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明，patch 覆写顺序
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型、公司层级）
-├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件 fork 改造版；官方 DSH 源码不动）
+├── web/                     # soloips-web：界面层（V1 = 本仓自建最小插件，不 fork 官方 Web；官方 DSH 源码不动）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
@@ -59,7 +59,7 @@ SoloIPs 是 **AI 公司协作平台框架**：
 | ARCH-D05 | 上游 API 失败停线 | ORG-13 |
 | ARCH-D06 | 原生任务系统 | 协作要求 |
 | ARCH-D07 | S0 优先验证 | 开发策略 |
-| ARCH-D08 | Web/3D 双界面 | UI 架构子智能体（〔已取代〕2026-09-17：自研 Web+3D 推迟，V1 改为官方 Web fork 改造，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
+| ARCH-D08 | Web/3D 双界面 | UI 架构子智能体（〔已取代〕：自研 Web+3D 推迟；V1 界面 = 本仓自建最小插件，2026-09-19 用户裁定，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
 
 ## 包职责
 
@@ -103,11 +103,13 @@ SoloIPs 是 **AI 公司协作平台框架**：
 
 ### soloips-web
 
-> V1 界面 = **复制官方 Web 插件（`@deepseek-ai/dsh-web-app` 行代表的浏览器界面面）fork 改造版**，官方 DSH 源码不动；装配时替换 profile bundles 中的官方 Web 行，上游 bug 修正持续同步未改动区域。
+> **V1 界面 = 本仓自建最小插件**（2026-09-19 用户裁定：「这一版先自建最小插件，以后需要独立再说，先跑通」）。**不 fork 官方 Web、不替换官方装配行**——`@deepseek-ai/dsh-web-app` 继续提供宿主界面外壳，`soloips-web` 并列接入，提供业务 Host Remote 与后续业务面板（经官方 Slots 注入）。
 >
-> 原「自研 Web + 3D 双版本（React/Zustand/Three.js）」路线**推迟**（〔待决〕解冻时点）。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
+> 原「自研 Web + 3D 双版本（React/Zustand/Three.js）」路线**推迟**（〔待决〕解冻时点）；原「复制官方 Web fork 改造并替换装配行」路线**〔已取代〕**。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
 >
-> ⚠️ 当前 `packages/web/` 仍是包边界骨架（仅 `export {}`），fork 改造尚未开始。
+> **当前实现状态**（2026-09-19 实测）：`packages/web/src` 1758 行。**业务 Host 半边已实测通过**——5 个业务 Remote（`createCompany`/`getCompany`/`getCompanyTree`/`listDepartments`/`listTeams`）+ 投影剥离 `accountId`，真实浏览器 E2E 9 步全绿 + 进程重启后读回一致（证据 `docs/evidence/be6a/`）。**界面组件尚未实现**（FE-1a/FE-1b 范围）；i18n 资产已备但尚无消费方。
+>
+> ⚠️ 上述实现位于分支 `fix/BE-6a-runtime-identity`（**尚未合并 main**）；`main` 上仍是 BE-0a 的 `getStatus` 探针版。
 
 ### soloips-tools-pv
 
@@ -157,7 +159,7 @@ interface SoloipsCompanyRecord {
 |---|---|---|---|
 | **S0 接通** | 插件装配、受控写入、同包重启 | 加载成功 + 受控写 + 重启读回 | ✅ 已通过 |
 | **S0 多公司基础** | 跨账户拒绝、引用归属、撤职失效、并发配额 | 隔离测试通过 | ⚠️ 部分通过；配额/权限/执行绑定待实现 |
-| **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 | ⏳ 待实现；界面 = `soloips-web`（官方 Web fork 改造版，非自研），验收标准不变 |
+| **M0.1** | Web 版基础：公司/部门/团队 CRUD | 能在 DSH Web 中创建公司 | ⏳ 待实现；界面 = 官方 Web 外壳 + `soloips-web` 业务面（自建最小插件），验收标准不变 |
 | **M0.2** | 订阅限制：三层配额生效 | 免费用户无法创建第二公司 | ⏳ 待实现 |
 | **M0.3** | 3D 版基础：场景搭建、部门/团队可视化 | 3D 场景能渲染公司结构 | ⏳ 待实现；随自研 UI 路线**推迟**，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md) |
 | **M1** | 双版本联调：Zustand 状态共享 | Web 操作同步到 3D 视图 | ⏳ 待实现；依赖 M0.3，随自研 UI 路线**推迟** |

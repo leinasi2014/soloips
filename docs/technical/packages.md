@@ -9,7 +9,7 @@
 | soloips-bundle | 装配声明，patch 覆写顺序 | 无 | 无运行时依赖 |
 | soloips-adapter-dsh | DSH 适配，收敛全部 `@deepseek-ai/*`；支持 SQLite/JSON 存储后端 | 无业务状态 | DSH 官方包 |
 | soloips-core | **通用业务状态（公司层级、组织结构、文档模型）** | 各业务插件的共享基础 | adapter |
-| soloips-web | **界面层**（V1 = 复制官方 Web 插件 fork 改造版） | 只读投影 | core |
+| soloips-web | **界面层**（V1 = 本仓自建最小插件） | 只读投影 | core |
 | soloips-tools-pv | **业务插件（PV 制作）** | PV 任务状态 | adapter + core |
 
 > **存储后端**：默认 SQLite（Drizzle 0.38 查询构造 + better-sqlite3 driver，实现见
@@ -17,7 +17,7 @@
 > 〔建议〕（迁移面见 `docs/technical/state.md`）。
 
 > **实现程度（2026-09-17）**：`adapter-dsh` 只差 `team` 端口（fail-closed）；`core` 已实现六表 CRUD 与提交门；
-> `web` 目前只有包边界与工具链，**尚未接入 core**；V1 界面的交付方式为**复制官方 Web 插件 fork 改造版**
+> `web` 的**业务 Host 半边已实测通过**（5 个业务 Remote，真实 E2E 全绿；分支 `fix/BE-6a-runtime-identity` 未合并 main）；V1 界面的交付方式为**本仓自建最小插件**（2026-09-19 用户裁定）
 > （非自研 React/Zustand/3D，后者推迟），见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)；
 > `tools-pv` 属 S1，未创建。
 
@@ -96,7 +96,7 @@ packages/                    # package 名见各自 package.json（soloips-*）
 │   ├── src/commit-gate.ts   # 唯一提交前门（含账户归属盖章）
 │   ├── src/onboarding.ts    # 入职/准入判定
 │   └── tests/
-└── web/                     # 当前为包边界骨架（export {}），无 client 实现；V1 交付方式 = 官方 Web fork 改造
+└── web/                     # V1 交付方式 = 本仓自建最小插件；业务 Host 半边已实现，界面组件待 FE 切片
     ├── package.json
     ├── cordis.patch.yml
     ├── src/index.ts
@@ -118,7 +118,7 @@ packages/                    # package 名见各自 package.json（soloips-*）
 
 ### UI 双版本架构（ARCH-D08）
 
-> **〔已取代〕2026-09-17**：V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**，下表自研 Web+3D 路线**推迟**（〔待决〕解冻时点）。正文保留为历史设计稿，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+> **〔已取代〕**：V1 界面 = **本仓自建最小插件 `soloips-web`**（2026-09-19 用户裁定；不 fork 官方 Web）；下表自研 Web+3D 路线**推迟**（〔待决〕解冻时点）。正文保留为历史设计稿，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
 | 版本 | 技术栈 | 说明 |
 |---|---|---|

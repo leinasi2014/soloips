@@ -6,7 +6,7 @@
 
 ## 1. UI 双版本架构
 
-> **〔已取代〕2026-09-17**：本节「自研 Web + 3D 双版本」设计**推迟**（〔待决〕解冻时点）；V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**。本节保留为自研路线解冻时的参考稿，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+> **〔已取代〕**：本节「自研 Web + 3D 双版本」设计**推迟**（〔待决〕解冻时点）；V1 界面 = **本仓自建最小插件 `soloips-web`**（2026-09-19 用户裁定）。本节保留为自研路线解冻时的参考稿，见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
 ### 1.1 状态同步延迟
 
