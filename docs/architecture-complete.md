@@ -21,7 +21,7 @@
 | **业务写权威按领域划分** | core 管理组织结构和文档模型；业务插件各自管理领域状态 |
 | **所有功能作为 DSH 插件** | 复用 DSH 的插件化机制 |
 | **方便 DSH 更新合并** | SoloIPs 代码尽量少侵入 DSH |
-| **Web/3D 作为 DSH Client 扩展** | 通过 Slots 机制接入（⚠️ 2026-09-17 起 3D 部分随自研 UI 路线推迟；V1 Web 界面改为复制官方 Web 插件 fork 改造，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
+| **Web/3D 作为 DSH Client 扩展** | 通过 Slots 机制接入（⚠️ 3D 部分随自研 UI 路线推迟；**V1 Web 界面 = 本仓自建最小插件**，2026-09-19 用户裁定，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
 
 ### 1.2 整体架构
 
@@ -68,7 +68,7 @@ SoloIPs 采用**三层公司层级**（详细定义见 [`data-contract.md`](desi
 | **soloips-bundle** | DSH Bundle | 装配声明，patch 覆写 | 作为 DSH Profile 的一部分 |
 | **soloips-adapter-dsh** | DSH Plugin | DSH 适配，7 端口（team 为 fail-closed 占位） | **核心复用 DSH** |
 | **soloips-core** | DSH Plugin | 通用业务状态（公司层级、组织结构、文档模型） | 作为 DSH Service |
-| **soloips-web** | DSH Client Plugin | V1 = 复制官方 Web 插件 fork 改造版（当前为包边界骨架，改造未开始） | 替换 profile bundles 官方 Web 行 + Client Slots |
+| **soloips-web** | DSH Client Plugin | V1 = **本仓自建最小插件**（业务 Host 半边已实测通过；界面组件未实现） | 与官方 Web 行**并列**接入 + Client Slots |
 | **soloips-tools-pv** | 业务插件 | ⚠️ 尚未创建 | 独立包，S1 创建 |
 
 ### 2.2 目录结构
@@ -80,7 +80,7 @@ packages/
 ├── bundle/                      # soloips-bundle
 ├── adapter-dsh/                # 7 端口（storage/session/agents/subagents/team/tools/events）
 ├── core/                       # 已实现：六表 CRUD、commit-gate、onboarding
-└── web.                       # ⚠️ 空骨架；V1 = 官方 Web fork 改造（设计稿见 §5，已推迟）
+└── web.                       # V1 = 本仓自建最小插件（业务 Host 半边已实现；界面组件待 FE 切片）
     └── tools-pv/              # ⚠️ S1 创建
 ```
 
@@ -166,7 +166,7 @@ packages/
 
 ### 4.2 Client 插件（soloips-web）
 
-> **〔已取代〕2026-09-17**：本节「自研 Client 插件 + Web/3D 共享 Zustand」设计**推迟**。V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**（装配时替换 profile bundles 的官方 Web 行，上游 bug 修正持续同步未改动区域）。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)；本节保留为历史设计稿。
+> **〔已取代〕**：本节「自研 Client 插件 + Web/3D 共享 Zustand」设计**推迟**。V1 界面 = **本仓自建最小插件 `soloips-web`**（2026-09-19 用户裁定；与官方 Web 行并列接入，不替换）。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)；本节保留为历史设计稿。
 >
 > ⚠️ 当前为包边界骨架，无实现代码。
 
@@ -180,9 +180,9 @@ packages/
 
 ## 5. UI 双版本设计
 
-> **〔已取代〕2026-09-17**：本节「自研 Web + 3D 双版本」设计**推迟**（〔待决〕解冻时点）。V1（M0.1）界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)；本节正文保留为历史设计稿，供自研路线解冻时参考，**不得作为当前实现依据**。
+> **〔已取代〕**：本节「自研 Web + 3D 双版本」设计**推迟**（〔待决〕解冻时点）。V1（M0.1）界面 = **本仓自建最小插件 `soloips-web`**（2026-09-19 用户裁定）。决策正文见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)；本节正文保留为历史设计稿，供自研路线解冻时参考，**不得作为当前实现依据**。
 >
-> ⚠️ 本节所有代码示例为设计稿，尚未实现。soloips-web 当前只有 `export {}`（fork 改造尚未开始）。
+> ⚠️ 本节所有代码示例为设计稿，尚未实现。soloips-web 的**业务 Host 半边**已实测通过（见 [`docs/evidence/be6a/`](evidence/be6a/README.md)），但**界面组件**仍未实现。
 
 ### 5.1 Web 界面
 
@@ -237,7 +237,7 @@ packages/
 | Agent Team | soloips-adapter-dsh.team | ⏳ fail-closed 占位 |
 | Subagent | soloips-adapter-dsh.subagents | ⚠️ 端口就位 |
 | Tools | soloips-tools-pv | ⏳ 未创建 |
-| Client Slots | soloips-web | ⏳ 未实现（V1 走官方 Web fork 改造路线，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
+| Client Slots | soloips-web | ⏳ 未实现（业务面板接入点；V1 界面路线见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)） |
 | Remote API | soloips-web | ⏳ 未实现（同上） |
 
 ### 7.2 需要扩展 DSH 的部分
@@ -278,7 +278,7 @@ packages/
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
 | P0 | S0 多公司基础缺口 | 配额/权限/执行绑定（data-contract §0） |
-| P1 | M0.1 Web UI | 交付公司 CRUD 界面：复制官方 Web 插件 fork 改造为 soloips-web（当前 web 包为空骨架；原自研界面路线已推迟） |
+| P1 | M0.1 Web UI | 交付公司 CRUD 界面：本仓自建最小插件 `soloips-web`（业务 Host 半边已实测通过；界面组件待 FE 切片；原自研界面路线推迟） |
 | P1 | 单元测试 | 验证 core store CRUD |
 | P2 | M0.2 订阅限制 | 三层配额生效 |
 | P2 | M0.3 3D 界面 | 场景搭建 |

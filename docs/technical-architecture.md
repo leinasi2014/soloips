@@ -32,7 +32,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型）
-├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件 fork 改造版；官方 DSH 源码不动）
+├── web/                     # soloips-web：界面层（V1 = 本仓自建最小插件，不 fork 官方 Web；官方 DSH 源码不动）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，用户/SoloIPS开发团队维护）
 ```
 
@@ -40,7 +40,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 
 ### UI 双版本架构（ARCH-D08）
 
-> **〔已取代〕2026-09-17**：自研 Web+3D 双版本设计**推迟**（〔待决〕解冻时点）；V1 界面改为**复制官方 Web 插件 fork 改造为 `soloips-web`**。下表保留为历史设计稿，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
+> **〔已取代〕**：自研 Web+3D 双版本设计**推迟**（〔待决〕解冻时点）；V1 界面 = **本仓自建最小插件 `soloips-web`**（2026-09-19 用户裁定）。下表保留为历史设计稿，见 [`docs/decisions/web-ui-fork.md`](decisions/web-ui-fork.md)。
 
 | 组件 | 技术栈 | 说明 |
 |---|---|---|

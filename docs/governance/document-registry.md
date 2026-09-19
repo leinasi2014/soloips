@@ -20,7 +20,7 @@
 | 文档 | 路径 | 用途 | 负责人 |
 |---|---|---|---|
 | 官方 Team 复用 | `docs/decisions/official-team-and-dsh-fork.md` | 官方 Team / DSH fork 维护规则 | architecture-owner |
-| **V1 界面路线** | `docs/decisions/web-ui-fork.md` | **V1 界面 = 复制官方 Web 插件 fork 改造为 soloips-web；装配替换、上游同步、自研双版本推迟** | architecture-owner |
+| **V1 界面路线** | `docs/decisions/web-ui-fork.md` | **V1 界面 = 本仓自建最小插件 soloips-web（不 fork 官方 Web、官方行保留）；自研双版本推迟；独立化触发条件待用户决定** | architecture-owner |
 | 重构需求基线 | `docs/refactoring/README.md` | 公司/部门/员工/作品需求 | product-owner |
 
 ## 设计产物（docs/prds/）

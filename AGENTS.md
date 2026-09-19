@@ -77,7 +77,7 @@ packages/                    # 目录名不带前缀；package 名才是 soloips
 ├── bundle/                  # soloips-bundle：装配声明，patch 覆写顺序
 ├── adapter-dsh/             # soloips-adapter-dsh：DSH 适配层（7 端口，team 为 fail-closed 占位）
 ├── core/                    # soloips-core：通用业务状态包（组织结构、文档模型、公司层级）
-├── web/                     # soloips-web：界面层（V1 = 复制官方 Web 插件改造版；官方 DSH 源码不动，见 docs/decisions/web-ui-fork.md）
+├── web/                     # soloips-web：界面层（V1 = 本仓自建最小插件，不 fork 官方 Web；官方 DSH 源码不动，见 docs/decisions/web-ui-fork.md）
 └── tools-pv/                # soloips-tools-pv：业务插件（PV 制作，S1 创建，由用户/SoloIPS开发团队维护）
 ```
 

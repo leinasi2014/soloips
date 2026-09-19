@@ -68,7 +68,7 @@ soloips-web
 soloips-bundle         # 装配层，最后加载
 ```
 
-> **〔待实现〕2026-09-17**：V1 界面决策要求把官方 Web 行（`@deepseek-ai/dsh-web-app`）**替换为** `soloips-web`（官方 Web 的 fork 改造版）。上表为**当前**装配；替换以装配行完成，不改官方包内容、不 monkey patch 运行时。见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
+> **〔已取代〕**：原 V1 界面决策曾要求把官方 Web 行（`@deepseek-ai/dsh-web-app`）**替换为** `soloips-web`。**2026-09-19 用户裁定改为**：官方 Web 行**保留**（提供界面外壳），`soloips-web` 作为**并列的自建插件行**接入。上表为当前装配；不改官方包内容、不 monkey patch 运行时。见 [`docs/decisions/web-ui-fork.md`](../decisions/web-ui-fork.md)。
 
 ## Profile 三件套
 
