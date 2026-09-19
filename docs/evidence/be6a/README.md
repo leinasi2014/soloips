@@ -6,32 +6,47 @@
 
 | 元素 | 值 |
 |---|---|
-| candidate SHA | `2205d097d0815944bafe065847853aa9a426f558` |
-| 产物摘要（`packages/web/lib/client.js` sha256） | `25059a0de99a7aa4d5dfec1da0db5a3a36d8beb779fd5c3f94ce85a2905d3df8` |
-| 页面实载产物 | `/plugins/??soloips-web/client.js&rev=ccc6bc94a28e0c4f-51`（`embedded: true`——候选字节确实在页面加载的 bundle 内） |
+| candidate SHA | `7d2aba3eb36226ddea3d251b7513476dec65f19d` |
+| 产物摘要（`packages/web/lib/client.js` sha256） | `6c87d6beffd06d3c0d3e9d236cda7a6deded753eb638cc6c00605d1669386a0b` |
+| 页面实载产物 | `/plugins/??soloips-web/client.js&rev=7dac10bc367684ac-51`（`embedded: true`——候选字节确实在页面加载的 bundle 内） |
 | DSH runtime | fork `deepseek-harness` 0.1.6-alpha.1（`D:/Source/workspace/deepseek-harness/apps/cli/lib/bin.js`） |
-| 实例 | 隔离 DSH_HOME `D:/tmp/soloips-be6a/instance/home`；存储根 `…/storage-int3`；`127.0.0.1:55321` |
+| 实例 | 隔离 DSH_HOME `D:/tmp/soloips-be6a/instance/home`；存储根 `…/storage-fe1a-e2e`；`127.0.0.1:55321` |
 | 计划码 | `free`（配额 1 公司 / 0 子公司） |
 
 **stale 规则**：上表任一元素对应的 SHA / 摘要变化 → 本目录证据自动失效，真实链路必须重跑。
 
 ## 本候选覆盖什么（集成范围）
 
-本候选 = 三条审查修复分支（`fix/storage-p1` + `fix/audit-defects` + `fix/audit-defects2`）
-并入 `feat/BE-6a-host-wiring`，加 CI 顺序修复。故本轮 E2E 证明的是**集成后**的装配路径，
-而不是任何单条分支。
+本候选 = 已验收的集成候选 `5fe75e3` + FE-1a 公司面板（含 `apply` 形态修复与 `no-root` 文案修复）。
+故本轮 E2E 证明的是**加入公司面板后**的装配路径仍然成立（面板挂在官方槽位、
+Remote 业务面未变）。
 
 ## 证据文件
 
 | 文件 | 内容 | 摘要 |
 |---|---|---|
-| `e2e-company-final.json` | 完整 E2E 报告（真实浏览器 CDP 驱动，页面上下文内调 Remote）——**9 步全绿，无 `failure` 字段，console 零噪声** | sha256 `25cd735b49718dd4fdc73a4e93626941f5f00b5a01c252e876ad6112ea542a3a` |
+| `e2e-company-final.json` | 完整 E2E 报告（真实浏览器 CDP 驱动，页面上下文内调 Remote）——**9 步全绿，无 `failure` 字段，console 零噪声** | sha256 `13f4e52435c92b6f459cc226696a4db4202cf879d8becaa39f19f044f8a1f531` |
 | `restart-readback.json` | **进程重启后**读回（裁定六第 3 条）——重启后那一轮 | 见文件内 `matched: true` |
-| `restart-readback-pair.json` | **重启前后对照复现**：同一 fact 在重启前后各读回一次，两次 PID 不同（`55404` → `43872`），读回结果**逐字一致**（`identical: true`） | 见文件内 `identical: true` |
+| `restart-readback-pair.json` | **重启前后对照复现**：同一 fact 在重启前后各读回一次，两次 PID 不同（`5748` → `16344`），读回结果**逐字一致**（`identical: true`） | 见文件内 `identical: true` |
 | `ablation-no-inject.json` | **历史对照**（绑定更早候选 `cf56b2c`）：摘除 web 行 `inject` 后业务面仍可用，证明该声明与业务面可用性**无因果**。**不是本候选的证据**，故列在 `additionalEvidence[]` | sha256 `4e49cecba7ede1d4e6e57ebf3695318971de7ca9eef8a9ff3d72152e376b50be` |
 | `CANDIDATE-MANIFEST.json` | 候选绑定清单（由 CI 门 `check:m-a-evidence` 强制比对） | — |
 
 > **独立验收的证据边界**：独立 QA（`soloips-tester`）无 DSH fork 运行时与隔离实例，故**重启读回未经其独立复现**——QA 能且仅能证明证据文件内部自洽。本目录的 `restart-readback-pair.json` 是**指挥**（持实例角色）为补此边界所做的对照复现；该边界在放行记录中显式登记。
+
+## 界面实测（FE-1a：面板在真实浏览器里可见且可用）
+
+〔实测，真实 Chromium + CDP，同一实例〕
+
+| 检查 | 结果 |
+|---|---|
+| 装配树含 `soloips-web` | `entryCount=57`，`soloips-web` 在列 |
+| 侧栏出现面板入口 | `aria-label="公司"` |
+| 点击后面板渲染 | 「公司列表」+ 名称输入 + 类型选择 + 创建/刷新 |
+| 填名 → 创建 | 出现确认步：「确认后将创建以下公司：FE-1a 浏览器创建公司 / 确认创建 / 返回修改」 |
+| 确认创建 | 界面显示「公司已创建。`cmp_02aa8e8b-8815-4305-80ce-9b4165822a1f`」 |
+| 持久化实证 | SQLite `company` 表 1 行（`name=FE-1a 浏览器创建公司`） |
+| console / exceptions | **0 条** |
+| 刷新后文案（修 `no-root` 后） | 「本会话尚未创建公司，因此还不知道要显示哪一棵公司树。…」——**不再**是「尚未创建任何公司」 |
 
 ## 实测结果（裁定六行为判据逐条）
 
@@ -46,7 +61,7 @@
 
 | 步骤 | 结果 |
 |---|---|
-| `create` | `committed`，`companyId: cmp_823fee82-c1a6-4ebc-97e5-dd0b6f9087b6` |
+| `create` | `committed`，`companyId: cmp_128d0a3a-d999-4fee-8386-6ed721a9e7b8` |
 | `read-back` | `ok`（id / name / type 与创建一致；**不含 `accountId`**） |
 | `tree` | `ok`（含该公司一条） |
 | `replay`（同 operationId） | `replayed`（幂等，返回**原** companyId，不新建） |
@@ -70,7 +85,7 @@
 ### 本轮重启复现的环境事实（如实登记，勿读作产品能力）
 
 重启方式为**强制终止**（`Stop-Process -Force`——控制台应用无优雅关闭入口，`CloseMainWindow` 对无窗口进程无效）。
-终止后宿主残留 `.soloips-writer-lease.json.lock`（内容为已死 PID `55404`），新宿主因此 fail-closed 返回
+终止后宿主残留 `.soloips-writer-lease.json.lock`（内容为已死 PID `5748`），新宿主因此 fail-closed 返回
 `unavailable`。按「锁主进程已死」判定清除该残留锁后重启，读回通过。
 
 - 该残留是**环境事实**，其清除是**人工判定**；
