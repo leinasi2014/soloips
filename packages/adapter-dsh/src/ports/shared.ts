@@ -46,6 +46,29 @@ export type HostToolCallId = ToolExecutionInput["callId"];
 type HostImageAttachment = Extract<HostContentBlock, { type: "image" }>["attachment"];
 type HostFileAttachment = Extract<HostContentBlock, { type: "file" }>["attachment"];
 
+/**
+ * 宿主 `image.attachment.mediaType` 的**完整**词表（4 值封闭联合，DEFECT-01 / D-1）。
+ *
+ * 〔约束〕来源是宿主类型本身，不是手抄的字面量清单——两侧各有一条编译期哨兵：
+ *  - `satisfies` 保证**子集**：本表每个值都必须是宿主合法取值，宿主删值即编译失败；
+ *  - {@link AssertMediaTypesExhaustive} 保证**全覆盖**：宿主每个取值都必须在本表内，
+ *    宿主增值即编译失败。
+ *
+ * 运行期校验（{@link requireOneOf}）读的就是本表，故宿主联合演进时不可能静默漂移。
+ */
+const IMAGE_MEDIA_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const satisfies readonly HostImageAttachment["mediaType"][];
+
+/** 静态自检：宿主 mediaType 联合的每个取值都在 `IMAGE_MEDIA_TYPES` 内（全覆盖）。 */
+type AssertMediaTypesExhaustive =
+  HostImageAttachment["mediaType"] extends (typeof IMAGE_MEDIA_TYPES)[number] ? true : never;
+const assertMediaTypesExhaustive: AssertMediaTypesExhaustive = true;
+void assertMediaTypesExhaustive;
+
 // ── 品牌 id 转换：经 string 基类型做单向窄化断言（非双重断言） ────────────────
 //
 // 宿主品牌（`SessionId`、`ToolCallId`…）与契约品牌（`SoloipsSessionId`…）都是
@@ -105,7 +128,13 @@ export function resolveHostAgent(ctx: Context, ref: SoloipsAgentRef): Agent {
  * 宿主内容块 → 契约内容块。
  *
  * 宿主 `ContentBlock` 是封闭接口联合，不隐式满足契约的字符串索引签名，因此
- * 用浅拷贝（对象字面量获得隐式索引签名）逐块转出；不共享可变引用。
+ * 用**浅拷贝**（对象字面量获得隐式索引签名）逐块转出。
+ *
+ * 〔约束〕浅拷贝的边界（DEFECT-01 / D-3）：外层块对象是新对象，嵌套引用
+ * （`image.attachment`、`file.attachment`、`tool-result.content` 及其元素）**仍与
+ * 宿主共享**，本函数不深拷贝——写嵌套字段会穿透到宿主块。调用方**不得原地修改**
+ * 返回值；变更一律经 {@link toHostBlocks} 重建。这是契约 §1 对同类「返回介质/宿主
+ * 原对象」句柄（`SoloipsKvTable`）的同一原则，不是深拷贝保证。
  */
 export function toSoloipsBlocks(blocks: readonly HostContentBlock[]): SoloipsContentBlock[] {
   return blocks.map((block) => ({ ...block }));
@@ -139,9 +168,47 @@ function requireSafeInt(value: unknown, where: string): asserts value is number 
   }
 }
 
+/**
+ * 词表校验：值必须是 `allowed` 之一（DEFECT-01 / D-1）。
+ *
+ * 与 `requireString` 等同类：失败是**调用方数据缺陷**，故抛 `TypeError`；诊断含
+ * 字段路径与**实得值**（不可信输入，必须能从日志定位到具体是哪个坏值）。
+ * 调用方若需区分「类型错」与「取值错」，先跑 `requireString` 再跑本函数。
+ */
+function requireOneOf<T extends string>(
+  value: string,
+  allowed: readonly T[],
+  where: string,
+): asserts value is T {
+  if (!allowed.some((candidate) => candidate === value)) {
+    throw new TypeError(
+      `soloips-adapter: content block field '${where}' must be one of ${allowed.join(", ")}; got '${value}'`,
+    );
+  }
+}
+
+function requireBoolean(value: unknown, where: string): asserts value is boolean {
+  if (typeof value !== "boolean") {
+    throw new TypeError(`soloips-adapter: content block field '${where}' must be a boolean`);
+  }
+}
+
 function optionalString(value: unknown, where: string): string | undefined {
   if (value === undefined) return undefined;
   requireString(value, where);
+  return value;
+}
+
+/**
+ * 可选布尔：缺省通过，出现即必须是布尔（DEFECT-01 / D-2）。
+ *
+ * 宿主 `ToolResultBlock.isError` 是 `boolean | undefined`，故 `false` 与 `true`
+ * 同属合法域；显式 `false` **原样保留**（不是折叠成缺省），否则
+ * `toHostBlocks(toSoloipsBlocks(block))` 对带 `isError: false` 的宿主块不恒等。
+ */
+function optionalBoolean(value: unknown, where: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  requireBoolean(value, where);
   return value;
 }
 
@@ -160,6 +227,10 @@ function toHostBlock(block: SoloipsContentBlock): HostContentBlock {
       requireString(attachmentId, "image.attachment.attachmentId");
       const mediaType = attachment["mediaType"];
       requireString(mediaType, "image.attachment.mediaType");
+      // 〔约束〕两段式：先定类型（诊断说「不是字符串」），再定域（诊断带实得值）。
+      // 谓词把 `mediaType` 窄化到宿主联合，故下方构造 `ref` 时**无需**再写
+      // `as HostImageAttachment["mediaType"]`——那个断言曾是 D-1 的穿透点。
+      requireOneOf(mediaType, IMAGE_MEDIA_TYPES, "image.attachment.mediaType");
       const bytes = attachment["bytes"];
       requireSafeInt(bytes, "image.attachment.bytes");
       const width = attachment["width"];
@@ -179,7 +250,7 @@ function toHostBlock(block: SoloipsContentBlock): HostContentBlock {
       }
       const ref: HostImageAttachment = {
         attachmentId: attachmentId as HostImageAttachment["attachmentId"],
-        mediaType: mediaType as HostImageAttachment["mediaType"],
+        mediaType,
         bytes,
         width,
         height,
@@ -218,17 +289,12 @@ function toHostBlock(block: SoloipsContentBlock): HostContentBlock {
       requireString(toolCallId, "tool-result.toolCallId");
       const content = block["content"];
       requireArray(content, "tool-result.content");
-      const isError = block["isError"];
-      if (isError !== undefined && isError !== true) {
-        throw new TypeError(
-          "soloips-adapter: content block field 'tool-result.isError' must be true",
-        );
-      }
+      const isError = optionalBoolean(block["isError"], "tool-result.isError");
       return {
         type: "tool-result",
         toolCallId: hostToolCallId(toolCallId),
         content: toHostBlocks(content as readonly SoloipsContentBlock[]),
-        ...(isError === true ? { isError: true } : {}),
+        ...(isError === undefined ? {} : { isError }),
       };
     }
     default:

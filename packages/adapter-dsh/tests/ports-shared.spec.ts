@@ -16,8 +16,13 @@
  *      docs/reference/rewrite-seam-client.md SEAM-05（官方依赖只经 adapter 收敛）。
  *
  * 纪律：本文件只**观察**实现，不改实现。可疑行为就地以「〔观察〕」/「〔缺陷候选〕」
- * 注释记录，并在切片报告中单列（复现 + 影响判断）。已确认的缺陷用 `it.fails` 钉住——
- * 实现修好后该用例会转为失败，起绊线作用；当前缺陷行为另有配套用例固定现状。
+ * 注释记录，并在切片报告中单列（复现 + 影响判断）。已确认的缺陷曾用 `it.fails` 钉住——
+ * 实现修好后该用例转为失败，起绊线作用。
+ *
+ * 〔DEFECT-01，2026-09-19〕D-1（`mediaType` 词表缺口）修复后**本文件已无绊线**：原
+ * `it.fails` 与其「现状记录」配套用例一并删除，改为断言修复后的行为（词表内取值通过、
+ * 词表外取值以含实得值的 TypeError 拒绝）；D-2（`isError: false` 往返不恒等）改为断言
+ * 三种宿主合法形状往返恒等。D-3 是纯注释修正，本文件只保留「嵌套引用共享」的事实用例。
  */
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
@@ -194,7 +199,7 @@ describe("导出类型（type-only 导出，靠类型检查求值）", () => {
 
 // ── 品牌 id 转换 ──────────────────────────────────────────────────────────────
 
-describe("品牌 id 转换（shared.ts:56-68；纯窄化断言，运行时仍是同一字符串）", () => {
+describe("品牌 id 转换（shared.ts:79-91；纯窄化断言，运行时仍是同一字符串）", () => {
   it("三个转换器原样返回入参字符串（含空串、空白、非 ASCII、超长串）", () => {
     for (const id of ["session-1", "", "  ", "会话/1", "x".repeat(4096)]) {
       expect(hostSessionId(id)).toBe(id);
@@ -210,7 +215,7 @@ describe("品牌 id 转换（shared.ts:56-68；纯窄化断言，运行时仍是
     expect(hostToolCallId(raw)).toBe(raw);
   });
 
-  it("不拒绝空串与超长串（〔观察〕品牌窄化无运行时校验，见 shared.ts:49-54 的转换纪律说明）", () => {
+  it("不拒绝空串与超长串（〔观察〕品牌窄化无运行时校验，见 shared.ts:72-76 的转换纪律说明）", () => {
     expect(hostSessionId("")).toBe("");
     const long = "y".repeat(100_000);
     expect(soloipsSessionId(long)).toBe(long);
@@ -228,7 +233,7 @@ describe("品牌 id 转换（shared.ts:56-68；纯窄化断言，运行时仍是
 
 // ── toSoloipsAgentRef ────────────────────────────────────────────────────────
 
-describe("toSoloipsAgentRef（shared.ts:73-75；宿主 Agent → 契约凭证）", () => {
+describe("toSoloipsAgentRef（shared.ts:96-98；宿主 Agent → 契约凭证）", () => {
   it("只投影 sessionId，且每次新建对象（不返回宿主 Agent 本身）", () => {
     const agent = hostAgent("session-1");
     const ref = toSoloipsAgentRef(agent);
@@ -259,7 +264,7 @@ describe("toSoloipsAgentRef（shared.ts:73-75；宿主 Agent → 契约凭证）
 
 // ── resolveHostAgent ─────────────────────────────────────────────────────────
 
-describe("resolveHostAgent（shared.ts:84-100；凭证 → 真实活跃宿主 Agent，fail-closed）", () => {
+describe("resolveHostAgent（shared.ts:107-123；凭证 → 真实活跃宿主 Agent，fail-closed）", () => {
   it("命中活跃表：返回宿主表里的同一 Agent 实例", () => {
     const agent = hostAgent("session-1");
     const ctx = contextWithAgents(new Map([["session-1", agent]]));
@@ -325,7 +330,7 @@ describe("resolveHostAgent（shared.ts:84-100；凭证 → 真实活跃宿主 Ag
 
 // ── toSoloipsBlocks（宿主 → 契约） ────────────────────────────────────────────
 
-describe("toSoloipsBlocks（shared.ts:110-112；宿主块 → 契约块，浅拷贝投影）", () => {
+describe("toSoloipsBlocks（shared.ts:139-141；宿主块 → 契约块，浅拷贝投影）", () => {
   it("空数组 → 空数组（且不是同一数组）", () => {
     const input: readonly HostContentBlock[] = [];
     const output = toSoloipsBlocks(input);
@@ -362,11 +367,11 @@ describe("toSoloipsBlocks（shared.ts:110-112；宿主块 → 契约块，浅拷
     expect(hostBlock).toEqual({ type: "text", text: "hello" });
   });
 
-  it("〔缺陷候选·文档不符〕嵌套引用被共享：attachment 与 tool-result.content 仍是宿主对象", () => {
-    // 实现注释称「不共享可变引用」（shared.ts:107-108），但 `{...block}` 只复制一层：
-    // 嵌套对象/数组仍指向宿主。影响：core 若原地改 `block.attachment.bytes` 会改到宿主对象。
-    // 判断：浅拷贝本身是**有意**的（对象字面量获得隐式索引签名），但注释措辞过强，
-    // 且契约 §1 已要求调用方「不得原地修改」——故记为文档不符而非功能缺陷。
+  it("〔D-3 已修·浅拷贝边界〕嵌套引用被共享：attachment 与 tool-result.content 仍是宿主对象", () => {
+    // 修复前实现注释称「不共享可变引用」，但 `{...block}` 只复制一层，注释措辞与事实不符。
+    // 〔D-3 处置〕浅拷贝是**有意设计**（对象字面量获得隐式索引签名），故改注释而非改实现：
+    // shared.ts 的 toSoloipsBlocks 文档现明确「外层新建、嵌套引用共享、调用方不得原地修改」。
+    // 本用例钉住该事实：若将来改成深拷贝，注释需同步回改。
     const output = toSoloipsBlocks(hostBlocks);
     const convertedImage = only(output.filter((block) => block["type"] === "image"));
     const convertedToolResult = only(output.filter((block) => block["type"] === "tool-result"));
@@ -409,7 +414,7 @@ describe("toSoloipsBlocks（shared.ts:110-112；宿主块 → 契约块，浅拷
 
 // ── toHostBlocks（契约 → 宿主，结构化校验） ───────────────────────────────────
 
-describe("toHostBlocks · 合法输入（shared.ts:148-245）", () => {
+describe("toHostBlocks · 合法输入（shared.ts:215-311）", () => {
   it("空数组 → 空数组", () => {
     expect(toHostBlocks([])).toEqual([]);
   });
@@ -503,6 +508,16 @@ describe("toHostBlocks · 合法输入（shared.ts:148-245）", () => {
     expect(imageAttachmentOf(negativeZero).bytes).toBe(-0);
   });
 
+  it("〔D-1 已修〕image：mediaType 走宿主词表校验，4 个合法值全通过且值原样保留", () => {
+    // 词表来源是宿主 `HostImageAttachment["mediaType"]`（4 值封闭联合），不是手抄清单；
+    // 宿主联合演进时 src/ports/shared.ts 的 `satisfies` + 全覆盖哨兵会先编译失败。
+    for (const mediaType of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
+      const output = toHostBlocks([contractImageBlock(contractImageAttachment({ mediaType }))]);
+
+      expect(imageAttachmentOf(output).mediaType).toBe(mediaType);
+    }
+  });
+
   it("file：转出 attachmentId / name / bytes", () => {
     const output = toHostBlocks([
       { type: "file", attachment: { attachmentId: "att-file-1", name: "notes.md", bytes: 42 } },
@@ -559,6 +574,18 @@ describe("toHostBlocks · 合法输入（shared.ts:148-245）", () => {
 
     expect(block.isError).toBe(true);
     expect("isError" in block).toBe(true);
+  });
+
+  it("〔D-2 已修〕tool-result：isError === false 时键存在且为 false（宿主合法形状，不折叠成缺省）", () => {
+    // 宿主 `ToolResultBlock.isError?: boolean` 允许显式 false（dsh-tools 自己就产出
+    // `isError: false` 的成功结果）。契约方向曾只接受 true，使往返对含 false 的块必失败。
+    const output = toHostBlocks([
+      { type: "tool-result", toolCallId: "call-1", content: [], isError: false },
+    ]);
+    const block = toolResultBlockOf(output);
+
+    expect(block.isError).toBe(false);
+    expect("isError" in block).toBe(true); // 显式 false 与缺省是两种形状，不能合并
   });
 
   it("〔不可变性〕返回全新对象与数组：附件、嵌套 content 均不与输入共享", () => {
@@ -643,6 +670,36 @@ describe("toHostBlocks · 非法输入逐分支拒绝（调用方数据缺陷 �
       "image.attachment.mediaType 非字符串",
       contractImageBlock(contractImageAttachment({ mediaType: null })),
       "'image.attachment.mediaType' must be a string",
+    ],
+    [
+      "image.attachment.mediaType 空串（词表外）",
+      contractImageBlock(contractImageAttachment({ mediaType: "" })),
+      "'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got ''",
+    ],
+    [
+      "image.attachment.mediaType 非图片类型（text/plain）",
+      contractImageBlock(contractImageAttachment({ mediaType: "text/plain" })),
+      "'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got 'text/plain'",
+    ],
+    [
+      "image.attachment.mediaType 宿主不支持的图片类型（image/svg+xml）",
+      contractImageBlock(contractImageAttachment({ mediaType: "image/svg+xml" })),
+      "'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got 'image/svg+xml'",
+    ],
+    [
+      "image.attachment.mediaType 大小写变体（IMAGE/PNG 不是词表值）",
+      contractImageBlock(contractImageAttachment({ mediaType: "IMAGE/PNG" })),
+      "'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got 'IMAGE/PNG'",
+    ],
+    [
+      "image.attachment.mediaType 近似值（image/jpg 不是 image/jpeg）",
+      contractImageBlock(contractImageAttachment({ mediaType: "image/jpg" })),
+      "'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got 'image/jpg'",
+    ],
+    [
+      "image.attachment.mediaType 带参数后缀（image/png; charset=binary）",
+      contractImageBlock(contractImageAttachment({ mediaType: "image/png; charset=binary" })),
+      "'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got 'image/png; charset=binary'",
     ],
     [
       "image.attachment.bytes 为负",
@@ -760,28 +817,22 @@ describe("toHostBlocks · 非法输入逐分支拒绝（调用方数据缺陷 �
       "unsupported content block type 'bogus'",
     ],
     [
-      "tool-result.isError 为 false",
-      { type: "tool-result", toolCallId: "c", content: [], isError: false },
-      "'tool-result.isError' must be true",
-    ],
-    [
       "tool-result.isError 为字符串",
       { type: "tool-result", toolCallId: "c", content: [], isError: "true" },
-      "'tool-result.isError' must be true",
+      "'tool-result.isError' must be a boolean",
+    ],
+    [
+      "tool-result.isError 为数字",
+      { type: "tool-result", toolCallId: "c", content: [], isError: 1 },
+      "'tool-result.isError' must be a boolean",
+    ],
+    [
+      "tool-result.isError 为 null",
+      { type: "tool-result", toolCallId: "c", content: [], isError: null },
+      "'tool-result.isError' must be a boolean",
     ],
   ])("拒绝：%s", (_label, block, message) => {
     expectBlockRejected(block, message);
-  });
-
-  it("〔观察〕isError 只接受 true：显式 false 被拒（比宿主 `isError?: boolean` 更严，方向 fail-closed）", () => {
-    // 宿主 ToolResultBlock.isError 是 `boolean | undefined`，故 `false` 在宿主侧合法；
-    // adapter 把它当作非法（message 明写 must be true）。这是**有意的收紧**：
-    // 契约的宽松记录里 `isError: false` 与缺省语义等价，拒绝它可避免「显式 false」
-    // 与「缺省」两种写法在宿主对象上产生不同形状。代价是调用方需省略该键。
-    expectBlockRejected(
-      { type: "tool-result", toolCallId: "c", content: [], isError: false },
-      "must be true",
-    );
   });
 
   it("〔边界〕非数组入参与非对象元素 → 原生 TypeError（fail-closed，但诊断不是契约文案）", () => {
@@ -837,26 +888,24 @@ describe("toHostBlocks · 非法输入逐分支拒绝（调用方数据缺陷 �
     expect(() => toHostBlocks([block])).toThrow(RangeError);
   });
 
-  it.fails(
-    "〔缺陷候选〕mediaType 是宿主封闭联合，校验却只做字符串检查（非法媒体类型可穿透）",
-    () => {
-      // 现状（见下一条用例）：`mediaType: "text/plain"` 被接受，并被断言成
-      // `HostImageAttachment["mediaType"]`（4 字面量联合）。这违反 shared.ts:12 的
-      // 「每个断言…且伴随运行时校验」——requireString 覆盖不到联合的**域**。
-      // 影响：非法媒体类型进入宿主 prompt/消息内容，故障被推迟到 provider 侧
-      // （表现为运行期失败，而不是边界上的调用方 TypeError）。修好后本用例转为失败。
-      expect(() =>
-        toHostBlocks([contractImageBlock(contractImageAttachment({ mediaType: "text/plain" }))]),
-      ).toThrowError(/mediaType/);
-    },
-  );
+  it("〔D-1 已修〕mediaType 词表外取值 → TypeError，诊断含字段路径与**实得值**", () => {
+    // 修复前：只做 requireString，`mediaType as HostImageAttachment["mediaType"]` 是
+    // 无校验断言，非法值穿透到宿主消息内容（故障推迟到 provider 侧）。现为边界拒绝。
+    for (const mediaType of ["text/plain", "image/svg+xml", "", "IMAGE/PNG", "image/jpg"]) {
+      let thrown: unknown;
+      try {
+        toHostBlocks([contractImageBlock(contractImageAttachment({ mediaType }))]);
+      } catch (error: unknown) {
+        thrown = error;
+      }
 
-  it("〔缺陷候选·现状〕记录 mediaType 未被词表校验的当前行为（修实现时同步删掉本用例）", () => {
-    const output = toHostBlocks([
-      contractImageBlock(contractImageAttachment({ mediaType: "image/svg+xml" })),
-    ]);
-
-    expect(imageAttachmentOf(output).mediaType).toBe("image/svg+xml");
+      expect(thrown).toBeInstanceOf(TypeError);
+      expect(thrown).not.toBeInstanceOf(SoloipsAdapterError); // 调用方数据缺陷，不是宿主失败
+      // 整条文案断言（不用 toContain：空串实得值会让子串断言恒真，失去鉴别力）
+      expect((thrown as TypeError).message).toBe(
+        `soloips-adapter: content block field 'image.attachment.mediaType' must be one of image/png, image/jpeg, image/webp, image/gif; got '${mediaType}'`,
+      );
+    }
   });
 });
 
@@ -882,23 +931,34 @@ describe("toSoloipsBlocks / toHostBlocks 往返（两个方向的校验强度不
     expect(toHostBlocks(toSoloipsBlocks(strict))).toEqual(strict);
   });
 
-  it("〔观察〕往返不是恒等：宿主可表达的 `isError: false` 在契约方向被拒（单向收紧）", () => {
-    // 宿主 `ToolResultBlock.isError?: boolean` 允许显式 false，但契约方向的校验
-    // 只接受 true（见上文用例）。因此「宿主 → 契约 → 宿主」对含 `isError: false`
-    // 的块不成立：`toSoloipsBlocks` 原样带出 false，`toHostBlocks` 随即拒绝。
-    // 影响：只要块来自宿主且带显式 false，adapter 再把它交回宿主时就会失败。
-    // 当前调用路径（tools 端口 render、subagents prompt）不产生该形状，故未观察到
-    // 实际故障；记为待决项——是否把宿主块纳入 `toSoloipsBlocks` 的规范化范围。
-    const hostBlock: HostContentBlock = {
+  it("〔D-2 已修〕往返恒等：isError 的三种宿主合法形状（true / false / 缺省）各自往返后形状不变", () => {
+    // 宿主 `ToolResultBlock.isError?: boolean` 的完整域是 {true, false, undefined}；
+    // 修复前 `false` 被拒，「宿主 → 契约 → 宿主」对该形状不成立（往返性质破坏）。
+    // 三种形状**互不折叠**：显式 false 必须回到显式 false，缺省必须回到缺省。
+    const withTrue: HostContentBlock = {
+      type: "tool-result",
+      toolCallId: hostToolCallId("call-1"),
+      content: [],
+      isError: true,
+    };
+    const withFalse: HostContentBlock = {
       type: "tool-result",
       toolCallId: hostToolCallId("call-1"),
       content: [],
       isError: false,
     };
-    const roundTripped = toSoloipsBlocks([hostBlock]);
+    const withoutIsError: HostContentBlock = {
+      type: "tool-result",
+      toolCallId: hostToolCallId("call-1"),
+      content: [],
+    };
 
-    expect(only(roundTripped)["isError"]).toBe(false);
-    expect(() => toHostBlocks(roundTripped)).toThrowError("'tool-result.isError' must be true");
+    for (const hostBlock of [withTrue, withFalse, withoutIsError]) {
+      const roundTripped = toHostBlocks(toSoloipsBlocks([hostBlock]));
+
+      expect(only(roundTripped)).toEqual(hostBlock);
+      expect("isError" in only(roundTripped)).toBe("isError" in hostBlock);
+    }
   });
 
   it("〔观察〕往返对嵌套引用不保身份但保值（每层浅拷贝）", () => {
@@ -918,7 +978,7 @@ describe("toSoloipsBlocks / toHostBlocks 往返（两个方向的校验强度不
 
 // ── toSoloipsSubagentResult ──────────────────────────────────────────────────
 
-describe("toSoloipsSubagentResult（shared.ts:250-257；宿主结果 → 契约结果）", () => {
+describe("toSoloipsSubagentResult（shared.ts:316-323；宿主结果 → 契约结果）", () => {
   it.each<[SubagentResult["stopReason"]]>([
     ["completed"],
     ["aborted"],
@@ -1023,7 +1083,7 @@ describe("toSoloipsSubagentResult（shared.ts:250-257；宿主结果 → 契约�
 
 // ── toSoloipsSessionEvent ────────────────────────────────────────────────────
 
-describe("toSoloipsSessionEvent（shared.ts:262-264；宿主事件 → 契约事件）", () => {
+describe("toSoloipsSessionEvent（shared.ts:328-330；宿主事件 → 契约事件）", () => {
   const hostEvent: HostSessionEvent = {
     type: "turn/start",
     seq: 0 as HostSessionEvent["seq"],
@@ -1075,7 +1135,7 @@ describe("toSoloipsSessionEvent（shared.ts:262-264；宿主事件 → 契约事
 
 // ── mapHostError ─────────────────────────────────────────────────────────────
 
-describe("mapHostError（shared.ts:277-286；错误分层与映射）", () => {
+describe("mapHostError（shared.ts:343-352；错误分层与映射）", () => {
   it("SoloipsAdapterError 原样透传（同一实例，不重复包装）", () => {
     const original = new SoloipsAdapterError("SOLOIPS_ADAPTER_LEASE_NOT_HELD", "lease lost");
     expect(mapHostError("scope", original)).toBe(original);
@@ -1168,7 +1228,7 @@ describe("mapHostError（shared.ts:277-286；错误分层与映射）", () => {
 
 // ── withHostErrors ───────────────────────────────────────────────────────────
 
-describe("withHostErrors（shared.ts:289-295；await 包装）", () => {
+describe("withHostErrors（shared.ts:354-361；await 包装）", () => {
   it("成功：原样返回 operation 的值（身份不变），且总是 Promise", async () => {
     const value = { ok: true };
     const pending = withHostErrors("scope", () => Promise.resolve(value));
